@@ -9,13 +9,34 @@
 :root {
   --bg: #F8FAFC;
   --card: #FFFFFF;
+  --surface: #FFFFFF;
   --ink: #0F172A;
   --slate: #475569;
   --slate-quiet: #64748B;
   --border: #E2E8F0;
   --primary: #2563EB;
   --primary-bright: #1D4ED8;
+  --primary-wash: #EFF6FF;
   --success: #10B981;
+  --success-wash: #ECFDF5;
+  --warning: #B45309;
+  --warning-wash: #FFFBEB;
   --danger: #DC2626;
   --danger-wash: #FDECEC;
+  --focus: #2563EB;
+  --hover: #F1F5F9;
+  --radius-card: 0.75rem;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
