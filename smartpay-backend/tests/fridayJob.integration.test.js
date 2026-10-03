@@ -75,6 +75,7 @@ describe('Friday automation job — cycle locks, filtering, and cron trigger (re
     afterAll(async () => {
         await db.query('DELETE FROM scheduled_jobs WHERE school_id IN (?, ?)', [schoolIdA, schoolIdB]);
         await db.query('DELETE FROM sms_reminders WHERE school_id IN (?, ?)', [schoolIdA, schoolIdB]);
+        await db.query('DELETE FROM audit_logs WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM sms_templates WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM payment_links WHERE school_id IN (?, ?)', [schoolIdA, schoolIdB]);
         await db.query('DELETE FROM payments WHERE school_id = ?', [schoolIdA]);

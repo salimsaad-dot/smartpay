@@ -363,9 +363,85 @@ for a full management system.
   Fees correctly excluded the fully-paid student, confirmed Payment
   History's online/manual split, and confirmed a Student Statement
   rendered the right student with the right totals.
-- **Phase 10 onward — not started.** Security/QA hardening pass, audit
-  logs, deployment — all per the spec's own Phases 10–11, picked up in
-  future sessions.
+- **Phase 10 — Security/QA: SHIPPED 2026-10-03.** A systematic pass
+  against the spec's own section 13 checklist, item by item, rather than
+  generic hardening busywork. What it found and fixed:
+  - **Audit logs** (`audit_logs` table, `utils/auditLog.js`) — the one
+    clearly-named, clearly-missing requirement. Scoped to financial and
+    administrative actions specifically (matching the spec's own phrase),
+    not instrumented into every mutation: payment create/void, invoice
+    generation, Friday-settings changes, and SMS template create/update.
+    Never throws into its caller — a failed audit write must not undo or
+    block the real action it was recording. A new admin-only
+    `GET /api/audit-logs` endpoint and Audit Log page expose it (an audit
+    trail nobody can read isn't much of one). 6 new tests confirm each
+    action is recorded with the correct before/after values, the acting
+    user, and a real IP address, and that it's tenant-isolated like
+    everything else.
+  - **A real, critical dependency vulnerability** — `npm audit` on the
+    frontend surfaced an unauthenticated RCE in Next.js 16.3.0
+    (GHSA-p293-qw3h-jr36 and two related advisories). Fixed with a
+    same-minor-line patch bump to 16.3.8 (no breaking changes); confirmed
+    with both `npm audit --omit=dev` (0 vulnerabilities) and a clean
+    production build afterward. A separate set of *dev-only*
+    `eslint-config-next` advisories (a transitive `braces` DoS) was
+    reviewed and deliberately left alone — that dependency chain never
+    ships to production or runs against user input, so it has no
+    exploitable path in the deployed app.
+  - **Two real rate-limiting gaps** — the spec explicitly names "webhook
+    abuse surfaces" and payment/login endpoints as needing rate limits;
+    `POST /api/payments/webhook` had none at all (signature-protected,
+    but an unthrottled endpoint still costs an HMAC computation and a DB
+    lookup per request). Added a generous limiter sized to never throttle
+    Paystack's own legitimate redelivery retries. Also added a limiter on
+    `POST /api/reminders/send` — not explicitly named in the spec's list,
+    but added for the same underlying reason as the ones that are: each
+    call can trigger a real, billable SMS send, and an admin-authenticated
+    endpoint shouldn't be exempt from protecting a school's SMS credit
+    just because it requires a session.
+  - **`app.set('trust proxy', 1)`** — added so `req.ip` (used by both the
+    new audit log and every rate limiter) reflects the real client address
+    once deployed behind Render/Railway's reverse proxy, not the proxy's
+    own address.
+  - **CSRF reviewed, no new mechanism added.** The frontend's `next.config.mjs`
+    rewrite proxy means every production request is genuinely same-origin
+    from the browser's perspective (not merely same-site) — a third-party
+    site cannot make same-origin requests to SmartPay's own domain at all,
+    which structurally rules out CSRF regardless of the `sameSite:'lax'`
+    cookie setting underneath it. Confirmed by re-reading the actual proxy
+    config rather than assuming the reasoning still held.
+  - **Full route-by-route authorization sweep** — every route file
+    checked by hand: every protected route has `verifyToken` (and
+    `verifyRole('school_admin')` on every state-changing one); the only
+    unauthenticated routes are the ones deliberately designed to be
+    (public checkout, the signature-verified webhook, the secret-header
+    cron trigger, login/register); no controller anywhere trusts a
+    client-supplied `schoolId`; `password_hash` is never spread into a
+    response anywhere it's fetched. All confirmed clean — no changes
+    needed, which is itself the point of doing the sweep rather than
+    assuming.
+  - **`npm audit` on the backend** — 0 vulnerabilities, no action needed.
+  - **Edge cases (spec section 17) reviewed against what's actually
+    built.** Most are already provably handled by earlier phases' own
+    tests (duplicate invoice generation, partial/over-payment, webhook
+    redelivery, Friday job crash/retry, missing phone, expired link, "no
+    arrears"). Two are deliberately out of scope, not overlooked: SMS
+    *delivery*-status tracking (mNotify's `getDeliveryStatus()` is
+    explicitly marked optional in the spec's own `SmsProvider` interface,
+    and reminders already correctly report `sent`/`failed` from the send
+    attempt itself) and "two admins edit the same record" (moot — Phase 1
+    deliberately ships exactly one admin per school with no UI to add
+    more, so concurrent-edit conflicts aren't a reachable scenario yet).
+  - Along the way, fixed a regression the new `audit_logs` table's own
+    foreign keys exposed: every existing test file's cleanup needed the
+    same `audit_logs` delete added as `sms_templates` did in Phase 7, and
+    four of them had it in the wrong order relative to the `users`
+    delete (`audit_logs.user_id` also references `users`, so it must be
+    deleted first) — caught by running the full suite, not assumed correct
+    from the individual file's own test run.
+- **Phase 11 — not started.** Production deployment — hosting, real env
+  vars, the actual Friday cron trigger, Paystack/mNotify going live —
+  picked up in a future session.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -417,3 +493,8 @@ for a full management system.
 | 2026-10-03 | Reports' CSV export links are plain `<a target="_blank">` tags pointing directly at the backend's CSV endpoints, not routed through the frontend's `apiRequest()` wrapper. | `apiRequest()` always calls `.json()` on the response, which would break on a `text/csv` body. A top-level browser navigation (clicking a link, including one opened in a new tab) still carries the `sameSite:'lax'` auth cookie automatically, so no separate download-authentication mechanism was needed — the existing cookie-based session already covers it. |
 | 2026-10-03 | The Reports page is one screen with an internal tab switcher across all six report types (Collection Summary, Outstanding Fees, Payment History, Invoice Report, SMS Activity, Statements), not six separate sidebar entries. | Matches the spec's own framing of "Reports" as a single screen with multiple report types inside it (section 18's Detailed Screen Specifications), and avoids the sidebar nav growing by six items for what is conceptually one destination. |
 | 2026-10-03 | The Payment History report filters by `parentId` via `EXISTS (... parent_student ...)` rather than a direct `payments.parent_id = ?` column. | `payments` has no `parent_id` column — ownership is only derivable through `student_id` → `parent_student`. Caught while writing the controller, before it ever reached a live request, by checking the actual `schema.sql` rather than assuming the column existed because the report conceptually needed it. |
+| 2026-10-03 | Audit logging is scoped to financial and administrative actions only (payment create/void, invoice generation, Friday-settings changes, SMS template create/update) — not every mutation in the app. | Matches the spec's own exact phrase ("Audit logging for financial and administrative actions"), not a looser "log everything" interpretation. Read-only list/view endpoints, academic-setup CRUD (classes/terms/years), and student/parent record edits were deliberately left uninstrumented — they're not financial, and administratively low-stakes compared to anything touching money or outbound communication. Can be widened later if a real need shows up; starting narrow and named beats starting broad and unreviewable. |
+| 2026-10-03 | `utils/auditLog.js`'s `logAction()` never throws into its caller — a failed audit-log write is caught and logged to the console, not propagated. | Same reasoning already applied to post-payment notifications earlier in this project: a side-effect record of an action must never be able to undo or block the real action it's recording. A payment that succeeded but failed to audit-log is a monitoring gap to notice and fix; a payment that got rolled back because its own audit trail failed to write would be strictly worse. |
+| 2026-10-03 | CSRF protection relies entirely on `sameSite:'lax'` plus the frontend's same-origin rewrite proxy — no separate CSRF token system was added. | Re-verified by reading the actual `next.config.mjs` rewrite rather than assuming: in production the browser only ever talks to the frontend's own origin, with the proxy forwarding to the real backend server-side. Every request is therefore genuinely same-origin, not merely same-site, which structurally rules out third-party CSRF regardless of the cookie attribute underneath it — a token system would be defense for a threat that can't reach this app's actual deployed topology. |
+| 2026-10-03 | mNotify's optional `getDeliveryStatus()` capability (confirming an SMS was actually delivered, not just accepted by the provider) was not implemented — reminders report `sent`/`failed` from the send attempt itself, and the schema's `delivered` status value is defined but currently unreachable. | The spec's own `SmsProvider` interface marks this capability explicitly optional. Implementing it would mean either polling mNotify per-message or handling a delivery-status webhook, both real integration work with no spec-mandated urgency — a documented, deliberate scope cut rather than a silent gap, picked up later only if real delivery visibility becomes a stated need. |
+| 2026-10-03 | The "two admins edit the same invoice/payment record" edge case (spec section 17) has no optimistic-locking or conflict-detection mechanism. | Not reachable in the current build: Phase 1 deliberately ships exactly one `school_admin` user per school at registration, with no endpoint to invite or create additional admin users yet. A concurrency-conflict mechanism for a scenario the product can't currently produce would be unverifiable speculation; revisit if/when multi-admin-per-school ever ships. |

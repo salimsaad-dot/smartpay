@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { logAction } = require('../utils/auditLog');
 
 exports.getFridaySettings = async (req, res) => {
     try {
@@ -57,6 +58,12 @@ exports.updateFridaySettings = async (req, res) => {
              WHERE id = ?`,
             [merged.fridayRemindersEnabled, merged.fridaySendTime, merged.fridayTemplateId, merged.reminderMinBalance, merged.reminderCooldownDays, req.user.schoolId]
         );
+
+        await logAction(req, {
+            action: 'settings.update', entityType: 'school', entityId: req.user.schoolId,
+            oldValues: current, newValues: merged,
+        });
+
         res.status(200).json({ status: 'success', message: 'Friday reminder settings updated.' });
     } catch (error) {
         console.error(error);

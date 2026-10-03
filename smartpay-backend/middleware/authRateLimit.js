@@ -36,3 +36,32 @@ exports.publicPaymentRateLimit = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+// The webhook is also named explicitly in the spec's security
+// requirements ("webhook abuse surfaces"), even though it's already
+// signature-protected — a bad/missing signature still costs an HMAC
+// computation and a DB lookup per request, so an unthrottled endpoint is
+// still a real volumetric-abuse target. Generous enough that Paystack's
+// own legitimate retries (it redelivers on non-2xx) are never at risk of
+// being throttled.
+exports.webhookRateLimit = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    limit: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Not named explicitly in the spec's rate-limiting list (which only
+// calls out login/public links/payment init/webhooks), but added for the
+// same underlying reason as those: a real-money cost per request. Each
+// call here can trigger an actual billable SMS send — this is
+// admin-authenticated, so abuse requires a compromised session rather
+// than an anonymous attacker, but a compromised or buggy client
+// shouldn't be able to burn through a school's SMS credit at unbounded
+// speed either.
+exports.reminderRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+});

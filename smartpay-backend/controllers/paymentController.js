@@ -1,5 +1,6 @@
 const pool = require('../db');
 const { recalculateInvoiceBalance } = require('../utils/invoiceRules');
+const { logAction } = require('../utils/auditLog');
 
 const VALID_METHODS = ['cash', 'mobile_money', 'bank_transfer', 'other'];
 
@@ -73,6 +74,12 @@ exports.create = async (req, res) => {
         const updatedInvoice = await recalculateInvoiceBalance(connection, invoiceId);
 
         await connection.commit();
+
+        await logAction(req, {
+            action: 'payment.create', entityType: 'payment', entityId: paymentId,
+            newValues: { invoiceId, amount: Number(amount), method, reference: reference?.trim() || null },
+        });
+
         res.status(201).json({ status: 'success', message: 'Payment recorded.', data: { paymentId, invoice: updatedInvoice } });
     } catch (error) {
         await connection.rollback();
@@ -117,6 +124,12 @@ exports.voidPayment = async (req, res) => {
         const updatedInvoice = await recalculateInvoiceBalance(connection, payment.invoice_id);
 
         await connection.commit();
+
+        await logAction(req, {
+            action: 'payment.void', entityType: 'payment', entityId: Number(req.params.id),
+            oldValues: { status: payment.status }, newValues: { status: 'void', reason: reason.trim() },
+        });
+
         res.status(200).json({ status: 'success', message: 'Payment voided.', data: { invoice: updatedInvoice } });
     } catch (error) {
         await connection.rollback();

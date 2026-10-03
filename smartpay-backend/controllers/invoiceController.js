@@ -1,5 +1,6 @@
 const pool = require('../db');
 const { invoiceNumber } = require('../utils/invoiceRules');
+const { logAction } = require('../utils/auditLog');
 
 // Bulk-generates one invoice per active student in the fee structure's
 // class+academic_year. Idempotent per student via invoices'
@@ -79,6 +80,11 @@ exports.generate = async (req, res) => {
                 connection.release();
             }
         }
+
+        await logAction(req, {
+            action: 'invoice.generate', entityType: 'fee_structure', entityId: Number(feeStructureId),
+            newValues: { created, skipped, totalEligibleStudents: students.length },
+        });
 
         res.status(200).json({
             status: 'success',

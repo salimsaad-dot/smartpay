@@ -21,8 +21,16 @@ const scheduledJobRoutes = require('./routes/scheduledJobRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const schoolSettingsRoutes = require('./routes/schoolSettingsRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
 
 const app = express();
+
+// Required for req.ip (used by audit logging and rate limiting) to
+// reflect the real client IP once deployed behind a reverse proxy
+// (Render/Railway), rather than the proxy's own address — and for
+// express-rate-limit to correctly key its per-IP buckets in that same
+// environment.
+app.set('trust proxy', 1);
 
 // Same overrides as Academia Hub, same reasoning: this is a pure JSON API
 // consumed by a separate frontend origin, not a server serving its own
@@ -81,6 +89,7 @@ app.use('/api/scheduled-jobs', scheduledJobRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/settings', schoolSettingsRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });
