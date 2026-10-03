@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { generateToken, hashToken, defaultExpiry } = require('../utils/paymentLink');
 
 exports.list = async (req, res) => {
     try {
@@ -85,5 +86,53 @@ exports.getById = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while fetching the parent/guardian.' });
+    }
+};
+
+// Generates a fresh secure payment link for this parent, covering ALL
+// their children's outstanding balances (scope 'parent_all' — matches the
+// workflow's consolidated-payment default). Only the token's hash is ever
+// stored, so the raw token can only ever be returned here, once — any
+// existing active link for this parent is revoked first rather than
+// "reused," since we have no way to show an already-hashed token again.
+// This is a minimal, admin-triggered version of link generation; the
+// Friday SMS job (a later phase) will call the same underlying insert
+// automatically instead of requiring a manual click.
+exports.generatePaymentLink = async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const [[parent]] = await connection.query(
+            'SELECT id FROM parents WHERE id = ? AND school_id = ?',
+            [req.params.id, req.user.schoolId]
+        );
+        if (!parent) {
+            connection.release();
+            return res.status(404).json({ status: 'error', message: 'Parent/guardian not found.' });
+        }
+
+        const token = generateToken();
+        const tokenHash = hashToken(token);
+        const expiresAt = defaultExpiry();
+
+        await connection.beginTransaction();
+        await connection.query(
+            `UPDATE payment_links SET status = 'revoked' WHERE parent_id = ? AND school_id = ? AND status = 'active'`,
+            [req.params.id, req.user.schoolId]
+        );
+        await connection.query(
+            `INSERT INTO payment_links (school_id, parent_id, token_hash, scope, expires_at, created_by)
+             VALUES (?, ?, ?, 'parent_all', ?, ?)`,
+            [req.user.schoolId, req.params.id, tokenHash, expiresAt, req.user.userId]
+        );
+        await connection.commit();
+
+        const checkoutUrl = `${process.env.FRONTEND_URL || 'http://localhost:3100'}/pay/${token}`;
+        res.status(201).json({ status: 'success', data: { url: checkoutUrl, expiresAt } });
+    } catch (error) {
+        await connection.rollback();
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while generating the payment link.' });
+    } finally {
+        connection.release();
     }
 };

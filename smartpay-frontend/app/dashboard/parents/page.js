@@ -56,6 +56,7 @@ export default function ParentsPage() {
   const [parents, setParents] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [linkState, setLinkState] = useState({});
 
   function load() {
     apiRequest("/parents").then((res) => setParents(res.data));
@@ -67,6 +68,25 @@ export default function ParentsPage() {
     setExpandedId(id);
     const res = await apiRequest(`/parents/${id}`);
     setDetail(res.data);
+  }
+
+  async function generateLink(id) {
+    setLinkState((s) => ({ ...s, [id]: { loading: true } }));
+    try {
+      const res = await apiRequest(`/parents/${id}/payment-link`, { method: "POST" });
+      setLinkState((s) => ({ ...s, [id]: { url: res.data.url } }));
+    } catch (err) {
+      setLinkState((s) => ({ ...s, [id]: { error: err.message } }));
+    }
+  }
+
+  async function copyLink(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Clipboard API can fail/be blocked — the link is still visible and
+      // selectable on screen, so this is a convenience, not a requirement.
+    }
   }
 
   return (
@@ -91,6 +111,14 @@ export default function ParentsPage() {
                       <button onClick={() => toggleExpand(p.id)} className="text-xs font-medium text-[var(--primary)] hover:underline">
                         {expandedId === p.id ? "Hide children" : "View children"}
                       </button>
+                      {" · "}
+                      <button
+                        onClick={() => generateLink(p.id)}
+                        disabled={linkState[p.id]?.loading}
+                        className="text-xs font-medium text-[var(--primary)] hover:underline disabled:opacity-60"
+                      >
+                        {linkState[p.id]?.loading ? "Generating..." : "Payment Link"}
+                      </button>
                     </td>
                   </tr>
                   {expandedId === p.id && detail && (
@@ -108,6 +136,24 @@ export default function ParentsPage() {
                           </ul>
                         )}
                       </td>
+                    </tr>
+                  )}
+                  {linkState[p.id]?.url && (
+                    <tr className="border-b border-[var(--border)] bg-blue-50">
+                      <td colSpan={4} className="p-3">
+                        <p className="text-xs text-[var(--slate-quiet)]">Share this link with {p.full_name} (e.g. via SMS) — it stays valid for 30 days:</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <code className="flex-1 truncate rounded bg-white px-2 py-1 text-xs text-[var(--ink)]">{linkState[p.id].url}</code>
+                          <button onClick={() => copyLink(linkState[p.id].url)} className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-semibold text-white hover:bg-[var(--primary-bright)]">
+                            Copy
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {linkState[p.id]?.error && (
+                    <tr className="border-b border-[var(--border)]">
+                      <td colSpan={4} className="p-3 text-xs text-[var(--danger)]">{linkState[p.id].error}</td>
                     </tr>
                   )}
                 </Fragment>

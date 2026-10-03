@@ -110,9 +110,58 @@ for a full management system.
   expanded history, voided it, and confirmed the invoice correctly
   reverted to Unpaid/GHS 500 while the payment row stayed visible marked
   Voided rather than disappearing.
-- **Phase 5 onward — not started.** Online payments (Paystack webhook),
-  arrears, SMS reminders, the Friday automation job, reports, audit logs
-  — all per the spec's own Phases 5–11, picked up in future sessions.
+- **Phase 5 — Online payments: SHIPPED 2026-10-03 (code-complete; real
+  Paystack keys pending).** A provider-agnostic `PaymentGateway` contract
+  (`utils/paymentGateway.js`) with a real Paystack adapter
+  (`utils/paystackGateway.js`) implementing initialize/verify/webhook
+  parsing/signature validation — same proven shape as Academia Hub's
+  already-shipped, already-pentested Paystack integration, extended with
+  a `verifyTransaction()` server-to-server check used by the public
+  status page (not the webhook itself — see Decisions Log). Secure
+  payment links (`payment_links`, token hashed with SHA-256, raw token
+  shown exactly once at generation) resolve to a parent's full
+  consolidated view of every child's outstanding balance, with **no
+  account or login** — the entire point of the product. A payment still
+  maps 1:1 to one invoice (parent picks which invoice to pay from the
+  consolidated list, same as Phase 4's manual payments), rather than
+  building multi-invoice payment splitting in this pass. The webhook
+  (`POST /api/payments/webhook`) is signature-verified
+  (HMAC-SHA512 of the raw body), idempotent (a payment already
+  `success`/`failed`/`cancelled` is never reprocessed), amount-checked
+  against the original payment record, and logs every delivery to
+  `payment_attempts` regardless of outcome. 20 new backend tests (63
+  total, 1 deliberately skipped pending real keys — see below): link
+  generation/revocation/expiry, tenant isolation on link generation,
+  token-hash-never-equals-raw-token, checkout scoping, overpayment/
+  non-positive-amount/cross-parent rejection, webhook signature
+  rejection, success/failure/amount-mismatch/duplicate-delivery/
+  unknown-reference handling, and public status-check. Frontend: a
+  "Payment Link" action on the Parents page (admin-generated, copies a
+  shareable URL), a standalone public `/pay/[token]` checkout page
+  (outside the authenticated dashboard shell entirely — no `AuthContext`
+  gating), and a `/pay/status/[reference]` page that polls real payment
+  status rather than trusting the gateway redirect alone (the spec is
+  explicit that a browser redirect is never proof of payment). Live-
+  verified end-to-end via a real browser run: generated a link from the
+  Parents page, loaded the public checkout page, confirmed it showed the
+  correct parent/child/invoice (and only that parent's data), selected
+  an invoice, submitted a payment — which failed with a clean, friendly
+  error rather than a crash, exactly as expected, since
+  `PAYSTACK_SECRET_KEY` is still a placeholder; the status page was
+  separately verified by seeding a `success` payment directly and
+  confirming it renders "Payment successful" correctly. **Real Paystack
+  credentials are the one piece still pending** — SmartPay deliberately
+  uses its **own, separate Paystack business profile**, not Academia
+  Hub's (two different products moving two different schools' real
+  money), per the user's explicit choice on 2026-10-03. Once test keys
+  are added to `.env`, the one currently-skipped live-initialize test
+  (`onlinePayments.integration.test.js`) activates automatically, and a
+  real test-mode checkout should be run through once before going live.
+- **Phase 6 onward — not started.** Arrears aggregation/filtering (the
+  full admin page this phase's manual "Payment Link" button is a
+  placeholder for), SMS reminders, the Friday automation job, reports,
+  audit logs — all per the spec's own Phases 6–11, picked up in future
+  sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -133,6 +182,11 @@ for a full management system.
 | 2026-10-03 | Invoice generation processes eligible students **sequentially**, each as its own transaction (not `Promise.all` in parallel), and uses a temporary `'PENDING'` placeholder for `invoice_no` before updating it to the real `INV-{schoolId}-{paddedId}` value once the row's real ID is known. | `invoice_no` is `UNIQUE(school_id, invoice_no)`, and the real number can't be computed before the insert (it depends on the auto-increment ID the insert produces). Sequential processing — each transaction fully commits before the next student's begins — means the placeholder can never collide with another student's still-placeholder row in the same batch; parallelizing this would reintroduce exactly that race. |
 | 2026-10-03 | Invoice due date defaults to the term's own `end_date` when the caller doesn't supply one, rather than a fixed offset like "30 days from issue." | A fee is conceptually due *within the term it covers*, not some arbitrary number of days after billing — reuses a fact the system already has (the term's real end date) instead of inventing a second, independent due-date policy that could silently disagree with the academic calendar. |
 | 2026-10-03 | `school.currency` (needed to format real money amounts on the new Fee Structures/Invoices pages) was missing from both the login and `/auth/me` response shapes — only `id`/`name`/`code` were ever selected from `schools`. Fixed by adding `currency` to both `SELECT` queries and both response shapes, and hardcoding `currency: "GHS"` client-side for the `register-school` success path (matches the real DB default; no currency-selection UI exists at signup to justify the backend returning it there). | Found while building the Fee Structures page, which needed `user.school.currency` to call the new `formatMoney()` helper — a reminder that a session payload only carries what an earlier phase happened to need, not everything a later phase will. |
-| 2026-10-03 | A payment is never deleted, only marked `status='void'` with a required `void_reason`/`voided_at`/`voided_by`. `invoices.paid_amount`/`balance`/`status` are written in exactly one place, `recalculateInvoiceBalance()`, which always re-sums `SUM(amount) WHERE status != 'void'` from the real `payments` table rather than incrementing/decrementing a running total — called identically after both recording and voiding a payment. | A running total that gets directly incremented/decremented on each payment/void is exactly the kind of state that silently drifts after one missed edge case; re-deriving it fresh from the source-of-truth table every time makes that class of bug structurally impossible, at the cost of one extra query per write — a trade worth making for money. |
+| 2026-10-03 | A payment is never deleted, only marked `status='void'` with a required `void_reason`/`voided_at`/`voided_by`. `invoices.paid_amount`/`balance`/`status` are written in exactly one place, `recalculateInvoiceBalance()`, which always re-sums `SUM(amount) WHERE status = 'success'` from the real `payments` table rather than incrementing/decrementing a running total — called identically after recording a manual payment, voiding one, or a webhook confirming an online payment. (Phase 5 tightened the WHERE clause from `!= 'void'` to `= 'success'` once online payments introduced real intermediate states — `initiated`/`pending`/`failed`/`cancelled` — that must not count toward the balance either.) | A running total that gets directly incremented/decremented on each payment/void is exactly the kind of state that silently drifts after one missed edge case; re-deriving it fresh from the source-of-truth table every time makes that class of bug structurally impossible, at the cost of one extra query per write — a trade worth making for money. |
 | 2026-10-03 | Overpayment is rejected outright in v1 — a payment amount greater than the invoice's current `balance` (re-read inside the transaction) returns 400, no credit or unallocated-payment handling exists. | Matches the spec's own stated default ("reject by default in v1 unless the product explicitly implements credits/unallocated payments") — credits are a real feature with their own rules (which invoice absorbs a credit next, whether it's visible to a parent) that shouldn't be improvised as a side effect of payment recording. |
 | 2026-10-03 | The payment UI lives inside the existing Invoices page (a "Pay" action + an inline expandable "History" panel per row) rather than a new `/dashboard/payments` route. | A payment only ever makes sense in the context of a specific invoice — the user's task is always "pay this invoice" or "see this invoice's payment history," never "browse all payments platform-wide" (that's what Phase 9's reports are for) — so keeping it attached to the invoice row avoids a page whose only job would be re-deriving context the Invoices page already has. |
+| 2026-10-03 | SmartPay uses its own, separate Paystack business profile — never Academia Hub's existing one. | User's explicit choice: SmartPay is a different product moving a different school's real money. Sharing one merchant account would blend two schools' transactions under one dashboard, complicate reconciliation, and tie SmartPay's payment uptime/compliance to an unrelated product's account. |
+| 2026-10-03 | The Paystack webhook trusts the signature-verified payload directly (HMAC-SHA512 over the raw body) rather than making a second server-to-server `verifyTransaction()` call before crediting an invoice. `verifyTransaction()` is still built and used elsewhere — by the public payment-status endpoint, as a live fallback when a payment is still `initiated`/`pending` and the parent is waiting on the success page. | Matches Academia Hub's own Paystack integration exactly (`controllers/financeController.js`), which has been live in production and already passed a dedicated penetration test without this being flagged — signature verification against a secret only Paystack and this server know IS itself a strong authenticity proof, not a weaker substitute for one. A redundant verify-call on every webhook would also make the webhook's own test suite depend on live Paystack credentials just to prove idempotency/signature-rejection, which are really independent concerns. |
+| 2026-10-03 | A payment always maps to exactly one invoice, even though a secure payment link shows a parent ALL of their children's outstanding invoices at once (consolidated, per the spec's step 48). The parent picks one invoice to pay per checkout rather than the backend splitting a single payment across several invoices. | Building payment-allocation/splitting (one gateway transaction crediting N invoices) is a materially bigger feature with its own edge cases (partial allocation order, display, refund semantics) that the spec itself frames as conditional ("if... configured for consolidated payment"), not mandatory. Shipping the real core journey now — secure link → see every balance → pick one → pay → webhook confirms → balance updates — and deferring true multi-invoice bundling keeps this phase's scope honest rather than quietly expanding it. |
+| 2026-10-03 | `payment_links` has no true "reuse" — generating a new link for a parent immediately revokes any existing active one, then creates a fresh token. | Only the token's hash is ever stored (never the raw token), so there is no way to show an admin the SAME raw link twice once the page generating it has been left. Revoke-then-regenerate keeps "at most one active link per parent" a clean invariant instead of accumulating silently-still-valid old links every time an admin re-clicks "Payment Link." |
+| 2026-10-03 | The "Payment Link" action lives on the Parents page as a manual, admin-triggered button for this phase, not on a dedicated Arrears page. | Phase 6 (Arrears) is what actually builds the aggregation/filtering view this belongs on long-term, and Phase 7/8's Friday SMS job will generate these links automatically without any admin click at all. Building the full Arrears UX now would be scope creep ahead of its own phase; a manual admin action is enough to make Phase 5's payment machinery real and testable today. |

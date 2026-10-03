@@ -22,3 +22,17 @@ exports.registerRateLimit = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+// Covers the public, unauthenticated checkout surface (token lookup +
+// payment initialization) — per the spec's security requirements,
+// explicitly called out alongside login as needing rate limiting since
+// anyone can hit these with no account. Generous enough for a parent
+// retrying a typo'd amount a few times, tight enough to blunt token
+// brute-forcing (the token itself is the real defense — 192 bits of
+// entropy — but this adds a second layer against sheer request volume).
+exports.publicPaymentRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+});

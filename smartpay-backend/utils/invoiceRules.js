@@ -15,16 +15,20 @@ function invoiceNumber(schoolId, invoiceId) {
 }
 
 // The one place paid_amount/balance/status ever get written — called
-// after recording OR voiding a payment, always re-summing from the real
-// payments table rather than incrementing/decrementing a running total.
-// A voided payment is excluded from the sum (status != 'void'), which is
-// what actually makes voiding "work" from the invoice's point of view —
+// after recording a manual payment, voiding one, or an online payment's
+// webhook confirming success, always re-summing from the real payments
+// table rather than incrementing/decrementing a running total. Only rows
+// with status='success' count — a manual payment is inserted as success
+// immediately, but an online payment passes through initiated/pending
+// first and must not affect the balance until the gateway actually
+// confirms it; a voided payment (status='void') is likewise excluded,
+// which is what makes voiding "work" from the invoice's point of view —
 // the payment row itself is never deleted, only marked void, so the full
 // history stays intact.
 async function recalculateInvoiceBalance(connection, invoiceId) {
     const [[invoice]] = await connection.query('SELECT total FROM invoices WHERE id = ?', [invoiceId]);
     const [[{ paidAmount }]] = await connection.query(
-        `SELECT COALESCE(SUM(amount), 0) AS paidAmount FROM payments WHERE invoice_id = ? AND status != 'void'`,
+        `SELECT COALESCE(SUM(amount), 0) AS paidAmount FROM payments WHERE invoice_id = ? AND status = 'success'`,
         [invoiceId]
     );
     const balance = Math.max(Number(invoice.total) - Number(paidAmount), 0);

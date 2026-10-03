@@ -13,6 +13,7 @@ const studentRoutes = require('./routes/studentRoutes');
 const feeStructureRoutes = require('./routes/feeStructureRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const publicPaymentRoutes = require('./routes/publicPaymentRoutes');
 
 const app = express();
 
@@ -43,7 +44,13 @@ app.use(cors({
     },
     credentials: true,
 }));
-app.use(express.json());
+// verify captures the exact request bytes onto req.rawBody — needed
+// because Paystack's webhook signature is computed over the raw body, and
+// by the time a route handler sees req.body it's already been parsed into
+// an object (re-serializing it would not reproduce the original bytes
+// byte-for-byte, e.g. key ordering/whitespace, and would fail
+// verification). Same proven pattern as Academia Hub's server.js.
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
 app.get('/api/health', (req, res) => {
@@ -59,6 +66,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/fee-structures', feeStructureRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/public', publicPaymentRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });
