@@ -64,10 +64,30 @@ for a full management system.
   this live pass and fixed with a `formatDate()` helper on the Academic
   Setup page — not a backend issue, every date field needs this same
   treatment as more pages render dates going forward.
-- **Phase 3 onward — not started.** Fee structures, invoices, manual +
-  online payments, Paystack webhook, arrears, SMS reminders, the Friday
-  automation job, reports, audit logs — all per the spec's own Phases
-  3–11, picked up in future sessions.
+- **Phase 3 — Fee engine: SHIPPED 2026-10-03.** Fee structures (with
+  line items, created together in one transaction — a structure with zero
+  items is never allowed to exist even momentarily) and bulk invoice
+  generation. The spec's critical invoice-snapshot rule (editing a fee
+  structure's items must never change an already-generated invoice) is
+  enforced by construction — `invoice_items` is a real copied table, not
+  a view/join onto `fee_structure_items` — and proven with a test that
+  mutates a fee item's amount in the DB directly after generation and
+  confirms the existing invoice is untouched. Generation is idempotent
+  per student via `invoices`' `UNIQUE(student_id, fee_structure_id)`
+  (caught as `ER_DUP_ENTRY`, never a pre-check — same TOCTOU-safe pattern
+  as `register-school`), processed sequentially so each student's
+  invoice+items commit as one transaction before the next starts. 29
+  backend tests green, including a student added to a class *after* the
+  first generation run being correctly picked up by a second run without
+  re-billing anyone already invoiced. Live-verified through the real UI:
+  created a fee structure with two line items through the actual form,
+  generated invoices for 2 students, re-ran generation and confirmed
+  "Created 0, skipped 2 (already billed)" — idempotency proven through
+  the product, not just the API.
+- **Phase 4 onward — not started.** Manual + online payments, Paystack
+  webhook, arrears, SMS reminders, the Friday automation job, reports,
+  audit logs — all per the spec's own Phases 4–11, picked up in future
+  sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -83,3 +103,8 @@ for a full management system.
 | 2026-10-03 | `parent_student` carries no `school_id` column of its own. Tenant isolation on link/unlink is enforced by joining back to `students.school_id` (and separately verifying the parent row belongs to the same school before inserting). | A join table's isolation is only as strong as the queries that touch it — `unlinkParent` explicitly joins through `students` rather than trusting a bare `parent_student.id`, since that column alone carries no tenant information to check against. |
 | 2026-10-03 | `academic_years`/`terms` both get `is_current`, set via a full-replace transaction (clear every row for this school, then set the one requested) rather than a single UPDATE. | Same "current term" pattern Academia Hub already validated — makes "exactly one current year/term per school" true by construction instead of relying on every caller to remember to unset the old one. Verified live: setting a second year current correctly un-currents the first, confirmed via both a test and the real UI. |
 | 2026-10-03 | Every new Phase 2 table got its own tenant-isolation test, not just a shared assumption from Phase 1's proof — including a direct IDOR check (school B fetching school A's student/parent by a guessed small-integer ID) and a cross-tenant foreign-key check (school B creating a student against school A's class/year ID). | Each new tenant-owned table and each new foreign-key relationship is a fresh place a missing `WHERE school_id = ?` or a missing ownership re-check could slip in — Phase 1's isolation proof covered auth only, not these new resources, so it doesn't substitute for re-testing here. |
+| 2026-10-03 | `invoice_items` is a real, separately-stored copy of `fee_structure_items` at generation time, never a live join/view onto the fee structure. | This is the spec's single most load-bearing business rule (section 7's "invoice snapshot" row, section 4.2's explicit implementation note): a fee structure edited after invoices exist must never retroactively change what a student already owes. Proven with a test, not just asserted — mutated a fee item's amount directly in the DB after generation and confirmed the existing invoice's total and item amount were both untouched. |
+| 2026-10-03 | Fee structures have no uniqueness constraint across `(term_id, class_id)` — only `(term_id, class_id, name)`, so a school can legitimately have multiple differently-named fee structures for the same class/term (e.g. "Day Student Fees" vs "Boarding Fees"). | The spec doesn't call for one-structure-per-class/term, and a school genuinely billing different student categories differently within the same class needs this — a stricter constraint would have blocked a real, foreseeable use case for no stated benefit. |
+| 2026-10-03 | Invoice generation processes eligible students **sequentially**, each as its own transaction (not `Promise.all` in parallel), and uses a temporary `'PENDING'` placeholder for `invoice_no` before updating it to the real `INV-{schoolId}-{paddedId}` value once the row's real ID is known. | `invoice_no` is `UNIQUE(school_id, invoice_no)`, and the real number can't be computed before the insert (it depends on the auto-increment ID the insert produces). Sequential processing — each transaction fully commits before the next student's begins — means the placeholder can never collide with another student's still-placeholder row in the same batch; parallelizing this would reintroduce exactly that race. |
+| 2026-10-03 | Invoice due date defaults to the term's own `end_date` when the caller doesn't supply one, rather than a fixed offset like "30 days from issue." | A fee is conceptually due *within the term it covers*, not some arbitrary number of days after billing — reuses a fact the system already has (the term's real end date) instead of inventing a second, independent due-date policy that could silently disagree with the academic calendar. |
+| 2026-10-03 | `school.currency` (needed to format real money amounts on the new Fee Structures/Invoices pages) was missing from both the login and `/auth/me` response shapes — only `id`/`name`/`code` were ever selected from `schools`. Fixed by adding `currency` to both `SELECT` queries and both response shapes, and hardcoding `currency: "GHS"` client-side for the `register-school` success path (matches the real DB default; no currency-selection UI exists at signup to justify the backend returning it there). | Found while building the Fee Structures page, which needed `user.school.currency` to call the new `formatMoney()` helper — a reminder that a session payload only carries what an earlier phase happened to need, not everything a later phase will. |

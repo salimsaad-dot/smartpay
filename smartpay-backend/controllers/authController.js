@@ -106,7 +106,7 @@ exports.login = async (req, res) => {
 
         await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
 
-        const [[school]] = await pool.query('SELECT id, name, code FROM schools WHERE id = ?', [user.school_id]);
+        const [[school]] = await pool.query('SELECT id, name, code, currency FROM schools WHERE id = ?', [user.school_id]);
 
         const token = signToken(user);
         res.cookie('token', token, { ...authCookieOptions(), maxAge: 24 * 60 * 60 * 1000 });
@@ -119,7 +119,7 @@ exports.login = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                school: { id: school.id, name: school.name, code: school.code },
+                school: { id: school.id, name: school.name, code: school.code, currency: school.currency },
             },
         });
     } catch (error) {
@@ -142,7 +142,7 @@ exports.getMe = async (req, res) => {
         if (!user) {
             return res.status(404).json({ status: 'error', message: 'Account not found.' });
         }
-        const [[school]] = await pool.query('SELECT id, name, code FROM schools WHERE id = ?', [user.school_id]);
+        const [[school]] = await pool.query('SELECT id, name, code, currency FROM schools WHERE id = ?', [user.school_id]);
 
         res.status(200).json({
             status: 'success',
@@ -151,7 +151,7 @@ exports.getMe = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                school: { id: school.id, name: school.name, code: school.code },
+                school: { id: school.id, name: school.name, code: school.code, currency: school.currency },
             },
         });
     } catch (error) {

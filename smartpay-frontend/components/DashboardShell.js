@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { href: "/dashboard/classes", label: "Classes" },
   { href: "/dashboard/students", label: "Students" },
   { href: "/dashboard/parents", label: "Parents" },
+  { href: "/dashboard/fee-structures", label: "Fee Structures" },
+  { href: "/dashboard/invoices", label: "Invoices" },
 ];
 
 export default function DashboardShell({ children }) {

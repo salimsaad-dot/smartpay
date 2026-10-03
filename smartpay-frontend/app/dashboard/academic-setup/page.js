@@ -2,18 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
 
 const inputClass =
   "w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
 const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
-
-// mysql2 returns DATE columns as JS Date objects, which JSON.stringify
-// serializes as a full ISO datetime ("2026-09-01T00:00:00.000Z") — this
-// formats it the way a plain date field should actually read.
-function formatDate(d) {
-  return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
 
 function YearForm({ onCreated }) {
   const [form, setForm] = useState({ name: "", startDate: "", endDate: "" });

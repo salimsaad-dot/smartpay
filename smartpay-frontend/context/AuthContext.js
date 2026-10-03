@@ -26,7 +26,11 @@ export function AuthProvider({ children }) {
       name: payload.adminName,
       email: payload.email,
       role: res.data.role,
-      school: { id: res.data.schoolId, name: res.data.schoolName, code: res.data.code },
+      // currency isn't returned by register-school (no currency-selection
+      // UI exists at signup) — GHS is the real DB default for a freshly
+      // created school, so it's safe to assume here rather than add a
+      // field the endpoint has no other reason to return.
+      school: { id: res.data.schoolId, name: res.data.schoolName, code: res.data.code, currency: "GHS" },
     });
     return res.data;
   }

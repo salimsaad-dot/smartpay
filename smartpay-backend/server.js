@@ -10,6 +10,8 @@ const termRoutes = require('./routes/termRoutes');
 const classRoutes = require('./routes/classRoutes');
 const parentRoutes = require('./routes/parentRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const feeStructureRoutes = require('./routes/feeStructureRoutes');
+const invoiceRoutes = require('./routes/invoiceRoutes');
 
 const app = express();
 
@@ -53,6 +55,8 @@ app.use('/api/terms', termRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/parents', parentRoutes);
 app.use('/api/students', studentRoutes);
+app.use('/api/fee-structures', feeStructureRoutes);
+app.use('/api/invoices', invoiceRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });
