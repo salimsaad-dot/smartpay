@@ -12,6 +12,7 @@ const parentRoutes = require('./routes/parentRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const feeStructureRoutes = require('./routes/feeStructureRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use('/api/parents', parentRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/fee-structures', feeStructureRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/payments', paymentRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });

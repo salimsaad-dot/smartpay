@@ -84,10 +84,35 @@ for a full management system.
   generated invoices for 2 students, re-ran generation and confirmed
   "Created 0, skipped 2 (already billed)" — idempotency proven through
   the product, not just the API.
-- **Phase 4 onward — not started.** Manual + online payments, Paystack
-  webhook, arrears, SMS reminders, the Friday automation job, reports,
-  audit logs — all per the spec's own Phases 4–11, picked up in future
-  sessions.
+- **Phase 4 — Manual payments: SHIPPED 2026-10-03.** Recording a manual
+  payment (cash/mobile money/bank transfer/other) against an invoice, and
+  voiding one. `payments` is append-only — a void never deletes a row,
+  only marks it `status='void'` with a required reason, voider, and
+  timestamp, preserving full history. `invoices.paid_amount`/`balance`/
+  `status` are never written anywhere except inside the one shared
+  `recalculateInvoiceBalance()` helper, which re-sums straight from
+  `payments` (excluding voided rows) every time — called after both
+  recording and voiding, so the two code paths can't drift out of sync.
+  Overpayment is rejected outright (amount validated against the
+  invoice's current balance, re-read fresh inside the transaction, not
+  trusted from an earlier page load) — matches the spec's stated v1
+  default of no credit/unallocated-payment handling. 13 new backend tests
+  (42 total), covering partial→paid status transitions, overpayment
+  rejection, void correctly reversing balance impact while leaving the
+  payment row intact, a voided payment excluded from `paid_amount` while
+  a sibling active payment on the same invoice still counts, and tenant
+  isolation on both recording and voiding. Frontend: a "Pay" action and a
+  "History" toggle added to the existing Invoices page (no new route) —
+  a modal records a payment, an inline expandable panel lists an
+  invoice's payment history with per-payment void. Live-verified through
+  the real UI via a real browser run: recorded a GHS 200 partial payment
+  against a GHS 500 invoice (confirmed Partially Paid, balance GHS 300),
+  expanded history, voided it, and confirmed the invoice correctly
+  reverted to Unpaid/GHS 500 while the payment row stayed visible marked
+  Voided rather than disappearing.
+- **Phase 5 onward — not started.** Online payments (Paystack webhook),
+  arrears, SMS reminders, the Friday automation job, reports, audit logs
+  — all per the spec's own Phases 5–11, picked up in future sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -108,3 +133,6 @@ for a full management system.
 | 2026-10-03 | Invoice generation processes eligible students **sequentially**, each as its own transaction (not `Promise.all` in parallel), and uses a temporary `'PENDING'` placeholder for `invoice_no` before updating it to the real `INV-{schoolId}-{paddedId}` value once the row's real ID is known. | `invoice_no` is `UNIQUE(school_id, invoice_no)`, and the real number can't be computed before the insert (it depends on the auto-increment ID the insert produces). Sequential processing — each transaction fully commits before the next student's begins — means the placeholder can never collide with another student's still-placeholder row in the same batch; parallelizing this would reintroduce exactly that race. |
 | 2026-10-03 | Invoice due date defaults to the term's own `end_date` when the caller doesn't supply one, rather than a fixed offset like "30 days from issue." | A fee is conceptually due *within the term it covers*, not some arbitrary number of days after billing — reuses a fact the system already has (the term's real end date) instead of inventing a second, independent due-date policy that could silently disagree with the academic calendar. |
 | 2026-10-03 | `school.currency` (needed to format real money amounts on the new Fee Structures/Invoices pages) was missing from both the login and `/auth/me` response shapes — only `id`/`name`/`code` were ever selected from `schools`. Fixed by adding `currency` to both `SELECT` queries and both response shapes, and hardcoding `currency: "GHS"` client-side for the `register-school` success path (matches the real DB default; no currency-selection UI exists at signup to justify the backend returning it there). | Found while building the Fee Structures page, which needed `user.school.currency` to call the new `formatMoney()` helper — a reminder that a session payload only carries what an earlier phase happened to need, not everything a later phase will. |
+| 2026-10-03 | A payment is never deleted, only marked `status='void'` with a required `void_reason`/`voided_at`/`voided_by`. `invoices.paid_amount`/`balance`/`status` are written in exactly one place, `recalculateInvoiceBalance()`, which always re-sums `SUM(amount) WHERE status != 'void'` from the real `payments` table rather than incrementing/decrementing a running total — called identically after both recording and voiding a payment. | A running total that gets directly incremented/decremented on each payment/void is exactly the kind of state that silently drifts after one missed edge case; re-deriving it fresh from the source-of-truth table every time makes that class of bug structurally impossible, at the cost of one extra query per write — a trade worth making for money. |
+| 2026-10-03 | Overpayment is rejected outright in v1 — a payment amount greater than the invoice's current `balance` (re-read inside the transaction) returns 400, no credit or unallocated-payment handling exists. | Matches the spec's own stated default ("reject by default in v1 unless the product explicitly implements credits/unallocated payments") — credits are a real feature with their own rules (which invoice absorbs a credit next, whether it's visible to a parent) that shouldn't be improvised as a side effect of payment recording. |
+| 2026-10-03 | The payment UI lives inside the existing Invoices page (a "Pay" action + an inline expandable "History" panel per row) rather than a new `/dashboard/payments` route. | A payment only ever makes sense in the context of a specific invoice — the user's task is always "pay this invoice" or "see this invoice's payment history," never "browse all payments platform-wide" (that's what Phase 9's reports are for) — so keeping it attached to the invoice row avoids a page whose only job would be re-deriving context the Invoices page already has. |
