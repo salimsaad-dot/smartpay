@@ -1,5 +1,5 @@
 const pool = require('../db');
-const { generateToken, hashToken, defaultExpiry } = require('../utils/paymentLink');
+const { createPaymentLink } = require('../utils/paymentLink');
 
 exports.list = async (req, res) => {
     try {
@@ -110,24 +110,15 @@ exports.generatePaymentLink = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Parent/guardian not found.' });
         }
 
-        const token = generateToken();
-        const tokenHash = hashToken(token);
-        const expiresAt = defaultExpiry();
-
         await connection.beginTransaction();
-        await connection.query(
-            `UPDATE payment_links SET status = 'revoked' WHERE parent_id = ? AND school_id = ? AND status = 'active'`,
-            [req.params.id, req.user.schoolId]
-        );
-        await connection.query(
-            `INSERT INTO payment_links (school_id, parent_id, token_hash, scope, expires_at, created_by)
-             VALUES (?, ?, ?, 'parent_all', ?, ?)`,
-            [req.user.schoolId, req.params.id, tokenHash, expiresAt, req.user.userId]
-        );
+        const { url, expiresAt } = await createPaymentLink(connection, {
+            schoolId: req.user.schoolId,
+            parentId: req.params.id,
+            createdBy: req.user.userId,
+        });
         await connection.commit();
 
-        const checkoutUrl = `${process.env.FRONTEND_URL || 'http://localhost:3100'}/pay/${token}`;
-        res.status(201).json({ status: 'success', data: { url: checkoutUrl, expiresAt } });
+        res.status(201).json({ status: 'success', data: { url, expiresAt } });
     } catch (error) {
         await connection.rollback();
         console.error(error);

@@ -201,9 +201,57 @@ for a full management system.
   never appeared, confirmed the flat and grouped-by-parent views both
   showed correct totals, confirmed the min-balance filter worked, and
   generated a real payment link directly from the grouped view.
-- **Phase 7 onward — not started.** SMS reminders, the Friday automation
-  job, reports, audit logs — all per the spec's own Phases 7–11, picked
-  up in future sessions.
+- **Phase 7 — SMS: SHIPPED 2026-10-03 (code-complete; real mNotify key
+  pending).** A provider-agnostic `SmsProvider` contract
+  (`utils/smsProvider.js`) with an mNotify adapter
+  (`utils/mnotifyProvider.js`) — same architectural pattern as Phase 5's
+  `PaymentGateway`/`paystackGateway.js`, independently reimplemented
+  rather than shared code (matches Academia Hub's own proven mNotify
+  integration in shape, but returns a structured
+  `{success, providerMessageId, error}` result instead of Academia Hub's
+  fire-and-forget console-log pattern, since `sms_reminders` needs a real
+  outcome to persist per reminder). Every new school is auto-seeded with
+  one active default template at registration — a school can send a
+  reminder immediately with zero configuration, matching the product's
+  "replacement for an overly complicated system" premise. The manual
+  reminder workflow (spec 4.8) resolves a scope from whatever the admin
+  selected — one invoice, one student's invoices, or a parent's full
+  consolidated balance — through one shared `resolveReminderScope()`
+  function; `{{student_name}}`/`{{total_balance}}` render as a joined
+  list/sum for the multi-child case rather than the spec's richer
+  per-child breakdown format (a documented scope cut, see Decisions Log).
+  Preview never generates a real payment link (would needlessly revoke
+  a parent's existing one for a message that might never be sent) — only
+  an actual Send does, via the same `createPaymentLink()` helper Phase 5
+  built, extracted into a shared util during this phase specifically so
+  both flows stay identical. Validation order is phone-number-specific
+  errors before provider-configuration errors, and both are checked
+  *before* any payment link is generated, so a doomed send never burns a
+  working link. 18 new backend tests (85 total): auto-seeded default
+  template, template CRUD with duplicate-name rejection, single-invoice
+  vs. consolidated-parent preview rendering, no-balance-in-scope
+  rejection, invalid-phone rejection, provider-not-configured rejection
+  (the real path, not a mock — this test environment has no API key
+  configured), tenant isolation, and failed attempts correctly absent
+  from reminder history (nothing was actually attempted, so nothing is
+  logged). Frontend: an SMS Templates page (CRUD, variable reference),
+  a Reminder History page (status, expandable message view, failure
+  reasons), and a "Send Reminder" action on both Arrears table views
+  (per-invoice and per-parent-grouped) opening a preview-then-confirm
+  modal — matching the spec's explicit "preview... admin confirms" flow,
+  no free-text editing. Live-verified end-to-end through the real UI:
+  confirmed the auto-seeded template renders correctly, confirmed the
+  preview modal shows the real rendered message before sending, and
+  confirmed the send path fails cleanly with "SMS provider is not
+  configured" (no real mNotify key yet) rather than crashing — and
+  correctly does **not** appear in reminder history, since nothing was
+  actually attempted. **Real mNotify credentials are the one piece still
+  pending** — SmartPay will use its own, separate mNotify account and
+  sender ID, not Academia Hub's, per the same separate-business
+  reasoning as Paystack.
+- **Phase 8 onward — not started.** The Friday automation job (cycle
+  locks, retry strategy, job history), reports, audit logs — all per the
+  spec's own Phases 8–11, picked up in future sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -239,3 +287,8 @@ for a full management system.
 | 2026-10-03 | The Arrears page's summary totals (total outstanding, students in arrears, invoices in arrears) are computed in JS by reducing over the same rows the table renders, not a second SQL query with duplicated filter logic. | Two independent queries computing "the same" numbers from the same filters is exactly the kind of thing that silently drifts apart the moment one filter is added to one query and not the other. Deriving the summary from the already-fetched, already-filtered rowset makes that class of bug structurally impossible. |
 | 2026-10-03 | Arrears reuses Phase 5's existing `POST /api/parents/:id/payment-link` endpoint for link generation rather than building a new one scoped to the Arrears page. | No new capability was actually needed — Phase 5 already built parent-scoped, consolidated-balance payment links exactly matching what Arrears needs to hand a parent. Reusing it here is direct evidence that phase's groundwork was sized correctly, not scope creep to avoid. |
 | 2026-10-03 | "Reminder status" and "Send Reminder" (both listed in the spec's own Arrears page description) are entirely absent from this page's UI — not even a disabled button. | SMS doesn't exist until Phase 7; a visible-but-disabled control invites exactly the "stale disabled feature despite it actually shipping later" class of bug this project has hit and fixed multiple times before in Academia Hub. Nothing to disable is safer than something to forget to re-enable. |
+| 2026-10-03 | SmartPay's SMS adapter returns a structured `{success, providerMessageId, error}` result instead of Academia Hub's fire-and-forget, never-throws, console-log-only pattern — even though both wrap the same mNotify API. | Academia Hub's version is a side-channel notification with nothing to persist; SmartPay's `sms_reminders` table needs a real outcome to record against every reminder attempt (per spec: "record the failure without deleting the reminder"). A silently-swallowed result would make that table meaningless. |
+| 2026-10-03 | A multi-child (parent-level) reminder renders `{{student_name}}` as a comma-joined list ("Kofi Mensah, Yaw Mensah") and `{{total_balance}}` as the combined sum, rather than the spec's richer per-child breakdown format ("Kwame GH₵500; Ama GH₵300"). | The breakdown format effectively needs a second, conditional template variant chosen by child count — real complexity beyond simple `{{variable}}` substitution. Phase 7's stated scope is the SMS adapter, templates, reminder records, and manual sending — not a templating engine; the simpler rendering is correct, shippable, and can be revisited later without changing the underlying data model. |
+| 2026-10-03 | Previewing a reminder never generates a real payment link — it renders the message with placeholder text ("a secure payment link will be included") instead. Only an actual Send generates one. | A payment link's raw token can only ever be shown once (only its hash is stored), and generating one revokes any existing active link for that parent. Doing that on every preview click — which may never lead to an actual send — would needlessly invalidate a link a parent might already be mid-use with, just because an admin looked at a draft message. |
+| 2026-10-03 | `createPaymentLink()` was extracted from `parentController.generatePaymentLink` into a shared `utils/paymentLink.js` function during this phase, used by both the admin "Payment Link" button and the reminder-send flow. | Both call sites need a fresh raw token to embed/display, and since only the hash is ever persisted, there's no way to "look up" an existing link's raw value for reuse — every caller that needs a working link in hand must go through the identical revoke-then-generate logic. Keeping it in one place means the two call sites can't drift apart. |
+| 2026-10-03 | In the send flow, a parent's phone number is validated before the SMS provider's own configuration is checked, and payment-link generation happens only after both checks pass. | Phone validity is the more specific, actionable problem for an admin to fix, and is true regardless of whether the platform's SMS provider happens to be configured — "provider not configured" is a platform-wide condition unrelated to this particular parent. Checking both before touching `payment_links` also means a send that was never going to succeed doesn't needlessly burn a parent's existing link. |

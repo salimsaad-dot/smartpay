@@ -15,6 +15,8 @@ const invoiceRoutes = require('./routes/invoiceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const publicPaymentRoutes = require('./routes/publicPaymentRoutes');
 const arrearsRoutes = require('./routes/arrearsRoutes');
+const smsTemplateRoutes = require('./routes/smsTemplateRoutes');
+const reminderRoutes = require('./routes/reminderRoutes');
 
 const app = express();
 
@@ -69,6 +71,8 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/public', publicPaymentRoutes);
 app.use('/api/arrears', arrearsRoutes);
+app.use('/api/sms-templates', smsTemplateRoutes);
+app.use('/api/reminders', reminderRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });

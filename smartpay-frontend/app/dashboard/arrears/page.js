@@ -58,6 +58,75 @@ function PaymentLinkCell({ parentId }) {
   );
 }
 
+function SendReminderModal({ parentId, invoiceId, label, onClose }) {
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    apiRequest("/reminders/preview", { method: "POST", body: { parentId, invoiceId } })
+      .then((res) => setPreview(res.data))
+      .catch((err) => setError(err.message));
+  }, [parentId, invoiceId]);
+
+  async function handleSend() {
+    setSending(true);
+    setError("");
+    try {
+      await apiRequest("/reminders/send", { method: "POST", body: { parentId, invoiceId } });
+      setResult("success");
+    } catch (err) {
+      setError(err.message);
+      setResult("failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
+        <h2 className="text-lg font-semibold text-[var(--ink)]">Send Reminder</h2>
+        <p className="mt-1 text-sm text-[var(--slate-quiet)]">{label}</p>
+
+        {!preview && !error && <p className="mt-4 text-sm text-[var(--slate-quiet)]">Loading preview...</p>}
+
+        {preview && !result && (
+          <>
+            <p className="mt-3 text-xs text-[var(--slate-quiet)]">To: {preview.phone}</p>
+            <div className="mt-1 rounded-lg bg-gray-50 p-3 text-sm text-[var(--ink)]">{preview.message}</div>
+            {error && <p className="mt-2 text-sm text-[var(--danger)]">{error}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-[var(--slate-quiet)] hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSend} disabled={sending} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60">
+                {sending ? "Sending..." : "Confirm & Send"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {result === "success" && (
+          <>
+            <p className="mt-3 text-sm text-[var(--success)]">Reminder sent.</p>
+            <div className="mt-4 flex justify-end"><button onClick={onClose} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white">Done</button></div>
+          </>
+        )}
+        {result === "failed" && (
+          <>
+            <p className="mt-3 text-sm text-[var(--danger)]">{error}</p>
+            <div className="mt-4 flex justify-end"><button onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-[var(--slate-quiet)] hover:bg-gray-50">Close</button></div>
+          </>
+        )}
+
+        {error && !preview && (
+          <div className="mt-4 flex justify-end"><button onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-[var(--slate-quiet)] hover:bg-gray-50">Close</button></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ArrearsPage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -65,6 +134,7 @@ export default function ArrearsPage() {
   const [terms, setTerms] = useState([]);
   const [filters, setFilters] = useState({ classId: "", termId: "", minBalance: "", maxBalance: "" });
   const [groupByParent, setGroupByParent] = useState(false);
+  const [reminderTarget, setReminderTarget] = useState(null);
 
   function load() {
     const params = new URLSearchParams();
@@ -162,7 +232,19 @@ export default function ArrearsPage() {
                   <td className="p-3">{formatMoney(inv.paid_amount, currency)}</td>
                   <td className="p-3 font-semibold text-[var(--danger)]">{formatMoney(inv.balance, currency)}</td>
                   <td className="p-3">{inv.last_payment_date ? formatDate(inv.last_payment_date) : <span className="text-[var(--slate-quiet)]">Never</span>}</td>
-                  <td className="p-3"><PaymentLinkCell parentId={inv.parent_id} /></td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <PaymentLinkCell parentId={inv.parent_id} />
+                      {inv.parent_id && (
+                        <button
+                          onClick={() => setReminderTarget({ parentId: inv.parent_id, invoiceId: inv.id, label: `${inv.first_name} ${inv.last_name} · ${inv.term_name}` })}
+                          className="text-xs font-medium text-[var(--primary)] hover:underline"
+                        >
+                          Send Reminder
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {data.invoices.length === 0 && <tr><td colSpan={9} className="p-4 text-center text-[var(--slate-quiet)]">No outstanding balances — nothing in arrears.</td></tr>}
@@ -188,13 +270,34 @@ export default function ArrearsPage() {
                   <td className="p-3">{Array.from(g.children).join(", ")}</td>
                   <td className="p-3">{g.invoiceCount}</td>
                   <td className="p-3 font-semibold text-[var(--danger)]">{formatMoney(g.totalBalance, currency)}</td>
-                  <td className="p-3"><PaymentLinkCell parentId={g.parentId} /></td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <PaymentLinkCell parentId={g.parentId} />
+                      {g.parentId && (
+                        <button
+                          onClick={() => setReminderTarget({ parentId: g.parentId, invoiceId: null, label: `${g.parentName} · ${Array.from(g.children).join(", ")}` })}
+                          className="text-xs font-medium text-[var(--primary)] hover:underline"
+                        >
+                          Send Reminder
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {parentGroups.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-[var(--slate-quiet)]">No outstanding balances — nothing in arrears.</td></tr>}
             </tbody>
           </table>
         </div>
+      )}
+
+      {reminderTarget && (
+        <SendReminderModal
+          parentId={reminderTarget.parentId}
+          invoiceId={reminderTarget.invoiceId}
+          label={reminderTarget.label}
+          onClose={() => setReminderTarget(null)}
+        />
       )}
     </DashboardShell>
   );

@@ -2,6 +2,7 @@ const pool = require('../db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { isValidCode } = require('../utils/schoolCode');
+const { DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY } = require('../utils/smsTemplate');
 
 // Same cookie-options shape as Academia Hub, same reasoning: sameSite
 // 'lax' works as long as the frontend proxies /api/* through its own
@@ -59,6 +60,14 @@ exports.registerSchool = async (req, res) => {
         const [userResult] = await connection.query(
             'INSERT INTO users (school_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
             [schoolId, adminName.trim(), email.trim().toLowerCase(), passwordHash, 'school_admin']
+        );
+
+        // A school can send a reminder immediately without configuring
+        // anything first — matches the "replacement for a failed, overly
+        // complicated system" premise this product exists for.
+        await connection.query(
+            `INSERT INTO sms_templates (school_id, name, body, type) VALUES (?, ?, ?, 'manual_reminder')`,
+            [schoolId, DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY]
         );
 
         await connection.commit();

@@ -68,6 +68,7 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
         await db.query('DELETE FROM terms WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM academic_years WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM users WHERE email LIKE ?', [`%${MARKER.toLowerCase()}%`]);
+        await db.query('DELETE FROM sms_templates WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM schools WHERE code LIKE ?', [`%${MARKER.toLowerCase()}%`]);
         await db.end();
     });
