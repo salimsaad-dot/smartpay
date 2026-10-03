@@ -2,6 +2,9 @@ const request = require('supertest');
 const app = require('../server');
 const db = require('../db');
 
+const MNOTIFY_KEY = process.env.MNOTIFY_API_KEY;
+const hasRealMnotifyKey = Boolean(MNOTIFY_KEY);
+
 describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
     const MARKER = `CI-SMS-${Date.now()}`;
     let cookieA, cookieB;
@@ -164,14 +167,23 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
         await db.query('DELETE FROM parent_student WHERE parent_id = ? AND student_id = ?', [badPhoneParentId, yawStudentId]);
     });
 
-    test('sending a reminder when the SMS provider has no API key configured fails gracefully with a clean 400, not a crash', async () => {
-        // This test environment deliberately has no MNOTIFY_API_KEY set —
-        // exercising the real "provider not configured" path, not a mock.
-        const res = await request(app).post('/api/reminders/send').set('Cookie', cookieA)
-            .send({ parentId: mensahParentId, invoiceId: yawInvoiceId });
-        expect(res.status).toBe(400);
-        expect(res.body.message).toMatch(/not configured/i);
-    });
+    // Only meaningful when no real key is configured — with a real
+    // MNOTIFY_API_KEY present, this test's whole premise (provider isn't
+    // configured) no longer holds, and deliberately isn't replaced with a
+    // real-send equivalent here: unlike Paystack's safe-to-repeat
+    // initialize call (starts a transaction, charges nothing), an actual
+    // SMS send is a real, billable, irreversible side effect that
+    // shouldn't fire on every test run. A real send is verified once,
+    // live, outside the automated suite — see smartpay/DESIGN.md.
+    (hasRealMnotifyKey ? test.skip : test)(
+        'sending a reminder when the SMS provider has no API key configured fails gracefully with a clean 400, not a crash',
+        async () => {
+            const res = await request(app).post('/api/reminders/send').set('Cookie', cookieA)
+                .send({ parentId: mensahParentId, invoiceId: yawInvoiceId });
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/not configured/i);
+        }
+    );
 
     test("school B cannot preview or send a reminder for school A's parent", async () => {
         const previewRes = await request(app).post('/api/reminders/preview').set('Cookie', cookieB)

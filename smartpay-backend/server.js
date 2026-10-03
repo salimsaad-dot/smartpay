@@ -17,6 +17,9 @@ const publicPaymentRoutes = require('./routes/publicPaymentRoutes');
 const arrearsRoutes = require('./routes/arrearsRoutes');
 const smsTemplateRoutes = require('./routes/smsTemplateRoutes');
 const reminderRoutes = require('./routes/reminderRoutes');
+const scheduledJobRoutes = require('./routes/scheduledJobRoutes');
+const cronRoutes = require('./routes/cronRoutes');
+const schoolSettingsRoutes = require('./routes/schoolSettingsRoutes');
 
 const app = express();
 
@@ -73,6 +76,9 @@ app.use('/api/public', publicPaymentRoutes);
 app.use('/api/arrears', arrearsRoutes);
 app.use('/api/sms-templates', smsTemplateRoutes);
 app.use('/api/reminders', reminderRoutes);
+app.use('/api/scheduled-jobs', scheduledJobRoutes);
+app.use('/api/cron', cronRoutes);
+app.use('/api/settings', schoolSettingsRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });

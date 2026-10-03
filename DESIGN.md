@@ -245,13 +245,81 @@ for a full management system.
   confirmed the send path fails cleanly with "SMS provider is not
   configured" (no real mNotify key yet) rather than crashing — and
   correctly does **not** appear in reminder history, since nothing was
-  actually attempted. **Real mNotify credentials are the one piece still
-  pending** — SmartPay will use its own, separate mNotify account and
-  sender ID, not Academia Hub's, per the same separate-business
-  reasoning as Paystack.
-- **Phase 8 onward — not started.** The Friday automation job (cycle
-  locks, retry strategy, job history), reports, audit logs — all per the
-  spec's own Phases 8–11, picked up in future sessions.
+  actually attempted. **Update 2026-10-03, later same day:** real
+  mNotify credentials were added — SmartPay uses its own project/API key
+  ("SmartPay"), kept separate from Academia Hub's ("AcademiaHub"
+  project), on the same underlying BMS.africa/mNotify account (no
+  separate-business feature exists there the way Paystack has one; the
+  project-scoped key is the closest real equivalent and was confirmed
+  sufficient). The "SmartPay" Sender ID itself is still pending mNotify's
+  approval (they require a business registration certificate before
+  releasing a custom sender ID) — live-verified that the integration
+  itself is wired correctly by triggering a real send against the real
+  API: it returned a genuine `401` from mNotify (not a code-side error),
+  which the app recorded cleanly as a failed reminder rather than
+  crashing. A real successful send-through-delivery is still pending
+  that approval.
+- **Phase 8 — Friday automation: SHIPPED 2026-10-03.** The actual
+  weekly engine: `utils/fridayJob.js` runs the spec's exact 14.1
+  algorithm (acquire lock → query eligible invoices → group by parent →
+  validate phone → create/reuse link → render → send → record → release)
+  for one school (`runFridayJobForSchool`) or every Friday-enabled school
+  at once (`runFridayJobForAllSchools`, what the real external scheduler
+  calls). The job lock is the same TOCTOU-safe "insert and catch
+  `ER_DUP_ENTRY`" pattern used everywhere else in this codebase, keyed on
+  `(school_id, job_type, cycle_key)` — `cycle_key` is the actual calendar
+  Friday being processed *in the school's own timezone*
+  (`friday-YYYY-MM-DD`), not server time, so a UTC-hosted server can't
+  silently process the wrong day for a Ghana-based school. A stale
+  `running` lock (server crashed mid-cycle) is reclaimed after 30
+  minutes rather than blocking that cycle forever; a genuine re-run of
+  an already-`completed` cycle is a safe no-op, and even a crash-and-retry
+  mid-cycle can't double-send, since each parent is independently checked
+  against `sms_reminders` for an existing `sent`/`delivered` row in *this*
+  `cycle_key` before anything goes out. One bad parent (invalid phone, no
+  template, mid-loop exception) is isolated and recorded as a failure —
+  it never aborts the rest of the school's cycle, and one school's
+  failure never blocks another's in the all-schools run. New per-school
+  settings (`friday_reminders_enabled`, `friday_send_time`,
+  `friday_template_id`, `reminder_min_balance`, `reminder_cooldown_days`)
+  live as columns on `schools` rather than a separate settings table —
+  they're genuinely school-profile data, the same category as the
+  `currency`/`timezone` columns already there. The cron-facing endpoint
+  (`POST /api/cron/friday-reminders`) is guarded by the exact same
+  timing-safe secret-header pattern Academia Hub already has in
+  production (`middleware/cronAuth.js`, independently reimplemented) —
+  a new auth style deliberately kept narrowly scoped to this one route,
+  since every other route in this app is JWT-session-only. A separate,
+  admin-authenticated `POST /api/scheduled-jobs/friday/run` is the
+  spec's own explicitly-requested "protected manual test/run endpoint,"
+  scoped to only the caller's school. 11 new backend tests (96 total, 1
+  skipped): enabled-by-default, disabling stops the job, an arrears-free
+  school completes cleanly with zero processed, full processing with
+  correct success/failure counts and per-parent records, same-cycle
+  re-run is a true no-op, cooldown correctly excludes a recently-reminded
+  parent (and correctly does *not* exclude one outside the window — this
+  caught a real math error in the test itself, not the app), min-balance
+  threshold exclusion, job-history tenant isolation, and the cron
+  endpoint's auth (no header / wrong header / correct header). Along the
+  way, live testing surfaced and fixed a real bug: `PATCH
+  /api/settings/friday-reminders` was overwriting every column from
+  whatever the request body happened to contain, so a caller updating
+  only `reminderCooldownDays` silently reset `friday_reminders_enabled`
+  to `false` and wiped the template/min-balance — now a true partial
+  update, merged against the row's current values. Frontend: a "Friday
+  Automation" panel added to the SMS Templates page (enabled toggle,
+  template picker, min balance, cooldown, a "Run Now" button, and a job
+  history table) — grouped there rather than as a separate page, matching
+  the spec's own "SMS Center" screen concept (templates + Friday settings
+  + history together). Live-verified end-to-end through the real UI:
+  clicked Run Now, watched the job complete and the history table update
+  with real counts, confirmed via the API that the underlying
+  `scheduled_jobs` and `sms_reminders` rows were written correctly — the
+  one real send attempted failed with mNotify's live `401` (sender ID
+  still pending approval), recorded cleanly as `failed`, exactly the
+  same graceful path already proven for the manual-reminder flow.
+- **Phase 9 onward — not started.** Reports, audit logs — all per the
+  spec's own Phases 9–11, picked up in future sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -292,3 +360,10 @@ for a full management system.
 | 2026-10-03 | Previewing a reminder never generates a real payment link — it renders the message with placeholder text ("a secure payment link will be included") instead. Only an actual Send generates one. | A payment link's raw token can only ever be shown once (only its hash is stored), and generating one revokes any existing active link for that parent. Doing that on every preview click — which may never lead to an actual send — would needlessly invalidate a link a parent might already be mid-use with, just because an admin looked at a draft message. |
 | 2026-10-03 | `createPaymentLink()` was extracted from `parentController.generatePaymentLink` into a shared `utils/paymentLink.js` function during this phase, used by both the admin "Payment Link" button and the reminder-send flow. | Both call sites need a fresh raw token to embed/display, and since only the hash is ever persisted, there's no way to "look up" an existing link's raw value for reuse — every caller that needs a working link in hand must go through the identical revoke-then-generate logic. Keeping it in one place means the two call sites can't drift apart. |
 | 2026-10-03 | In the send flow, a parent's phone number is validated before the SMS provider's own configuration is checked, and payment-link generation happens only after both checks pass. | Phone validity is the more specific, actionable problem for an admin to fix, and is true regardless of whether the platform's SMS provider happens to be configured — "provider not configured" is a platform-wide condition unrelated to this particular parent. Checking both before touching `payment_links` also means a send that was never going to succeed doesn't needlessly burn a parent's existing link. |
+| 2026-10-03 | SmartPay's SMS integration uses its own project-scoped API key ("SmartPay") on the same BMS.africa/mNotify account as Academia Hub's ("AcademiaHub" project) — not a fully separate account/business, unlike Paystack. | BMS.africa has no "add a business" feature the way Paystack does; its only separation mechanism is a project-scoped API key, each with its own key and quota. That's the closest real equivalent available, confirmed by checking the actual dashboard rather than assuming parity with Paystack's model. |
+| 2026-10-03 | `resolveReminderScope`, `buildVariables`, and `getTemplate` were extracted from `reminderController.js` into a shared `utils/reminderCore.js` during Phase 8, used by both the manual-send HTTP flow and the Friday automation job. `getTemplate` gained a `preferType` parameter so the Friday job can ask for a `'friday_reminder'`-type template first but still fall back to any active template for a school that never configured one specifically. | The two call sites (an HTTP request from an admin, a cron-triggered loop over every parent in a school) must resolve "who gets reminded about what" and "what does the message look like" identically — a manually-sent reminder and an automated one need to read the same way to a parent. Keeping this in one place means they provably can't drift apart. |
+| 2026-10-03 | The Friday job's cycle lock uses the actual calendar date in the *school's own configured timezone* (`Intl.DateTimeFormat` with `timeZone: school.timezone`), not server time, to compute `cycle_key`. | A server hosted in UTC could be on the wrong side of midnight relative to a Ghana-based school — using server time for "what day is it" could process the wrong Friday, or let a UTC-midnight boundary quietly create two different cycle keys for what a Ghana-based admin considers the same Friday. |
+| 2026-10-03 | A `scheduled_jobs` row stuck in `'running'` for more than 30 minutes is treated as abandoned (the server crashed mid-cycle) and its lock is reclaimed by a later run, rather than left to block that cycle forever. | The spec explicitly lists "Friday job starts but server crashes halfway through" as an edge case to handle. Without reclaiming, a single crash would permanently wedge that school's Friday reminders until someone manually fixed the database — a 30-minute margin is generous for a job that normally finishes in seconds to a few minutes, so it's not a tight race against a genuinely still-running job. |
+| 2026-10-03 | Even across a crash-and-retry of the *same* cycle, a parent is never reminded twice: each parent is checked against `sms_reminders` for an existing `sent`/`delivered` row in that exact `cycle_key` before anything is sent, independent of the job-level lock. | The job-level lock alone only prevents two *processes* from running the same cycle concurrently — it doesn't protect against a resumed run re-processing parents a crashed earlier attempt had already successfully reminded. The spec's "never blindly resend successful messages" rule has to be enforced per-parent, not just per-job. |
+| 2026-10-03 | Friday-automation settings (`friday_reminders_enabled`, `friday_send_time`, `friday_template_id`, `reminder_min_balance`, `reminder_cooldown_days`) are columns directly on `schools`, not a separate settings table. | They're genuinely school-profile data — the same category as the `currency`/`timezone` columns already living there — not a growing, open-ended set of preferences that would justify a dedicated table. |
+| 2026-10-03 | `PATCH /api/settings/friday-reminders` was rewritten to merge only the fields present in the request body against the school's current row, instead of writing every column from the body regardless of what was sent. | Caught live during Phase 8 testing: the original version defaulted every omitted field to `false`/`null`, so a caller updating only `reminderCooldownDays` silently disabled Friday reminders entirely and wiped the template/min-balance as a side effect. A PATCH endpoint must only change what it's actually given — this is the kind of bug that's invisible in a happy-path manual test (which tends to supply every field) and only surfaces once something calls it with a genuinely partial body, exactly as an automated test did. |

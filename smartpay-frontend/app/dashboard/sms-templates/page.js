@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
 
 const inputClass =
@@ -62,6 +63,136 @@ function TemplateForm({ initial, onSave, onCancel }) {
   );
 }
 
+function FridayAutomationPanel({ templates }) {
+  const [settings, setSettings] = useState(null);
+  const [jobs, setJobs] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState(null);
+  const [error, setError] = useState("");
+
+  function load() {
+    apiRequest("/settings/friday-reminders").then((res) => setSettings(res.data));
+    apiRequest("/scheduled-jobs").then((res) => setJobs(res.data));
+  }
+  useEffect(load, []);
+
+  async function save(partial) {
+    setSaving(true);
+    setError("");
+    try {
+      await apiRequest("/settings/friday-reminders", { method: "PATCH", body: partial });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runNow() {
+    setRunning(true);
+    setRunResult(null);
+    setError("");
+    try {
+      const res = await apiRequest("/scheduled-jobs/friday/run", { method: "POST" });
+      setRunResult(res.data);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (!settings) return null;
+
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+      <h2 className="font-semibold text-[var(--ink)]">Friday Automation</h2>
+      <p className="mt-1 text-sm text-[var(--slate-quiet)]">Automatically reminds every parent with an outstanding balance, once a week.</p>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <label className="flex items-center gap-2 text-sm text-[var(--ink)]">
+          <input
+            type="checkbox"
+            checked={!!settings.friday_reminders_enabled}
+            onChange={(e) => save({ fridayRemindersEnabled: e.target.checked })}
+          />
+          Enabled
+        </label>
+        <div>
+          <label className={labelClass}>Template</label>
+          <select
+            value={settings.friday_template_id || ""}
+            onChange={(e) => save({ fridayTemplateId: e.target.value ? Number(e.target.value) : null })}
+            className={inputClass}
+          >
+            <option value="">Default (first active template)</option>
+            {templates?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Min Balance (optional)</label>
+          <input
+            type="number" min="0" defaultValue={settings.reminder_min_balance ?? ""}
+            onBlur={(e) => save({ reminderMinBalance: e.target.value })}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Cooldown (days, optional)</label>
+          <input
+            type="number" min="0" defaultValue={settings.reminder_cooldown_days ?? ""}
+            onBlur={(e) => save({ reminderCooldownDays: e.target.value })}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      {saving && <p className="mt-2 text-xs text-[var(--slate-quiet)]">Saving...</p>}
+      {error && <p className="mt-2 text-sm text-[var(--danger)]">{error}</p>}
+
+      <div className="mt-4 border-t border-[var(--border)] pt-4">
+        <button onClick={runNow} disabled={running} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60">
+          {running ? "Running..." : "Run Now"}
+        </button>
+        <span className="ml-2 text-xs text-[var(--slate-quiet)]">Manually triggers this week's cycle now — useful for testing.</span>
+        {runResult && (
+          <p className="mt-2 text-sm text-[var(--slate)]">
+            Processed {runResult.processed}, sent {runResult.success}, failed {runResult.failure}.
+          </p>
+        )}
+      </div>
+
+      {jobs && jobs.length > 0 && (
+        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)]">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-[var(--border)] bg-gray-50 text-[var(--slate-quiet)]">
+                <th className="p-2">Cycle</th><th className="p-2">Status</th><th className="p-2">Started</th>
+                <th className="p-2">Processed</th><th className="p-2">Sent</th><th className="p-2">Failed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id} className="border-b border-[var(--border)] last:border-b-0">
+                  <td className="p-2 font-mono">{j.cycle_key}</td>
+                  <td className="p-2">{j.status}</td>
+                  <td className="p-2">{formatDate(j.started_at)}</td>
+                  <td className="p-2">{j.processed_count}</td>
+                  <td className="p-2">{j.success_count}</td>
+                  <td className="p-2">{j.failure_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SmsTemplatesPage() {
   const [templates, setTemplates] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -81,6 +212,8 @@ export default function SmsTemplatesPage() {
     <DashboardShell>
       <h1 className="text-2xl font-semibold text-[var(--ink)]">SMS Templates</h1>
       <p className="mt-1 text-sm text-[var(--slate-quiet)]">Used for manual fee reminders. A default template is ready to use from day one.</p>
+
+      <div className="mt-4"><FridayAutomationPanel templates={templates} /></div>
 
       <div className="mt-4">
         {!showNewForm ? (
