@@ -5,6 +5,11 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
+const academicYearRoutes = require('./routes/academicYearRoutes');
+const termRoutes = require('./routes/termRoutes');
+const classRoutes = require('./routes/classRoutes');
+const parentRoutes = require('./routes/parentRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 
 const app = express();
 
@@ -43,6 +48,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/academic-years', academicYearRoutes);
+app.use('/api/terms', termRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/parents', parentRoutes);
+app.use('/api/students', studentRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });

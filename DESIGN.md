@@ -45,11 +45,29 @@ for a full management system.
   Live-verified via a real Puppeteer browser run: register → dashboard,
   correct school name shown. See Decisions Log for the real gaps a
   Plan-agent pressure-test caught before this shipped.
-- **Phase 2 onward — not started.** Academic years, terms, classes,
-  students, parents (sibling linking), fee structures, invoices, manual +
+- **Phase 2 — Academic data: SHIPPED 2026-10-03.** Academic years + terms
+  (with set-current, full-replace semantics so exactly one of each is ever
+  current per school), classes, students, parents, and parent-student
+  sibling linking. Every new table re-verified for tenant isolation with
+  its own test (not assumed from Phase 1's generic proof) — including a
+  direct IDOR check (school B cannot fetch school A's student/parent by
+  ID even though the IDs are small guessable integers) and a cross-tenant
+  foreign-key check (school B cannot create a student against school A's
+  class/year by guessing the ID). 20 backend tests green. Live-verified
+  through the real UI: registered a school, created a year/term/class,
+  added two students in the same class, added one parent, linked that
+  parent to both students, and confirmed the parent's own record shows
+  both children — proving the sibling model end-to-end, not just via the
+  schema. A real date-display bug (mysql2 returns DATE columns as JS Date
+  objects, which serialize to a full ISO timestamp like
+  "2026-09-01T00:00:00.000Z" instead of a plain date) was caught during
+  this live pass and fixed with a `formatDate()` helper on the Academic
+  Setup page — not a backend issue, every date field needs this same
+  treatment as more pages render dates going forward.
+- **Phase 3 onward — not started.** Fee structures, invoices, manual +
   online payments, Paystack webhook, arrears, SMS reminders, the Friday
   automation job, reports, audit logs — all per the spec's own Phases
-  2–11, picked up in future sessions.
+  3–11, picked up in future sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -61,3 +79,7 @@ for a full management system.
 | 2026-10-02 | Phase 1 ships with exactly one role, `school_admin`. `finance_staff` deferred (cheap to add later *only if* every route uses `verifyRole(...roles)`, never an inline check — enforced as a hard rule from the start). `system_admin` (a cross-tenant platform-operator role) is explicitly **not** modeled as a nullable-`school_id` row on the shared `users` table — if ever built, it belongs in its own separate `platform_admins` table with its own auth guard, since nulling out `school_id` on `users` would weaken the exact invariant the tenant-isolation test proves. | Keeps the one actually-novel, security-critical piece of Phase 1 (multi-tenant auth) as small and provable as possible; both deferrals are flagged now so nobody reaches for the easy-but-wrong path later when the need arises. |
 | 2026-10-02 | Frontend deliberately does **not** reuse Academia Hub's ink+gold visual identity — plain default Tailwind styling for now. | Different product, different brand, different customers (schools, not students/teachers/parents). A real design pass is a separate, later decision once core functionality is proven — not blocking Phase 1. |
 | 2026-10-02 | Set up as its own GitHub repo (`salimsaad-dot/smartpay`) from the start, not a folder inside Academia Hub's repo. Academia Hub's own `.gitignore` excludes `/smartpay/` to prevent accidental cross-contamination via a broad `git add`. | User's explicit choice — SmartPay is a genuinely separate product/business line, not a feature of Academia Hub, and its git history shouldn't be entangled with Academia Hub's from day one. |
+| 2026-10-03 | `classes` has no `academic_year_id` — it's a fixed, reusable curriculum structure per school (e.g. "Basic 1"..."JHS 3"), not re-created every year. A student's class-for-a-given-year is instead captured on the `students` row itself (`class_id` + `academic_year_id` together). | Matches the spec's own suggested schema exactly (section 6 lists `classes` as `id, school_id, name, level, status` — no year column). Keeps "which classes exist" and "which class a student is in this year" as two separate, independently-correct facts — a student moving class year-to-year doesn't require touching the `classes` table at all. |
+| 2026-10-03 | `parent_student` carries no `school_id` column of its own. Tenant isolation on link/unlink is enforced by joining back to `students.school_id` (and separately verifying the parent row belongs to the same school before inserting). | A join table's isolation is only as strong as the queries that touch it — `unlinkParent` explicitly joins through `students` rather than trusting a bare `parent_student.id`, since that column alone carries no tenant information to check against. |
+| 2026-10-03 | `academic_years`/`terms` both get `is_current`, set via a full-replace transaction (clear every row for this school, then set the one requested) rather than a single UPDATE. | Same "current term" pattern Academia Hub already validated — makes "exactly one current year/term per school" true by construction instead of relying on every caller to remember to unset the old one. Verified live: setting a second year current correctly un-currents the first, confirmed via both a test and the real UI. |
+| 2026-10-03 | Every new Phase 2 table got its own tenant-isolation test, not just a shared assumption from Phase 1's proof — including a direct IDOR check (school B fetching school A's student/parent by a guessed small-integer ID) and a cross-tenant foreign-key check (school B creating a student against school A's class/year ID). | Each new tenant-owned table and each new foreign-key relationship is a fresh place a missing `WHERE school_id = ?` or a missing ownership re-check could slip in — Phase 1's isolation proof covered auth only, not these new resources, so it doesn't substitute for re-testing here. |
