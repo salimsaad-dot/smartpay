@@ -157,15 +157,73 @@ exports.initializePayment = async (req, res) => {
     }
 };
 
+// The one place a payment ever gets finalized, called from BOTH the
+// webhook handler and the status-poll fallback below — so a payment
+// whose webhook is delayed, lost, or never arrives at all still gets
+// correctly credited the moment anything (webhook delivery or a parent
+// checking their status page) independently confirms it with Paystack.
+// Always logs to payment_attempts regardless of outcome, is idempotent
+// against an already-finalized payment, and never marks a payment
+// successful on amount mismatch. Returns the resulting status.
+async function finalizePaymentEvent(payment, result, source) {
+    await pool.query(
+        `INSERT INTO payment_attempts (payment_id, provider_reference, status, response_metadata_json) VALUES (?, ?, ?, ?)`,
+        [payment.id, result.reference, result.status, JSON.stringify({ source, channel: result.channel, amountGhs: result.amountGhs })]
+    );
+
+    // Idempotency: this can be called twice for the same payment (a
+    // redelivered webhook, or a status poll racing a webhook that just
+    // landed) — a second finalize of an already-finalized payment must
+    // never be reprocessed (an already-success payment credited twice, or
+    // an already-failed one flipped back).
+    if (payment.status === 'success' || payment.status === 'failed' || payment.status === 'cancelled') {
+        return payment.status;
+    }
+
+    if (result.status !== 'success') {
+        if (result.status === 'initiated' || result.status === 'pending') return result.status;
+        await pool.query('UPDATE payments SET status = ? WHERE id = ?', [result.status, payment.id]);
+        return result.status;
+    }
+
+    if (Math.abs(Number(result.amountGhs) - Number(payment.amount)) > 0.01) {
+        console.error('Payment finalize: amount mismatch for', result.reference, 'expected', payment.amount, 'got', result.amountGhs);
+        await pool.query(`UPDATE payments SET status = 'failed' WHERE id = ?`, [payment.id]);
+        return 'failed';
+    }
+
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.query(
+            `UPDATE payments SET status = 'success', method = ?, provider_reference = ?, paid_at = ? WHERE id = ?`,
+            [result.channel, result.reference, result.paidAt, payment.id]
+        );
+        await recalculateInvoiceBalance(connection, payment.invoice_id);
+        await connection.commit();
+    } catch (err) {
+        await connection.rollback();
+        throw err;
+    } finally {
+        connection.release();
+    }
+
+    return 'success';
+}
+
 // Lets the success/pending page show an honest status even if Paystack's
 // webhook hasn't arrived yet ("Payment redirect succeeds but webhook
 // arrives later" — a spec-listed edge case). Falls back to a live
 // server-to-server check with Paystack when our own record still shows
-// 'initiated'/'pending', rather than making the parent refresh blindly.
+// 'initiated'/'pending' — and, crucially, actually finalizes the payment
+// through the same path the webhook uses when that check confirms
+// success, rather than only reporting a status the database never
+// reflects. Without this, a permanently lost webhook could show a parent
+// "Payment successful" while the invoice balance silently never updates.
 exports.getPaymentStatus = async (req, res) => {
     try {
         const [[payment]] = await pool.query(
-            `SELECT p.status, p.amount, p.invoice_id, s.currency
+            `SELECT p.id, p.status, p.amount, p.invoice_id, s.currency
              FROM payments p JOIN schools s ON s.id = p.school_id
              WHERE p.internal_reference = ?`,
             [req.params.reference]
@@ -174,12 +232,12 @@ exports.getPaymentStatus = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Payment not found.' });
         }
 
-        let { status } = payment;
+        let status = payment.status;
         if (status === 'initiated' || status === 'pending') {
             try {
                 const live = await paystackGateway.verifyTransaction(req.params.reference);
                 if (live.status !== status) {
-                    status = live.status;
+                    status = await finalizePaymentEvent(payment, { ...live, reference: req.params.reference }, 'status_poll');
                 }
             } catch {
                 // Live check failed (network/provider hiccup) — fall back to
@@ -219,46 +277,7 @@ exports.webhook = async (req, res) => {
             return res.status(200).json({ status: 'success' });
         }
 
-        await pool.query(
-            `INSERT INTO payment_attempts (payment_id, provider_reference, status, response_metadata_json) VALUES (?, ?, ?, ?)`,
-            [payment.id, event.reference, event.status, JSON.stringify({ eventType: event.eventType, channel: event.channel, amountGhs: event.amountGhs })]
-        );
-
-        // Idempotency: Paystack can and does redeliver webhooks. A second
-        // delivery of an already-finalized payment must never be
-        // reprocessed (an already-success payment credited twice, or an
-        // already-failed one flipped back).
-        if (payment.status === 'success' || payment.status === 'failed' || payment.status === 'cancelled') {
-            return res.status(200).json({ status: 'success' });
-        }
-
-        if (event.status !== 'success') {
-            await pool.query('UPDATE payments SET status = ? WHERE id = ?', [event.status, payment.id]);
-            return res.status(200).json({ status: 'success' });
-        }
-
-        if (Math.abs(Number(event.amountGhs) - Number(payment.amount)) > 0.01) {
-            console.error('Paystack webhook: amount mismatch for', event.reference, 'expected', payment.amount, 'got', event.amountGhs);
-            await pool.query(`UPDATE payments SET status = 'failed' WHERE id = ?`, [payment.id]);
-            return res.status(200).json({ status: 'success' });
-        }
-
-        const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
-            await connection.query(
-                `UPDATE payments SET status = 'success', method = ?, provider_reference = ?, paid_at = ? WHERE id = ?`,
-                [event.channel, event.reference, event.paidAt, payment.id]
-            );
-            await recalculateInvoiceBalance(connection, payment.invoice_id);
-            await connection.commit();
-        } catch (err) {
-            await connection.rollback();
-            throw err;
-        } finally {
-            connection.release();
-        }
-
+        await finalizePaymentEvent(payment, event, 'webhook');
         res.status(200).json({ status: 'success' });
     } catch (error) {
         console.error('Paystack webhook processing failed:', error);

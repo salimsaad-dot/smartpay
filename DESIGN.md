@@ -128,35 +128,48 @@ for a full management system.
   (`POST /api/payments/webhook`) is signature-verified
   (HMAC-SHA512 of the raw body), idempotent (a payment already
   `success`/`failed`/`cancelled` is never reprocessed), amount-checked
-  against the original payment record, and logs every delivery to
-  `payment_attempts` regardless of outcome. 20 new backend tests (63
-  total, 1 deliberately skipped pending real keys — see below): link
-  generation/revocation/expiry, tenant isolation on link generation,
+  against the original payment record, filtered to only recognized
+  charge events (`charge.success`/`charge.failed` — Paystack sends many
+  other event types, e.g. disputes/transfers, that can also carry a
+  `data.reference` and must never be misread as a charge update), and
+  logs every delivery to `payment_attempts` regardless of outcome. The
+  public payment-status endpoint doesn't just report a live Paystack
+  check's result — it *finalizes* the payment through the same shared
+  code path the webhook uses (`finalizePaymentEvent`), so a permanently
+  lost webhook can't leave a parent seeing "Payment successful" while
+  the invoice balance silently never updates (a real gap caught and
+  fixed during this phase's live testing, not a hypothetical). 23 new
+  backend tests (66 total, all passing with real keys configured —
+  see below): link generation/revocation/expiry, tenant isolation,
   token-hash-never-equals-raw-token, checkout scoping, overpayment/
   non-positive-amount/cross-parent rejection, webhook signature
   rejection, success/failure/amount-mismatch/duplicate-delivery/
-  unknown-reference handling, and public status-check. Frontend: a
-  "Payment Link" action on the Parents page (admin-generated, copies a
-  shareable URL), a standalone public `/pay/[token]` checkout page
-  (outside the authenticated dashboard shell entirely — no `AuthContext`
-  gating), and a `/pay/status/[reference]` page that polls real payment
-  status rather than trusting the gateway redirect alone (the spec is
-  explicit that a browser redirect is never proof of payment). Live-
-  verified end-to-end via a real browser run: generated a link from the
-  Parents page, loaded the public checkout page, confirmed it showed the
-  correct parent/child/invoice (and only that parent's data), selected
-  an invoice, submitted a payment — which failed with a clean, friendly
-  error rather than a crash, exactly as expected, since
-  `PAYSTACK_SECRET_KEY` is still a placeholder; the status page was
-  separately verified by seeding a `success` payment directly and
-  confirming it renders "Payment successful" correctly. **Real Paystack
-  credentials are the one piece still pending** — SmartPay deliberately
-  uses its **own, separate Paystack business profile**, not Academia
-  Hub's (two different products moving two different schools' real
-  money), per the user's explicit choice on 2026-10-03. Once test keys
-  are added to `.env`, the one currently-skipped live-initialize test
-  (`onlinePayments.integration.test.js`) activates automatically, and a
-  real test-mode checkout should be run through once before going live.
+  unknown-reference/unrecognized-event-type handling, status-poll
+  reconciliation actually crediting the invoice, and a status-poll
+  finalize followed by a redelivered webhook being a no-op (not a
+  double credit). Frontend: a "Payment Link" action on the Parents page
+  (admin-generated, copies a shareable URL), a standalone public
+  `/pay/[token]` checkout page (outside the authenticated dashboard
+  shell entirely — no `AuthContext` gating), and a `/pay/status/[reference]`
+  page that polls real payment status rather than trusting the gateway
+  redirect alone (the spec is explicit that a browser redirect is never
+  proof of payment). Live-verified end-to-end via a real browser run
+  twice: once against a placeholder key (confirmed the full checkout UI
+  and a clean, friendly failure rather than a crash) and once more after
+  real test keys were added — confirmed the backend genuinely talks to
+  Paystack's live test API and the browser is redirected to a real
+  `checkout.paystack.com` session. Completing an actual test-card payment
+  couldn't be automated further: Paystack's checkout is behind
+  Cloudflare bot-protection that blocks headless browsers, which is the
+  correct, expected behavior for a real payment page, not a bug to route
+  around. The crediting logic itself (webhook + status-poll finalize) is
+  proven by the automated test suite rather than a manual click-through.
+  **SmartPay uses its own, separate Paystack business profile**
+  (business ID 2038714, added under the same login via Paystack's
+  "Add a business" feature — no second email was actually needed), kept
+  fully separate from Academia Hub's, per the user's explicit choice on
+  2026-10-03. Real test keys are live in `.env` (gitignored, never
+  committed).
 - **Phase 6 onward — not started.** Arrears aggregation/filtering (the
   full admin page this phase's manual "Payment Link" button is a
   placeholder for), SMS reminders, the Friday automation job, reports,
@@ -190,3 +203,6 @@ for a full management system.
 | 2026-10-03 | A payment always maps to exactly one invoice, even though a secure payment link shows a parent ALL of their children's outstanding invoices at once (consolidated, per the spec's step 48). The parent picks one invoice to pay per checkout rather than the backend splitting a single payment across several invoices. | Building payment-allocation/splitting (one gateway transaction crediting N invoices) is a materially bigger feature with its own edge cases (partial allocation order, display, refund semantics) that the spec itself frames as conditional ("if... configured for consolidated payment"), not mandatory. Shipping the real core journey now — secure link → see every balance → pick one → pay → webhook confirms → balance updates — and deferring true multi-invoice bundling keeps this phase's scope honest rather than quietly expanding it. |
 | 2026-10-03 | `payment_links` has no true "reuse" — generating a new link for a parent immediately revokes any existing active one, then creates a fresh token. | Only the token's hash is ever stored (never the raw token), so there is no way to show an admin the SAME raw link twice once the page generating it has been left. Revoke-then-regenerate keeps "at most one active link per parent" a clean invariant instead of accumulating silently-still-valid old links every time an admin re-clicks "Payment Link." |
 | 2026-10-03 | The "Payment Link" action lives on the Parents page as a manual, admin-triggered button for this phase, not on a dedicated Arrears page. | Phase 6 (Arrears) is what actually builds the aggregation/filtering view this belongs on long-term, and Phase 7/8's Friday SMS job will generate these links automatically without any admin click at all. Building the full Arrears UX now would be scope creep ahead of its own phase; a manual admin action is enough to make Phase 5's payment machinery real and testable today. |
+| 2026-10-03 | Payment finalization (marking a payment `success`/`failed` and recalculating its invoice) was refactored into one shared `finalizePaymentEvent()` function, called from both the webhook handler and the public payment-status endpoint's live-check fallback — the status endpoint doesn't just *report* what a live Paystack check found, it *applies* it the same way a webhook would. | Caught during this phase's own live testing, not a hypothetical: the original status endpoint only returned a live-checked status to the browser without ever writing it back, so a parent could be shown "Payment successful" while `invoices.balance` silently never updated if that specific webhook was ever permanently lost (not just delayed). Sharing one finalize path makes the two trigger routes (webhook delivery, parent polling their status page) provably agree, instead of two independent, divergeable implementations of "what does a successful payment do." |
+| 2026-10-03 | The webhook only processes `charge.success` and `charge.failed` event types — any other Paystack event (disputes, transfers, refunds, subscriptions) is ignored even if it happens to carry a `data.reference` matching one of our payments. | Paystack sends many event types beyond charges, and several of them can carry a `reference` field for unrelated reasons. Without an explicit allowlist, an unrelated event could be misinterpreted as a charge status update for a payment that merely shares that reference string — a correctness gap that cost nothing to close given the fix was a one-line filter. |
+| 2026-10-03 | SmartPay's separate Paystack business was created via Paystack's own "Add a business" feature under the same login/email as Academia Hub's existing business, not a second email address. | Discovered live when the user went to sign up — Paystack natively supports multiple businesses per account, each with its own dashboard, transactions, and API keys, which is all the separation this needed (two different products, two schools' money, never mixed in one dashboard). Simpler than the Gmail `+alias` workaround originally suggested, since Paystack already solves this directly. |

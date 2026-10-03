@@ -67,6 +67,15 @@ function validateWebhookSignature(rawBody, signatureHeader) {
 // server-to-server verify call (matches Academia Hub's already-shipped,
 // pentested pattern: see smartpay/DESIGN.md's Decisions Log for why a
 // redundant verify() round-trip isn't required here).
+//
+// Only charge events are recognized — Paystack sends many other event
+// types (disputes, transfers, refunds, subscriptions) that can also carry
+// a `data.reference`, and none of them describe "did this charge succeed
+// or fail." Without this allowlist, an unrelated event could be
+// misinterpreted as a charge update for a payment that happens to share
+// its reference value.
+const RECOGNIZED_CHARGE_EVENTS = new Set(['charge.success', 'charge.failed']);
+
 function parseWebhookEvent(rawBody) {
     let event;
     try {
@@ -74,7 +83,7 @@ function parseWebhookEvent(rawBody) {
     } catch {
         return null;
     }
-    if (!event?.event || !event?.data?.reference) return null;
+    if (!RECOGNIZED_CHARGE_EVENTS.has(event?.event) || !event?.data?.reference) return null;
 
     const statusMap = { success: 'success', failed: 'failed', abandoned: 'cancelled' };
     return {

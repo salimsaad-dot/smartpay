@@ -2,6 +2,7 @@ const request = require('supertest');
 const crypto = require('crypto');
 const app = require('../server');
 const db = require('../db');
+const paystackGateway = require('../utils/paystackGateway');
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const hasRealPaystackKey = Boolean(PAYSTACK_SECRET) && !PAYSTACK_SECRET.includes('PLACEHOLDER');
@@ -301,6 +302,75 @@ describe('online payments — secure payment links, public checkout, and Paystac
             const [[payment]] = await db.query('SELECT status FROM payments WHERE internal_reference = ?', [failRef]);
             expect(payment.status).toBe('failed');
         });
+    });
+
+    test('a status check that independently discovers success via a live Paystack check finalizes the payment itself — not just reports it (closes the "webhook never arrives" gap)', async () => {
+        const reference = `sp_${schoolIdA}_${crypto.randomBytes(12).toString('hex')}`;
+        await db.query(
+            `INSERT INTO payments (school_id, invoice_id, student_id, amount, source, status, internal_reference, provider)
+             VALUES (?, ?, ?, 80, 'online', 'initiated', ?, 'paystack')`,
+            [schoolIdA, invoiceId, student1Id, reference]
+        );
+        const invoiceBefore = await request(app).get(`/api/invoices/${invoiceId}`).set('Cookie', cookieA);
+        const balanceBefore = Number(invoiceBefore.body.data.balance);
+
+        const spy = jest.spyOn(paystackGateway, 'verifyTransaction').mockResolvedValueOnce({
+            status: 'success', amountGhs: 80, channel: 'card', paidAt: new Date(), providerReference: reference,
+        });
+
+        const res = await request(app).get(`/api/public/payments/${reference}/status`);
+        expect(res.status).toBe(200);
+        expect(res.body.data.status).toBe('success');
+
+        const [[payment]] = await db.query('SELECT status FROM payments WHERE internal_reference = ?', [reference]);
+        expect(payment.status).toBe('success');
+
+        const invoiceAfter = await request(app).get(`/api/invoices/${invoiceId}`).set('Cookie', cookieA);
+        expect(Number(invoiceAfter.body.data.balance)).toBe(balanceBefore - 80);
+
+        spy.mockRestore();
+    });
+
+    test('a redelivered webhook after a status-poll already finalized the same payment is a no-op, not a double credit', async () => {
+        const reference = `sp_${schoolIdA}_${crypto.randomBytes(12).toString('hex')}`;
+        await db.query(
+            `INSERT INTO payments (school_id, invoice_id, student_id, amount, source, status, internal_reference, provider)
+             VALUES (?, ?, ?, 40, 'online', 'initiated', ?, 'paystack')`,
+            [schoolIdA, invoiceId, student1Id, reference]
+        );
+
+        const spy = jest.spyOn(paystackGateway, 'verifyTransaction').mockResolvedValueOnce({
+            status: 'success', amountGhs: 40, channel: 'mobile_money', paidAt: new Date(), providerReference: reference,
+        });
+        await request(app).get(`/api/public/payments/${reference}/status`);
+        spy.mockRestore();
+
+        const invoiceAfterPoll = await request(app).get(`/api/invoices/${invoiceId}`).set('Cookie', cookieA);
+        const balanceAfterPoll = Number(invoiceAfterPoll.body.data.balance);
+
+        const payload = chargeSuccessPayload({ reference, amountGhs: 40, channel: 'mobile_money' });
+        const { rawBody, signature } = signWebhook(payload);
+        await request(app).post('/api/payments/webhook').set('Content-Type', 'application/json').set('x-paystack-signature', signature).send(rawBody);
+
+        const invoiceAfterWebhook = await request(app).get(`/api/invoices/${invoiceId}`).set('Cookie', cookieA);
+        expect(Number(invoiceAfterWebhook.body.data.balance)).toBe(balanceAfterPoll);
+    });
+
+    test('a webhook event type outside the recognized charge allowlist is ignored, not processed as a charge update', async () => {
+        const reference = `sp_${schoolIdA}_${crypto.randomBytes(12).toString('hex')}`;
+        await db.query(
+            `INSERT INTO payments (school_id, invoice_id, student_id, amount, source, status, internal_reference, provider)
+             VALUES (?, ?, ?, 30, 'online', 'initiated', ?, 'paystack')`,
+            [schoolIdA, invoiceId, student1Id, reference]
+        );
+
+        const payload = { event: 'charge.dispute.create', data: { reference, amount: 3000, status: 'success', channel: 'card' } };
+        const { rawBody, signature } = signWebhook(payload);
+        const res = await request(app).post('/api/payments/webhook').set('Content-Type', 'application/json').set('x-paystack-signature', signature).send(rawBody);
+        expect(res.status).toBe(200);
+
+        const [[payment]] = await db.query('SELECT status FROM payments WHERE internal_reference = ?', [reference]);
+        expect(payment.status).toBe('initiated');
     });
 
     test('the public payment-status endpoint reports the current status for a given reference', async () => {
