@@ -1,0 +1,21 @@
+name: Friday Fee Reminders
+
+on:
+  schedule:
+    # Hourly, Fridays only, 06:00-20:00 UTC (= Accra time, Ghana has no
+    # DST). Each school has its own configurable friday_send_time; the
+    # job itself (POST /api/cron/friday-reminders) skips any school not
+    # yet due this hour and is picked up by a later firing the same day —
+    # see smartpay-backend/utils/fridayJob.js's respectSendTime logic.
+    - cron: '0 6-20 * * 5'
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Friday reminder job
+        run: |
+          curl -sf --max-time 60 --retry 3 --retry-delay 10 \
+            -X POST "${{ secrets.SMARTPAY_BACKEND_URL }}/api/cron/friday-reminders" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

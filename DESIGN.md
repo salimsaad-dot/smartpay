@@ -439,9 +439,58 @@ for a full management system.
     delete (`audit_logs.user_id` also references `users`, so it must be
     deleted first) — caught by running the full suite, not assumed correct
     from the individual file's own test run.
-- **Phase 11 — not started.** Production deployment — hosting, real env
-  vars, the actual Friday cron trigger, Paystack/mNotify going live —
-  picked up in a future session.
+- **Phase 11 — started 2026-10-03, paused mid-way.** Hosting choice
+  confirmed (same providers Academia Hub uses — Vercel, Render, Aiven —
+  but as entirely separate projects/services, not nested inside Academia
+  Hub's own). Two pieces of real, code-side Phase 11 work landed before
+  pausing to go live-host anything:
+  - **A real gap closed in the Friday job**: `friday_send_time` (built in
+    Phase 8, editable in the UI) was stored but never actually checked
+    anywhere — the job ran for every enabled school regardless of its
+    configured time. Fixed with a `respectSendTime` flag, applied only to
+    the all-schools scheduler path (`runFridayJobForAllSchools`), never
+    to the admin-facing manual-run endpoint (which must stay immediate,
+    per the spec's own "protected manual test/run" framing). The real
+    production trigger, `.github/workflows/friday-reminders.yml`
+    (mirroring Academia Hub's own already-proven GitHub-Actions +
+    `x-cron-secret` pattern exactly), now fires **hourly on Fridays**
+    rather than once at a single global time, so each school's own
+    configured send time is actually honored — a school not yet due this
+    hour is simply skipped and picked up by a later firing the same day,
+    with the existing cycle lock preventing any duplicate once it does
+    fire. 3 new tests confirm the gate correctly blocks/allows based on
+    time, and that the manual-run path is unaffected by it. 117 tests
+    total, 1 skipped.
+  - **A real, pre-existing mobile-responsiveness gap, found and fixed**:
+    the admin dashboard's `DashboardShell` had zero mobile treatment — a
+    fixed-width sidebar with no breakpoint, squeezing the entire desktop
+    layout into a sliver of the screen and forcing full-page horizontal
+    scroll on a phone. Fixed with the same hamburger-menu + slide-in-drawer
+    pattern Academia Hub already proved (its own dashboard hit and fixed
+    this identical bug), independently reimplemented against SmartPay's
+    own plain-Tailwind palette rather than Academia Hub's ink+gold one —
+    off-canvas below `md` (768px), static and always-visible at `md` and
+    above, closing automatically on route change (covers both a nav-link
+    click and the browser back button). Separately, every data-table
+    wrapper across all 11 list pages used `overflow-hidden`, which would
+    have silently *clipped* a wide table's rightmost columns on a narrow
+    screen with no way to scroll to them, rather than let it be
+    scrolled — changed to `overflow-x-auto` everywhere, a one-line,
+    mechanically-applied fix. Live-verified on a real 390px mobile
+    viewport, caught by the user's own interrupt mid-deployment-walkthrough
+    to go check this first: before the fix, both Arrears and Reports
+    showed real horizontal page overflow; after, every page (the parent-
+    facing checkout/status pages were already fine, unaffected by this
+    bug) fits cleanly, and the drawer opens/closes correctly including
+    auto-closing on navigation.
+  - **Explicitly not yet done**: creating the actual Aiven database, the
+    Render web service, the Vercel project, GitHub repo secrets
+    (`SMARTPAY_BACKEND_URL`, `CRON_SECRET`), production env vars (a fresh
+    `JWT_SECRET`, `NODE_ENV=production`, `FRONTEND_URL` pointed at the
+    real Vercel domain), running `schema.sql` against the new production
+    database, and pointing Paystack's/mNotify's dashboards at the live
+    URLs. Paused at the user's request to check mobile responsiveness
+    first — resume from here next session.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -498,3 +547,6 @@ for a full management system.
 | 2026-10-03 | CSRF protection relies entirely on `sameSite:'lax'` plus the frontend's same-origin rewrite proxy — no separate CSRF token system was added. | Re-verified by reading the actual `next.config.mjs` rewrite rather than assuming: in production the browser only ever talks to the frontend's own origin, with the proxy forwarding to the real backend server-side. Every request is therefore genuinely same-origin, not merely same-site, which structurally rules out third-party CSRF regardless of the cookie attribute underneath it — a token system would be defense for a threat that can't reach this app's actual deployed topology. |
 | 2026-10-03 | mNotify's optional `getDeliveryStatus()` capability (confirming an SMS was actually delivered, not just accepted by the provider) was not implemented — reminders report `sent`/`failed` from the send attempt itself, and the schema's `delivered` status value is defined but currently unreachable. | The spec's own `SmsProvider` interface marks this capability explicitly optional. Implementing it would mean either polling mNotify per-message or handling a delivery-status webhook, both real integration work with no spec-mandated urgency — a documented, deliberate scope cut rather than a silent gap, picked up later only if real delivery visibility becomes a stated need. |
 | 2026-10-03 | The "two admins edit the same invoice/payment record" edge case (spec section 17) has no optimistic-locking or conflict-detection mechanism. | Not reachable in the current build: Phase 1 deliberately ships exactly one `school_admin` user per school at registration, with no endpoint to invite or create additional admin users yet. A concurrency-conflict mechanism for a scenario the product can't currently produce would be unverifiable speculation; revisit if/when multi-admin-per-school ever ships. |
+| 2026-10-03 | `friday_send_time` gating (`respectSendTime`) is applied only to `runFridayJobForAllSchools`, never to the admin-facing manual-run endpoint, and the real GitHub Actions trigger fires hourly on Fridays rather than once at a single time. | The spec's own manual-run endpoint exists specifically so an admin can test/troubleshoot immediately, not wait for a configured time — gating it would contradict its purpose. Firing the real scheduler hourly (rather than once) is what actually makes a *per-school* configurable send time meaningful at all; a single daily/weekly firing could only ever honor one global time for every school, which isn't what the settings UI promises. |
+| 2026-10-03 | The mobile hamburger/drawer pattern was independently reimplemented against SmartPay's own plain-Tailwind color palette, not copied verbatim from Academia Hub's (which uses a dark navy `#0F172A` sidebar and its own `app-modal-backdrop` CSS keyframe animation). | Matches the standing decision that SmartPay deliberately doesn't reuse Academia Hub's ink+gold visual identity (different product, different customers) — only the *structural* interaction pattern (off-canvas drawer, hamburger trigger, overlay, `md` breakpoint) was worth replicating, since that's what was actually proven to work, not the specific color scheme underneath it. |
+| 2026-10-03 | Every table wrapper across the app was changed from `overflow-hidden` to `overflow-x-auto`. | `overflow-hidden` on a container narrower than its table doesn't make the table responsive — it silently *clips* the rightmost columns with no way to ever see them, which is strictly worse than a plain unstyled table. `overflow-x-auto` lets a wide table scroll within its own card on a narrow screen, which is the actual, standard fix once the page itself (via the sidebar drawer fix) no longer forces full-page horizontal scroll. |

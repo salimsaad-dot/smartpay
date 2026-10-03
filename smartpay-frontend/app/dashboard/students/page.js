@@ -136,7 +136,7 @@ export default function StudentsPage() {
       <div className="mt-4"><StudentForm classes={classes} years={years} onCreated={load} /></div>
 
       {students && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Admission No.</th><th className="p-3">Name</th><th className="p-3">Class</th><th className="p-3">Year</th><th className="p-3"></th></tr></thead>
             <tbody>

@@ -214,6 +214,50 @@ describe('Friday automation job — cycle locks, filtering, and cron trigger (re
         expect(res.body.data.every((j) => j.school_id !== schoolIdA)).toBe(true);
     });
 
+    describe('respectSendTime (the automated all-schools path only)', () => {
+        const { runFridayJobForSchool, fridayCycleKey } = require('../utils/fridayJob');
+        const farFuture = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // a fresh, never-used cycle
+
+        test('a school whose configured send time has not arrived yet is skipped when respectSendTime is set', async () => {
+            await request(app).patch('/api/settings/friday-reminders').set('Cookie', cookieA).send({ fridaySendTime: '23:59:59' });
+
+            const result = await runFridayJobForSchool(schoolIdA, { now: farFuture, respectSendTime: true });
+            expect(result).toBeNull();
+
+            const jobs = await db.query(
+                'SELECT COUNT(*) AS c FROM scheduled_jobs WHERE school_id = ? AND cycle_key = ?',
+                [schoolIdA, fridayCycleKey(farFuture, 'Africa/Accra')]
+            );
+            expect(jobs[0][0].c).toBe(0); // no lock even attempted — nothing to show for a cycle that never ran
+
+            await request(app).patch('/api/settings/friday-reminders').set('Cookie', cookieA).send({ fridaySendTime: '08:00:00' });
+        });
+
+        test('the same school proceeds once its configured send time has passed', async () => {
+            await request(app).patch('/api/settings/friday-reminders').set('Cookie', cookieA).send({ fridaySendTime: '00:00:01' });
+
+            const result = await runFridayJobForSchool(schoolIdA, { now: farFuture, respectSendTime: true });
+            expect(result).not.toBeNull();
+
+            await request(app).patch('/api/settings/friday-reminders').set('Cookie', cookieA).send({ fridaySendTime: '08:00:00' });
+        });
+
+        test('omitting respectSendTime (the manual-run path) ignores friday_send_time entirely — never gated by it', async () => {
+            const freshCycle = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000); // never touched by any earlier test
+            await request(app).patch('/api/settings/friday-reminders').set('Cookie', cookieA).send({ fridaySendTime: '23:59:59' });
+
+            // No respectSendTime passed at all — same call shape the manual-run
+            // controller uses. If the time gate were mistakenly applied by
+            // default, this would return null purely because of the clock,
+            // even though Mensah still has a real outstanding balance.
+            const result = await runFridayJobForSchool(schoolIdA, { now: freshCycle });
+            expect(result).not.toBeNull();
+            expect(result.processed).toBeGreaterThan(0);
+
+            await request(app).patch('/api/settings/friday-reminders').set('Cookie', cookieA).send({ fridaySendTime: '08:00:00' });
+        });
+    });
+
     describe('cron trigger (external scheduler endpoint)', () => {
         test('the cron endpoint rejects a request with no secret header', async () => {
             const res = await request(app).post('/api/cron/friday-reminders');

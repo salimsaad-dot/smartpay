@@ -131,7 +131,7 @@ export default function AcademicSetupPage() {
       <h2 className="mt-6 text-sm font-semibold uppercase tracking-wide text-[var(--slate-quiet)]">Academic Years</h2>
       <div className="mt-2"><YearForm onCreated={load} /></div>
       {years && (
-        <div className="mt-3 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Start</th><th className="p-3">End</th><th className="p-3">Current</th><th className="p-3"></th></tr></thead>
             <tbody>
@@ -155,7 +155,7 @@ export default function AcademicSetupPage() {
       <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-[var(--slate-quiet)]">Terms</h2>
       <div className="mt-2"><TermForm years={years || []} onCreated={load} /></div>
       {terms && (
-        <div className="mt-3 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Start</th><th className="p-3">End</th><th className="p-3">Current</th><th className="p-3"></th></tr></thead>
             <tbody>

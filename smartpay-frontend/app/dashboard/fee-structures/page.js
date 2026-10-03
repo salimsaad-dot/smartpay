@@ -136,7 +136,7 @@ export default function FeeStructuresPage() {
       <div className="mt-4"><StructureForm years={years} terms={terms} classes={classes} onCreated={load} /></div>
 
       {structures && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Class</th><th className="p-3">Term</th><th className="p-3">Items</th><th className="p-3">Total</th></tr></thead>
             <tbody>

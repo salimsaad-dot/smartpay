@@ -110,7 +110,7 @@ function OutstandingFeesTab({ classes, terms, currency }) {
         }
       />
       {data && (
-        <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
               <th className="p-3">Student</th><th className="p-3">Parent</th><th className="p-3">Class</th><th className="p-3">Term</th><th className="p-3">Balance</th><th className="p-3">Last Payment</th>
@@ -164,7 +164,7 @@ function PaymentHistoryTab({ currency }) {
             <SummaryCard label="Online" value={formatMoney(data.summary.onlineCollected, currency)} />
             <SummaryCard label="Manual" value={formatMoney(data.summary.manualCollected, currency)} />
           </div>
-          <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+          <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
             <table className="w-full text-left text-sm">
               <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
                 <th className="p-3">Date</th><th className="p-3">Student</th><th className="p-3">Invoice</th><th className="p-3">Amount</th><th className="p-3">Method</th><th className="p-3">Source</th><th className="p-3">Status</th>
@@ -214,7 +214,7 @@ function InvoiceReportTab({ classes, terms, currency }) {
         }
       />
       {data && (
-        <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
               <th className="p-3">Invoice No.</th><th className="p-3">Student</th><th className="p-3">Class</th><th className="p-3">Term</th><th className="p-3">Total</th><th className="p-3">Balance</th><th className="p-3">Status</th>
@@ -259,7 +259,7 @@ function SmsActivityTab() {
             <SummaryCard label="Failed" value={data.summary.failed} />
             <SummaryCard label="Total" value={data.summary.total} />
           </div>
-          <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+          <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
             <table className="w-full text-left text-sm">
               <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
                 <th className="p-3">Date</th><th className="p-3">Parent</th><th className="p-3">Phone</th><th className="p-3">Status</th><th className="p-3">Failure Reason</th>

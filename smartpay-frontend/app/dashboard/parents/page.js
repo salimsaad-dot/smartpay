@@ -97,7 +97,7 @@ export default function ParentsPage() {
       <div className="mt-4"><ParentForm onCreated={load} /></div>
 
       {parents && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Phone</th><th className="p-3">Email</th><th className="p-3"></th></tr></thead>
             <tbody>

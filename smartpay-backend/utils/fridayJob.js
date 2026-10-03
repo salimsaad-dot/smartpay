@@ -21,6 +21,20 @@ function fridayCycleKey(date, timezone) {
     return `friday-${formatter.format(date)}`;
 }
 
+// True once the current time, in the school's own timezone, has reached
+// its configured friday_send_time. Only applied to the all-schools
+// scheduler path below — the admin-facing manual-run endpoint is
+// deliberately exempt (the spec's own "protected manual test/run
+// endpoint for development/admin troubleshooting" exists specifically so
+// an admin can run it immediately, not wait for the configured time).
+function isPastSendTime(now, timezone, sendTime) {
+    const formatter = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const parts = formatter.formatToParts(now);
+    const get = (type) => parts.find((p) => p.type === type).value;
+    const currentTime = `${get('hour')}:${get('minute')}:${get('second')}`;
+    return currentTime >= String(sendTime).slice(0, 8);
+}
+
 // Acquires the job lock for (school, cycle) via the UNIQUE constraint on
 // scheduled_jobs(school_id, job_type, cycle_key) — the same TOCTOU-safe
 // "insert and catch the duplicate" pattern used everywhere else in this
@@ -56,14 +70,19 @@ async function acquireJobLock(schoolId, cycleKey) {
 // Runs the Friday reminder cycle for one school. Returns a summary of
 // what happened, or null if this cycle was already completed/in progress
 // (the lock wasn't acquired, so nothing was done).
-async function runFridayJobForSchool(schoolId, { now = new Date() } = {}) {
+async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTime = false } = {}) {
     const [[school]] = await pool.query(
-        'SELECT id, name, currency, timezone, friday_reminders_enabled, friday_template_id, reminder_min_balance, reminder_cooldown_days FROM schools WHERE id = ?',
+        'SELECT id, name, currency, timezone, friday_reminders_enabled, friday_send_time, friday_template_id, reminder_min_balance, reminder_cooldown_days FROM schools WHERE id = ?',
         [schoolId]
     );
     if (!school || !school.friday_reminders_enabled) return null;
 
-    const cycleKey = fridayCycleKey(now, school.timezone || 'Africa/Accra');
+    const timezone = school.timezone || 'Africa/Accra';
+    if (respectSendTime && !isPastSendTime(now, timezone, school.friday_send_time)) {
+        return null; // not due yet this cycle — a later scheduler firing the same day will pick it up
+    }
+
+    const cycleKey = fridayCycleKey(now, timezone);
     const jobId = await acquireJobLock(schoolId, cycleKey);
     if (!jobId) return null;
 
@@ -182,14 +201,20 @@ async function runFridayJobForSchool(schoolId, { now = new Date() } = {}) {
 }
 
 // Runs the cycle for every school with Friday reminders enabled — what
-// the real production scheduler calls once a week. Each school's failure
-// is isolated: one school's crash never blocks another's.
+// the real production scheduler calls. Deliberately called more often
+// than once a week (hourly, Fridays only — see
+// .github/workflows/friday-reminders.yml) with respectSendTime: true, so
+// each school's own configured friday_send_time is honored rather than
+// every school firing at one single global time; a school not yet due
+// this hour is simply skipped and picked up by a later firing the same
+// day. Each school's failure is isolated: one school's crash never
+// blocks another's.
 async function runFridayJobForAllSchools(options = {}) {
     const [schools] = await pool.query(`SELECT id FROM schools WHERE friday_reminders_enabled = 1 AND status = 'active'`);
     const results = [];
     for (const { id } of schools) {
         try {
-            const result = await runFridayJobForSchool(id, options);
+            const result = await runFridayJobForSchool(id, { respectSendTime: true, ...options });
             results.push({ schoolId: id, result });
         } catch (error) {
             console.error(`Friday job: school ${id} failed entirely:`, error);

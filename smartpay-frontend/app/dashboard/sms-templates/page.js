@@ -166,7 +166,7 @@ function FridayAutomationPanel({ templates }) {
       </div>
 
       {jobs && jobs.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)]">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)]">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[var(--border)] bg-gray-50 text-[var(--slate-quiet)]">

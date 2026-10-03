@@ -39,7 +39,7 @@ export default function RemindersPage() {
       </div>
 
       {reminders && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
