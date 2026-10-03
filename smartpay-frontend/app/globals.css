@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/* Tailwind v4 wraps `hover:` in `@media (hover: hover)` by default, which
+   on touch-capable Windows devices can report the primary pointer as
+   non-hover even with a mouse — silently no-op-ing every hover: utility.
+   Redefine it as a plain &:hover selector, matching traditional CSS. */
+@custom-variant hover (&:hover);
+
+:root {
+  --bg: #F8FAFC;
+  --card: #FFFFFF;
+  --ink: #0F172A;
+  --slate: #475569;
+  --slate-quiet: #64748B;
+  --border: #E2E8F0;
+  --primary: #2563EB;
+  --primary-bright: #1D4ED8;
+  --success: #10B981;
+  --danger: #DC2626;
+  --danger-wash: #FDECEC;
+}
