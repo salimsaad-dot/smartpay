@@ -170,11 +170,40 @@ for a full management system.
   fully separate from Academia Hub's, per the user's explicit choice on
   2026-10-03. Real test keys are live in `.env` (gitignored, never
   committed).
-- **Phase 6 onward — not started.** Arrears aggregation/filtering (the
-  full admin page this phase's manual "Payment Link" button is a
-  placeholder for), SMS reminders, the Friday automation job, reports,
-  audit logs — all per the spec's own Phases 6–11, picked up in future
-  sessions.
+- **Phase 6 — Arrears: SHIPPED 2026-10-03.** A new Arrears page
+  (`GET /api/arrears`, `app/dashboard/arrears/page.js`) listing every
+  outstanding invoice (`balance > 0`, not void) with the spec's exact
+  column set — student, parent/guardian, class, term, total, paid,
+  balance, last payment date — plus filters (class, term, min/max
+  balance, parent) and summary totals (total outstanding, students in
+  arrears, invoices in arrears) computed from the same filtered rowset
+  the table renders, not a second query that could silently disagree
+  with it. "Parent aggregation" is a client-side grouped view over the
+  same flat invoice list (a "Group by parent" toggle consolidates
+  siblings into one row with a combined balance and child list) rather
+  than a separate backend endpoint, since the underlying facts are
+  invoice-level and aggregation is just a different lens on them.
+  Payment-link generation reuses Phase 5's existing
+  `POST /api/parents/:id/payment-link` endpoint directly — no new
+  link-generation logic was needed, confirming that phase's groundwork.
+  Reminder status and a "Send Reminder" action are both in the spec's
+  page description but intentionally not represented anywhere in this
+  UI, not even as a disabled placeholder — SMS doesn't exist until
+  Phase 7, and a stale-disabled control is worse than no control (a
+  recurring, previously-learned lesson). 9 new backend tests (75 total):
+  fully-paid invoices correctly excluded, summary totals match the
+  filtered set exactly, correct primary-parent attribution, parent/
+  class/term/balance-range filtering (including a shared parent's two
+  children both returning), a voided invoice never appearing even with
+  a positive balance, and tenant isolation. Live-verified through the
+  real UI: seeded three students (two siblings under one parent, one
+  fully paid elsewhere), confirmed the fully-paid student correctly
+  never appeared, confirmed the flat and grouped-by-parent views both
+  showed correct totals, confirmed the min-balance filter worked, and
+  generated a real payment link directly from the grouped view.
+- **Phase 7 onward — not started.** SMS reminders, the Friday automation
+  job, reports, audit logs — all per the spec's own Phases 7–11, picked
+  up in future sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -206,3 +235,7 @@ for a full management system.
 | 2026-10-03 | Payment finalization (marking a payment `success`/`failed` and recalculating its invoice) was refactored into one shared `finalizePaymentEvent()` function, called from both the webhook handler and the public payment-status endpoint's live-check fallback — the status endpoint doesn't just *report* what a live Paystack check found, it *applies* it the same way a webhook would. | Caught during this phase's own live testing, not a hypothetical: the original status endpoint only returned a live-checked status to the browser without ever writing it back, so a parent could be shown "Payment successful" while `invoices.balance` silently never updated if that specific webhook was ever permanently lost (not just delayed). Sharing one finalize path makes the two trigger routes (webhook delivery, parent polling their status page) provably agree, instead of two independent, divergeable implementations of "what does a successful payment do." |
 | 2026-10-03 | The webhook only processes `charge.success` and `charge.failed` event types — any other Paystack event (disputes, transfers, refunds, subscriptions) is ignored even if it happens to carry a `data.reference` matching one of our payments. | Paystack sends many event types beyond charges, and several of them can carry a `reference` field for unrelated reasons. Without an explicit allowlist, an unrelated event could be misinterpreted as a charge status update for a payment that merely shares that reference string — a correctness gap that cost nothing to close given the fix was a one-line filter. |
 | 2026-10-03 | SmartPay's separate Paystack business was created via Paystack's own "Add a business" feature under the same login/email as Academia Hub's existing business, not a second email address. | Discovered live when the user went to sign up — Paystack natively supports multiple businesses per account, each with its own dashboard, transactions, and API keys, which is all the separation this needed (two different products, two schools' money, never mixed in one dashboard). Simpler than the Gmail `+alias` workaround originally suggested, since Paystack already solves this directly. |
+| 2026-10-03 | Arrears "parent aggregation" is a client-side grouped view over the same flat `GET /api/arrears` invoice list, not a separate backend endpoint. | The underlying facts are invoice-level (term/total vary per invoice, per the spec's own column list) — aggregation is just a different lens on the same rows, not a materially different query. Building a second endpoint would mean keeping two filter implementations in sync for no real benefit, since the dataset size (one school's active arrears) makes client-side grouping cheap. |
+| 2026-10-03 | The Arrears page's summary totals (total outstanding, students in arrears, invoices in arrears) are computed in JS by reducing over the same rows the table renders, not a second SQL query with duplicated filter logic. | Two independent queries computing "the same" numbers from the same filters is exactly the kind of thing that silently drifts apart the moment one filter is added to one query and not the other. Deriving the summary from the already-fetched, already-filtered rowset makes that class of bug structurally impossible. |
+| 2026-10-03 | Arrears reuses Phase 5's existing `POST /api/parents/:id/payment-link` endpoint for link generation rather than building a new one scoped to the Arrears page. | No new capability was actually needed — Phase 5 already built parent-scoped, consolidated-balance payment links exactly matching what Arrears needs to hand a parent. Reusing it here is direct evidence that phase's groundwork was sized correctly, not scope creep to avoid. |
+| 2026-10-03 | "Reminder status" and "Send Reminder" (both listed in the spec's own Arrears page description) are entirely absent from this page's UI — not even a disabled button. | SMS doesn't exist until Phase 7; a visible-but-disabled control invites exactly the "stale disabled feature despite it actually shipping later" class of bug this project has hit and fixed multiple times before in Academia Hub. Nothing to disable is safer than something to forget to re-enable. |

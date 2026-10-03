@@ -14,6 +14,7 @@ const feeStructureRoutes = require('./routes/feeStructureRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const publicPaymentRoutes = require('./routes/publicPaymentRoutes');
+const arrearsRoutes = require('./routes/arrearsRoutes');
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/fee-structures', feeStructureRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/public', publicPaymentRoutes);
+app.use('/api/arrears', arrearsRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });
