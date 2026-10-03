@@ -20,6 +20,7 @@ const reminderRoutes = require('./routes/reminderRoutes');
 const scheduledJobRoutes = require('./routes/scheduledJobRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const schoolSettingsRoutes = require('./routes/schoolSettingsRoutes');
+const reportsRoutes = require('./routes/reportsRoutes');
 
 const app = express();
 
@@ -79,6 +80,7 @@ app.use('/api/reminders', reminderRoutes);
 app.use('/api/scheduled-jobs', scheduledJobRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/settings', schoolSettingsRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });

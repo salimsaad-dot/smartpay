@@ -318,8 +318,54 @@ for a full management system.
   one real send attempted failed with mNotify's live `401` (sender ID
   still pending approval), recorded cleanly as `failed`, exactly the
   same graceful path already proven for the manual-reminder flow.
-- **Phase 9 onward — not started.** Reports, audit logs — all per the
-  spec's own Phases 9–11, picked up in future sessions.
+- **Phase 9 — Reports: SHIPPED 2026-10-03.** All seven report types from
+  the spec's section 15, plus CSV export where the report is a list
+  (`utils/csv.js`, a small dependency-free RFC-4180 serializer):
+  **Collection Summary** (expected/collected/outstanding/rate, filterable
+  by term/class/date range — reads straight from invoices' own materialized
+  `total`/`paid_amount`/`balance` columns, never re-derived from payments,
+  consistent with how those columns are trusted everywhere else in this
+  app), **Outstanding Fees** (the same underlying facts as the Arrears
+  page, reformatted as an exportable report rather than an actionable
+  workflow view — kept as its own query in `reportsController.js` rather
+  than importing from `arrearsController.js`, matching this codebase's
+  convention that each controller owns its SQL), **Payment History**
+  (explicitly splits online vs. manual collection totals, per the spec's
+  own requirement), **Invoice Report**, **SMS Activity** (sent/failed
+  counts + a dated, recipient-level list), and **Student/Parent
+  Statements** (invoices + payments + running totals for one
+  student/family — rendered on-screen with a browser print button rather
+  than generating real PDFs server-side, since the spec explicitly frames
+  PDF as optional: "can be added... where useful," and a print-to-PDF
+  browser dialog covers the same real need — producing something a
+  parent can save or hand over — without adding a PDF-generation
+  dependency this phase doesn't otherwise need). 12 new backend tests
+  (108 total, 1 skipped): correct expected/collected/outstanding math,
+  fully-paid invoices correctly excluded from Outstanding Fees, CSV
+  export has a real header row and real data, online/manual collection
+  split is correct, parent-filtering on payments (which required joining
+  through `parent_student`, since `payments` itself has no `parent_id`
+  column — caught before ever hitting a live server, not after), method
+  filtering, per-student and per-parent statement totals, and tenant
+  isolation across every report and both statement types. Frontend: one
+  Reports page with an internal tab switcher (Collection Summary,
+  Outstanding Fees, Payment History, Invoice Report, SMS Activity,
+  Statements) rather than six separate nav entries — matches the spec's
+  own "Reports" screen concept as a single destination with multiple
+  report types, not six independent pages competing for sidebar space.
+  CSV export links are plain `<a target="_blank">` tags pointing straight
+  at the backend's CSV endpoints (not routed through `apiRequest()`,
+  which always calls `.json()`) — the browser's top-level navigation
+  still carries the `sameSite:'lax'` auth cookie automatically, so no
+  separate download-auth mechanism was needed. Live-verified end-to-end
+  through the real UI: seeded two students (one fully paid, one
+  partially), confirmed Collection Summary's math, confirmed Outstanding
+  Fees correctly excluded the fully-paid student, confirmed Payment
+  History's online/manual split, and confirmed a Student Statement
+  rendered the right student with the right totals.
+- **Phase 10 onward — not started.** Security/QA hardening pass, audit
+  logs, deployment — all per the spec's own Phases 10–11, picked up in
+  future sessions.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -367,3 +413,7 @@ for a full management system.
 | 2026-10-03 | Even across a crash-and-retry of the *same* cycle, a parent is never reminded twice: each parent is checked against `sms_reminders` for an existing `sent`/`delivered` row in that exact `cycle_key` before anything is sent, independent of the job-level lock. | The job-level lock alone only prevents two *processes* from running the same cycle concurrently — it doesn't protect against a resumed run re-processing parents a crashed earlier attempt had already successfully reminded. The spec's "never blindly resend successful messages" rule has to be enforced per-parent, not just per-job. |
 | 2026-10-03 | Friday-automation settings (`friday_reminders_enabled`, `friday_send_time`, `friday_template_id`, `reminder_min_balance`, `reminder_cooldown_days`) are columns directly on `schools`, not a separate settings table. | They're genuinely school-profile data — the same category as the `currency`/`timezone` columns already living there — not a growing, open-ended set of preferences that would justify a dedicated table. |
 | 2026-10-03 | `PATCH /api/settings/friday-reminders` was rewritten to merge only the fields present in the request body against the school's current row, instead of writing every column from the body regardless of what was sent. | Caught live during Phase 8 testing: the original version defaulted every omitted field to `false`/`null`, so a caller updating only `reminderCooldownDays` silently disabled Friday reminders entirely and wiped the template/min-balance as a side effect. A PATCH endpoint must only change what it's actually given — this is the kind of bug that's invisible in a happy-path manual test (which tends to supply every field) and only surfaces once something calls it with a genuinely partial body, exactly as an automated test did. |
+| 2026-10-03 | Student and Parent Statements render on-screen with a browser "Print / Save as PDF" button rather than generating real PDFs server-side. | The spec explicitly frames PDF as optional ("can be added for statements/receipts where useful"), not required. A browser's native print-to-PDF dialog already produces something a parent can save or print, covering the real underlying need, without pulling in a PDF-generation library this phase doesn't otherwise need — a deliberate scope cut, not an oversight. |
+| 2026-10-03 | Reports' CSV export links are plain `<a target="_blank">` tags pointing directly at the backend's CSV endpoints, not routed through the frontend's `apiRequest()` wrapper. | `apiRequest()` always calls `.json()` on the response, which would break on a `text/csv` body. A top-level browser navigation (clicking a link, including one opened in a new tab) still carries the `sameSite:'lax'` auth cookie automatically, so no separate download-authentication mechanism was needed — the existing cookie-based session already covers it. |
+| 2026-10-03 | The Reports page is one screen with an internal tab switcher across all six report types (Collection Summary, Outstanding Fees, Payment History, Invoice Report, SMS Activity, Statements), not six separate sidebar entries. | Matches the spec's own framing of "Reports" as a single screen with multiple report types inside it (section 18's Detailed Screen Specifications), and avoids the sidebar nav growing by six items for what is conceptually one destination. |
+| 2026-10-03 | The Payment History report filters by `parentId` via `EXISTS (... parent_student ...)` rather than a direct `payments.parent_id = ?` column. | `payments` has no `parent_id` column — ownership is only derivable through `student_id` → `parent_student`. Caught while writing the controller, before it ever reached a live request, by checking the actual `schema.sql` rather than assuming the column existed because the report conceptually needed it. |

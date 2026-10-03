@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/arrears", label: "Arrears" },
   { href: "/dashboard/reminders", label: "Reminders" },
   { href: "/dashboard/sms-templates", label: "SMS Templates" },
+  { href: "/dashboard/reports", label: "Reports" },
 ];
 
 export default function DashboardShell({ children }) {
