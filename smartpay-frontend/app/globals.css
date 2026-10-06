@@ -27,6 +27,35 @@
   --hover: #F1F5F9;
   --radius-card: 0.75rem;
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+
+  /* Redesign (2026-10): a distinct brand identity on top of the existing
+     token set above — the old tokens stay in place and keep working for
+     any page not yet migrated to the new look, so the app never has a
+     moment where a half-migrated page is missing a variable. */
+  --brand-navy: #0F172A;
+  --brand-green: #10B981;
+  --brand-green-dark: #059669;
+  --sidebar-bg: #0B1220;
+  --sidebar-ink: #CBD5E1;
+  --sidebar-ink-muted: #64748B;
+  --sidebar-hover: #16213A;
+  --sidebar-active-bg: #1D4ED8;
+  --sidebar-active-ink: #FFFFFF;
+  --sidebar-border: #1E293B;
+  --violet: #7C3AED;
+  --violet-wash: #F3E8FF;
+  --radius-xl: 1rem;
+  --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+
+  /* A fixed rotation so the same name always lands on the same color
+     within one render, without hashing logic needing to live in every
+     place an avatar is drawn. */
+  --avatar-1: #2563EB; --avatar-1-wash: #EFF6FF;
+  --avatar-2: #DB2777; --avatar-2-wash: #FCE7F3;
+  --avatar-3: #7C3AED; --avatar-3-wash: #F3E8FF;
+  --avatar-4: #EA580C; --avatar-4-wash: #FFF1E6;
+  --avatar-5: #0D9488; --avatar-5-wash: #E6FFFB;
+  --avatar-6: #059669; --avatar-6-wash: #ECFDF5;
 }
 
 :focus-visible {
