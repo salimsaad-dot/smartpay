@@ -88,29 +88,61 @@ exports.getById = async (req, res) => {
 // param can be trusted just because they're plausible integers. This is
 // also where a sibling naturally gets recognized: linking the same
 // parent_id to a second student is exactly what makes them siblings.
+// A student's first linked parent/guardian is automatically the primary
+// one — the only UI that links a parent (the Students page) never lets an
+// admin choose "primary" explicitly, so defaulting isPrimary to false
+// meant the very first (and for most students, only) parent linked was
+// silently never primary. Several features key off is_primary=1
+// specifically (Arrears' parent/payment-link column, the Outstanding Fees
+// report), so that meant a normally-linked parent could never appear
+// there or receive a payment link — a real, user-impacting gap this
+// closes. An explicit isPrimary in the request body still overrides the
+// auto-first-parent default, for any future UI that wants to set it
+// directly. Locks the student's existing parent_student rows
+// (SELECT ... FOR UPDATE) before deciding, so two concurrent "first link"
+// requests for the same student can't both decide they're the first.
 exports.linkParent = async (req, res) => {
+    const connection = await pool.getConnection();
     try {
         const { parentId, relationship, isPrimary } = req.body;
         if (!parentId) {
+            connection.release();
             return res.status(400).json({ status: 'error', message: 'parentId is required.' });
         }
 
-        const [[student]] = await pool.query('SELECT id FROM students WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
-        if (!student) return res.status(404).json({ status: 'error', message: 'Student not found.' });
-        const [[parent]] = await pool.query('SELECT id FROM parents WHERE id = ? AND school_id = ?', [parentId, req.user.schoolId]);
-        if (!parent) return res.status(404).json({ status: 'error', message: 'Parent/guardian not found.' });
+        const [[student]] = await connection.query('SELECT id FROM students WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+        if (!student) {
+            connection.release();
+            return res.status(404).json({ status: 'error', message: 'Student not found.' });
+        }
+        const [[parent]] = await connection.query('SELECT id FROM parents WHERE id = ? AND school_id = ?', [parentId, req.user.schoolId]);
+        if (!parent) {
+            connection.release();
+            return res.status(404).json({ status: 'error', message: 'Parent/guardian not found.' });
+        }
 
-        await pool.query(
-            'INSERT INTO parent_student (parent_id, student_id, relationship, is_primary) VALUES (?, ?, ?, ?)',
-            [parentId, req.params.id, relationship?.trim() || null, isPrimary ? 1 : 0]
+        await connection.beginTransaction();
+        const [existingLinks] = await connection.query(
+            'SELECT id FROM parent_student WHERE student_id = ? FOR UPDATE',
+            [req.params.id]
         );
+        const primary = isPrimary !== undefined ? (isPrimary ? 1 : 0) : (existingLinks.length === 0 ? 1 : 0);
+
+        await connection.query(
+            'INSERT INTO parent_student (parent_id, student_id, relationship, is_primary) VALUES (?, ?, ?, ?)',
+            [parentId, req.params.id, relationship?.trim() || null, primary]
+        );
+        await connection.commit();
         res.status(201).json({ status: 'success', message: 'Parent/guardian linked.' });
     } catch (error) {
+        await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ status: 'error', message: 'This parent/guardian is already linked to this student.' });
         }
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while linking the parent/guardian.' });
+    } finally {
+        connection.release();
     }
 };
 
