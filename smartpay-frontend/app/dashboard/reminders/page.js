@@ -4,33 +4,40 @@ import { Fragment, useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
-
-const STATUS_STYLES = {
-  sent: "bg-green-50 text-[var(--success)]",
-  delivered: "bg-green-50 text-[var(--success)]",
-  failed: "bg-red-50 text-[var(--danger)]",
-  pending: "bg-amber-50 text-amber-700",
-};
+import {
+  EmptyState,
+  ErrorState,
+  LinkButton,
+  LoadingSkeleton,
+  MobileRecordCard,
+  PageHeader,
+  StatusBadge,
+  inputClass,
+  statusTone,
+} from "@/components/ui";
 
 export default function RemindersPage() {
   const [reminders, setReminders] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [expandedId, setExpandedId] = useState(null);
 
   function load() {
+    setLoadError("");
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
-    apiRequest(`/reminders?${params.toString()}`).then((res) => setReminders(res.data));
+    apiRequest(`/reminders?${params.toString()}`)
+      .then((res) => setReminders(res.data))
+      .catch((err) => setLoadError(err.message));
   }
   useEffect(load, [statusFilter]);
 
   return (
     <DashboardShell>
-      <h1 className="text-2xl font-semibold text-[var(--ink)]">Reminder History</h1>
-      <p className="mt-1 text-sm text-[var(--slate-quiet)]">Every manual fee reminder sent, successful or not.</p>
+      <PageHeader title="Reminder History" description="Every manual fee reminder sent, successful or not." />
 
-      <div className="mt-4 flex items-center gap-2">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm">
+      <div className="mt-4">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${inputClass} w-full sm:w-56`}>
           <option value="">All statuses</option>
           <option value="sent">Sent</option>
           <option value="delivered">Delivered</option>
@@ -38,42 +45,75 @@ export default function RemindersPage() {
         </select>
       </div>
 
+      {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
+      {!reminders && !loadError && <div className="mt-6"><LoadingSkeleton lines={3} /></div>}
+
       {reminders && (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                <th className="p-3">Date</th><th className="p-3">Parent</th><th className="p-3">Phone</th><th className="p-3">Status</th><th className="p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {reminders.map((r) => (
-                <Fragment key={r.id}>
-                  <tr className="border-b border-[var(--border)] last:border-b-0">
-                    <td className="p-3">{formatDate(r.created_at)}</td>
-                    <td className="p-3 font-medium">{r.parent_name}</td>
-                    <td className="p-3">{r.phone}</td>
-                    <td className="p-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[r.status] || ""}`}>{r.status}</span>
-                      {r.failure_reason && <span className="ml-2 text-xs text-[var(--danger)]">{r.failure_reason}</span>}
-                    </td>
-                    <td className="p-3">
-                      <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} className="text-xs font-medium text-[var(--primary)] hover:underline">
-                        {expandedId === r.id ? "Hide" : "View message"}
-                      </button>
-                    </td>
-                  </tr>
-                  {expandedId === r.id && (
-                    <tr className="border-b border-[var(--border)] bg-gray-50">
-                      <td colSpan={5} className="p-3 text-xs text-[var(--slate)]">{r.message}</td>
+        <>
+          {/* Phones: one card per reminder, message opens inline. */}
+          <div className="mt-4 space-y-3 md:hidden">
+            {reminders.length === 0 && <EmptyState>No reminders sent yet.</EmptyState>}
+            {reminders.map((r) => (
+              <MobileRecordCard key={r.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-[var(--ink)]">{r.parent_name}</p>
+                    <p className="truncate text-xs text-[var(--slate-quiet)]">{r.phone} · {formatDate(r.created_at)}</p>
+                  </div>
+                  <StatusBadge tone={statusTone(r.status)}>{r.status}</StatusBadge>
+                </div>
+                {r.failure_reason && <p className="mt-1 text-xs text-[var(--danger)]">{r.failure_reason}</p>}
+                <div className="mt-3 border-t border-[var(--border)] pt-3">
+                  <LinkButton onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
+                    {expandedId === r.id ? "Hide message" : "View message"}
+                  </LinkButton>
+                </div>
+                {expandedId === r.id && (
+                  <p className="mt-3 rounded-lg bg-[var(--hover)] p-3 text-xs text-[var(--slate)]">{r.message}</p>
+                )}
+              </MobileRecordCard>
+            ))}
+          </div>
+
+          {/* Desktop: table. */}
+          <div className="mt-4 hidden overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] md:block">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
+                  <th className="p-3 font-medium">Date</th><th className="p-3 font-medium">Parent</th><th className="p-3 font-medium">Phone</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {reminders.map((r) => (
+                  <Fragment key={r.id}>
+                    <tr className="border-b border-[var(--border)] last:border-b-0">
+                      <td className="p-3">{formatDate(r.created_at)}</td>
+                      <td className="p-3 font-medium">{r.parent_name}</td>
+                      <td className="p-3">{r.phone}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge tone={statusTone(r.status)}>{r.status}</StatusBadge>
+                          {r.failure_reason && <span className="text-xs text-[var(--danger)]">{r.failure_reason}</span>}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <LinkButton onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
+                          {expandedId === r.id ? "Hide" : "View message"}
+                        </LinkButton>
+                      </td>
                     </tr>
-                  )}
-                </Fragment>
-              ))}
-              {reminders.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-[var(--slate-quiet)]">No reminders sent yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+                    {expandedId === r.id && (
+                      <tr className="border-b border-[var(--border)] bg-[var(--hover)]">
+                        <td colSpan={5} className="p-3 text-xs text-[var(--slate)]">{r.message}</td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+                {reminders.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-[var(--slate-quiet)]">No reminders sent yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </DashboardShell>
   );
