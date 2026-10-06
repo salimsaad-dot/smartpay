@@ -3,10 +3,19 @@
 import { Fragment, useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import DashboardShell from "@/components/DashboardShell";
-
-const inputClass =
-  "w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
-const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LinkButton,
+  LoadingSkeleton,
+  MobileRecordCard,
+  PageHeader,
+  Toast,
+  inputClass,
+  labelClass,
+  useToast,
+} from "@/components/ui";
 
 function ParentForm({ onCreated }) {
   const [form, setForm] = useState({ fullName: "", phone: "", email: "", address: "" });
@@ -29,7 +38,7 @@ function ParentForm({ onCreated }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] bg-white p-4 sm:grid-cols-4">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <label className={labelClass}>Full Name</label>
         <input required value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} className={inputClass} />
@@ -43,25 +52,60 @@ function ParentForm({ onCreated }) {
         <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputClass} />
       </div>
       <div className="flex items-end">
-        <button type="submit" disabled={saving} className="w-full rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60">
-          {saving ? "Adding..." : "Add Parent"}
-        </button>
+        <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Parent"}</Button>
       </div>
-      {error && <p className="sm:col-span-4 text-sm text-[var(--danger)]">{error}</p>}
+      {error && <p className="sm:col-span-2 lg:col-span-4 text-sm text-[var(--danger)]">{error}</p>}
     </form>
+  );
+}
+
+function ChildrenList({ children }) {
+  if (children.length === 0) {
+    return <span className="text-xs text-[var(--slate-quiet)]">No children linked yet.</span>;
+  }
+  return (
+    <ul className="space-y-1 text-xs text-[var(--slate)]">
+      {children.map((c) => (
+        <li key={c.id}>{c.first_name} {c.last_name} · {c.class_name} · {c.relationship || "Guardian"}{c.is_primary ? " (primary)" : ""}</li>
+      ))}
+    </ul>
+  );
+}
+
+function PaymentLinkBlock({ state, parentName, onCopy }) {
+  if (state?.error) return <p className="text-xs text-[var(--danger)]">{state.error}</p>;
+  if (!state?.url) return null;
+  return (
+    <div className="rounded-lg bg-[var(--primary-wash)] p-3">
+      <p className="text-xs text-[var(--slate-quiet)]">Share this link with {parentName} (e.g. via SMS) — it stays valid for 30 days:</p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-[var(--card)] px-2 py-1 text-xs text-[var(--ink)]">{state.url}</code>
+        <Button variant="secondary" onClick={() => onCopy(state.url)}>Copy</Button>
+      </div>
+    </div>
   );
 }
 
 export default function ParentsPage() {
   const [parents, setParents] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [linkState, setLinkState] = useState({});
+  const { toast, showToast, dismissToast } = useToast();
 
   function load() {
-    apiRequest("/parents").then((res) => setParents(res.data));
+    setLoadError("");
+    apiRequest("/parents")
+      .then((res) => setParents(res.data))
+      .catch((err) => setLoadError(err.message));
   }
   useEffect(load, []);
+
+  function handleCreated() {
+    load();
+    showToast("Parent/guardian added.");
+  }
 
   async function toggleExpand(id) {
     if (expandedId === id) { setExpandedId(null); return; }
@@ -89,80 +133,81 @@ export default function ParentsPage() {
     }
   }
 
+  function actions(p) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <LinkButton onClick={() => toggleExpand(p.id)}>{expandedId === p.id ? "Hide children" : "View children"}</LinkButton>
+        <LinkButton onClick={() => generateLink(p.id)} disabled={linkState[p.id]?.loading}>
+          {linkState[p.id]?.loading ? "Generating..." : "Payment Link"}
+        </LinkButton>
+      </div>
+    );
+  }
+
   return (
     <DashboardShell>
-      <h1 className="text-2xl font-semibold text-[var(--ink)]">Parents / Guardians</h1>
-      <p className="mt-1 text-sm text-[var(--slate-quiet)]">Linked children (siblings) are shown by expanding a row.</p>
+      <PageHeader title="Parents / Guardians" description="Linked children (siblings) are shown by expanding a row." />
 
-      <div className="mt-4"><ParentForm onCreated={load} /></div>
+      <div className="mt-4"><ParentForm onCreated={handleCreated} /></div>
+
+      {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
+      {!parents && !loadError && <div className="mt-6"><LoadingSkeleton lines={3} /></div>}
 
       {parents && (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Phone</th><th className="p-3">Email</th><th className="p-3"></th></tr></thead>
-            <tbody>
-              {parents.map((p) => (
-                <Fragment key={p.id}>
-                  <tr className="border-b border-[var(--border)] last:border-b-0">
-                    <td className="p-3 font-medium">{p.full_name}</td>
-                    <td className="p-3">{p.phone}</td>
-                    <td className="p-3">{p.email || "—"}</td>
-                    <td className="p-3 text-right">
-                      <button onClick={() => toggleExpand(p.id)} className="text-xs font-medium text-[var(--primary)] hover:underline">
-                        {expandedId === p.id ? "Hide children" : "View children"}
-                      </button>
-                      {" · "}
-                      <button
-                        onClick={() => generateLink(p.id)}
-                        disabled={linkState[p.id]?.loading}
-                        className="text-xs font-medium text-[var(--primary)] hover:underline disabled:opacity-60"
-                      >
-                        {linkState[p.id]?.loading ? "Generating..." : "Payment Link"}
-                      </button>
-                    </td>
-                  </tr>
-                  {expandedId === p.id && detail && (
-                    <tr className="border-b border-[var(--border)] bg-gray-50">
-                      <td colSpan={4} className="p-3">
-                        {detail.children.length === 0 ? (
-                          <span className="text-xs text-[var(--slate-quiet)]">No children linked yet.</span>
-                        ) : (
-                          <ul className="space-y-1 text-xs text-[var(--slate)]">
-                            {detail.children.map((c) => (
-                              <li key={c.id}>
-                                {c.first_name} {c.last_name} · {c.class_name} · {c.relationship || "Guardian"}{c.is_primary ? " (primary)" : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </td>
+        <>
+          {/* Phones: one card per parent. */}
+          <div className="mt-4 space-y-3 md:hidden">
+            {parents.length === 0 && <EmptyState>No parents yet.</EmptyState>}
+            {parents.map((p) => (
+              <MobileRecordCard key={p.id}>
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-[var(--ink)]">{p.full_name}</p>
+                  <p className="truncate text-xs text-[var(--slate-quiet)]">{p.phone}{p.email ? ` · ${p.email}` : ""}</p>
+                </div>
+                <div className="mt-3 border-t border-[var(--border)] pt-3">{actions(p)}</div>
+                {expandedId === p.id && detail && (
+                  <div className="mt-3 rounded-lg bg-[var(--hover)] p-3"><ChildrenList children={detail.children} /></div>
+                )}
+                {linkState[p.id] && (
+                  <div className="mt-3"><PaymentLinkBlock state={linkState[p.id]} parentName={p.full_name} onCopy={copyLink} /></div>
+                )}
+              </MobileRecordCard>
+            ))}
+          </div>
+
+          {/* Desktop: table. */}
+          <div className="mt-4 hidden overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] md:block">
+            <table className="w-full text-left text-sm">
+              <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3 font-medium">Name</th><th className="p-3 font-medium">Phone</th><th className="p-3 font-medium">Email</th><th className="p-3 font-medium"></th></tr></thead>
+              <tbody>
+                {parents.map((p) => (
+                  <Fragment key={p.id}>
+                    <tr className="border-b border-[var(--border)] last:border-b-0">
+                      <td className="p-3 font-medium">{p.full_name}</td>
+                      <td className="p-3">{p.phone}</td>
+                      <td className="p-3">{p.email || "—"}</td>
+                      <td className="p-3 text-right">{actions(p)}</td>
                     </tr>
-                  )}
-                  {linkState[p.id]?.url && (
-                    <tr className="border-b border-[var(--border)] bg-blue-50">
-                      <td colSpan={4} className="p-3">
-                        <p className="text-xs text-[var(--slate-quiet)]">Share this link with {p.full_name} (e.g. via SMS) — it stays valid for 30 days:</p>
-                        <div className="mt-1 flex items-center gap-2">
-                          <code className="flex-1 truncate rounded bg-white px-2 py-1 text-xs text-[var(--ink)]">{linkState[p.id].url}</code>
-                          <button onClick={() => copyLink(linkState[p.id].url)} className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-semibold text-white hover:bg-[var(--primary-bright)]">
-                            Copy
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {linkState[p.id]?.error && (
-                    <tr className="border-b border-[var(--border)]">
-                      <td colSpan={4} className="p-3 text-xs text-[var(--danger)]">{linkState[p.id].error}</td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-              {parents.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-[var(--slate-quiet)]">No parents yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+                    {expandedId === p.id && detail && (
+                      <tr className="border-b border-[var(--border)] bg-[var(--hover)]">
+                        <td colSpan={4} className="p-3"><ChildrenList children={detail.children} /></td>
+                      </tr>
+                    )}
+                    {linkState[p.id] && (
+                      <tr className="border-b border-[var(--border)]">
+                        <td colSpan={4} className="p-3"><PaymentLinkBlock state={linkState[p.id]} parentName={p.full_name} onCopy={copyLink} /></td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+                {parents.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-[var(--slate-quiet)]">No parents yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
+
+      <Toast {...toast} onDismiss={dismissToast} />
     </DashboardShell>
   );
 }

@@ -4,10 +4,20 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
-
-const inputClass =
-  "w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
-const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LinkButton,
+  LoadingSkeleton,
+  MobileRecordCard,
+  PageHeader,
+  StatusBadge,
+  Toast,
+  inputClass,
+  labelClass,
+  useToast,
+} from "@/components/ui";
 
 function YearForm({ onCreated }) {
   const [form, setForm] = useState({ name: "", startDate: "", endDate: "" });
@@ -30,7 +40,7 @@ function YearForm({ onCreated }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] bg-white p-4 sm:grid-cols-4">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <label className={labelClass}>Year Name</label>
         <input required placeholder="e.g. 2026/2027" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputClass} />
@@ -44,11 +54,9 @@ function YearForm({ onCreated }) {
         <input required type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} />
       </div>
       <div className="flex items-end">
-        <button type="submit" disabled={saving} className="w-full rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60">
-          {saving ? "Adding..." : "Add Year"}
-        </button>
+        <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Year"}</Button>
       </div>
-      {error && <p className="sm:col-span-4 text-sm text-[var(--danger)]">{error}</p>}
+      {error && <p className="sm:col-span-2 lg:col-span-4 text-sm text-[var(--danger)]">{error}</p>}
     </form>
   );
 }
@@ -74,7 +82,7 @@ function TermForm({ years, onCreated }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] bg-white p-4 sm:grid-cols-5">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-5">
       <div>
         <label className={labelClass}>Academic Year</label>
         <select required value={form.academicYearId} onChange={(e) => setForm((f) => ({ ...f, academicYearId: e.target.value }))} className={inputClass}>
@@ -95,86 +103,105 @@ function TermForm({ years, onCreated }) {
         <input required type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} />
       </div>
       <div className="flex items-end">
-        <button type="submit" disabled={saving} className="w-full rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60">
-          {saving ? "Adding..." : "Add Term"}
-        </button>
+        <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Term"}</Button>
       </div>
-      {error && <p className="sm:col-span-5 text-sm text-[var(--danger)]">{error}</p>}
+      {error && <p className="sm:col-span-2 lg:col-span-5 text-sm text-[var(--danger)]">{error}</p>}
     </form>
+  );
+}
+
+// Shared shape for both the Academic Years and Terms lists — same columns,
+// same "set current" action, same mobile-card/desktop-table split.
+function PeriodList({ items, onSetCurrent }) {
+  if (!items) return <LoadingSkeleton lines={2} />;
+
+  return (
+    <>
+      <div className="space-y-2 md:hidden">
+        {items.length === 0 && <EmptyState>Nothing here yet.</EmptyState>}
+        {items.map((item) => (
+          <MobileRecordCard key={item.id}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-[var(--ink)]">{item.name}</p>
+                <p className="text-xs text-[var(--slate-quiet)]">{formatDate(item.start_date)} – {formatDate(item.end_date)}</p>
+              </div>
+              {item.is_current ? (
+                <StatusBadge tone="success">Current</StatusBadge>
+              ) : (
+                <LinkButton onClick={() => onSetCurrent(item.id)}>Set Current</LinkButton>
+              )}
+            </div>
+          </MobileRecordCard>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] md:block">
+        <table className="w-full text-left text-sm">
+          <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3 font-medium">Name</th><th className="p-3 font-medium">Start</th><th className="p-3 font-medium">End</th><th className="p-3 font-medium">Current</th><th className="p-3 font-medium"></th></tr></thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} className="border-b border-[var(--border)] last:border-b-0">
+                <td className="p-3 font-medium">{item.name}</td>
+                <td className="p-3">{formatDate(item.start_date)}</td>
+                <td className="p-3">{formatDate(item.end_date)}</td>
+                <td className="p-3">{item.is_current ? <StatusBadge tone="success">Current</StatusBadge> : "—"}</td>
+                <td className="p-3 text-right">
+                  {!item.is_current && <LinkButton onClick={() => onSetCurrent(item.id)}>Set Current</LinkButton>}
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-[var(--slate-quiet)]">Nothing here yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
 export default function AcademicSetupPage() {
   const [years, setYears] = useState(null);
   const [terms, setTerms] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const { toast, showToast, dismissToast } = useToast();
 
   function load() {
-    apiRequest("/academic-years").then((res) => setYears(res.data));
-    apiRequest("/terms").then((res) => setTerms(res.data));
+    setLoadError("");
+    apiRequest("/academic-years")
+      .then((res) => setYears(res.data))
+      .catch((err) => setLoadError(err.message));
+    apiRequest("/terms")
+      .then((res) => setTerms(res.data))
+      .catch((err) => setLoadError(err.message));
   }
   useEffect(load, []);
 
   async function setCurrentYear(id) {
     await apiRequest(`/academic-years/${id}/set-current`, { method: "PATCH" });
     load();
+    showToast("Academic year set as current.");
   }
   async function setCurrentTerm(id) {
     await apiRequest(`/terms/${id}/set-current`, { method: "PATCH" });
     load();
+    showToast("Term set as current.");
   }
 
   return (
     <DashboardShell>
-      <h1 className="text-2xl font-semibold text-[var(--ink)]">Academic Setup</h1>
-      <p className="mt-1 text-sm text-[var(--slate-quiet)]">Create academic years and terms, and mark which one is currently active.</p>
+      <PageHeader title="Academic Setup" description="Create academic years and terms, and mark which one is currently active." />
+
+      {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
 
       <h2 className="mt-6 text-sm font-semibold uppercase tracking-wide text-[var(--slate-quiet)]">Academic Years</h2>
-      <div className="mt-2"><YearForm onCreated={load} /></div>
-      {years && (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Start</th><th className="p-3">End</th><th className="p-3">Current</th><th className="p-3"></th></tr></thead>
-            <tbody>
-              {years.map((y) => (
-                <tr key={y.id} className="border-b border-[var(--border)] last:border-b-0">
-                  <td className="p-3 font-medium">{y.name}</td>
-                  <td className="p-3">{formatDate(y.start_date)}</td>
-                  <td className="p-3">{formatDate(y.end_date)}</td>
-                  <td className="p-3">{y.is_current ? <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-[var(--success)]">Current</span> : "—"}</td>
-                  <td className="p-3 text-right">
-                    {!y.is_current && <button onClick={() => setCurrentYear(y.id)} className="text-xs font-medium text-[var(--primary)] hover:underline">Set Current</button>}
-                  </td>
-                </tr>
-              ))}
-              {years.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-[var(--slate-quiet)]">No academic years yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="mt-2"><YearForm onCreated={() => { load(); showToast("Academic year added."); }} /></div>
+      <div className="mt-3"><PeriodList items={years} onSetCurrent={setCurrentYear} /></div>
 
       <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-[var(--slate-quiet)]">Terms</h2>
-      <div className="mt-2"><TermForm years={years || []} onCreated={load} /></div>
-      {terms && (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Start</th><th className="p-3">End</th><th className="p-3">Current</th><th className="p-3"></th></tr></thead>
-            <tbody>
-              {terms.map((t) => (
-                <tr key={t.id} className="border-b border-[var(--border)] last:border-b-0">
-                  <td className="p-3 font-medium">{t.name}</td>
-                  <td className="p-3">{formatDate(t.start_date)}</td>
-                  <td className="p-3">{formatDate(t.end_date)}</td>
-                  <td className="p-3">{t.is_current ? <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-[var(--success)]">Current</span> : "—"}</td>
-                  <td className="p-3 text-right">
-                    {!t.is_current && <button onClick={() => setCurrentTerm(t.id)} className="text-xs font-medium text-[var(--primary)] hover:underline">Set Current</button>}
-                  </td>
-                </tr>
-              ))}
-              {terms.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-[var(--slate-quiet)]">No terms yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="mt-2"><TermForm years={years || []} onCreated={() => { load(); showToast("Term added."); }} /></div>
+      <div className="mt-3"><PeriodList items={terms} onSetCurrent={setCurrentTerm} /></div>
+
+      <Toast {...toast} onDismiss={dismissToast} />
     </DashboardShell>
   );
 }

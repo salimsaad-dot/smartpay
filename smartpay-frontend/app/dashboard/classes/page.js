@@ -3,19 +3,32 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import DashboardShell from "@/components/DashboardShell";
-
-const inputClass =
-  "w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
-const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingSkeleton,
+  MobileRecordCard,
+  PageHeader,
+  Toast,
+  inputClass,
+  labelClass,
+  useToast,
+} from "@/components/ui";
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ name: "", level: "" });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const { toast, showToast, dismissToast } = useToast();
 
   function load() {
-    apiRequest("/classes").then((res) => setClasses(res.data));
+    setLoadError("");
+    apiRequest("/classes")
+      .then((res) => setClasses(res.data))
+      .catch((err) => setLoadError(err.message));
   }
   useEffect(load, []);
 
@@ -27,6 +40,7 @@ export default function ClassesPage() {
       await apiRequest("/classes", { method: "POST", body: { name: form.name, level: form.level ? Number(form.level) : undefined } });
       setForm({ name: "", level: "" });
       load();
+      showToast("Class added.");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -36,10 +50,9 @@ export default function ClassesPage() {
 
   return (
     <DashboardShell>
-      <h1 className="text-2xl font-semibold text-[var(--ink)]">Classes</h1>
-      <p className="mt-1 text-sm text-[var(--slate-quiet)]">The set of classes students can be placed in, e.g. Basic 1, Basic 2, JHS 1.</p>
+      <PageHeader title="Classes" description="The set of classes students can be placed in, e.g. Basic 1, Basic 2, JHS 1." />
 
-      <form onSubmit={handleSubmit} className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] bg-white p-4 sm:grid-cols-3">
+      <form onSubmit={handleSubmit} className="mt-4 grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-3">
         <div>
           <label className={labelClass}>Class Name</label>
           <input required placeholder="e.g. Basic 1" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputClass} />
@@ -49,29 +62,46 @@ export default function ClassesPage() {
           <input type="number" placeholder="e.g. 1" value={form.level} onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))} className={inputClass} />
         </div>
         <div className="flex items-end">
-          <button type="submit" disabled={saving} className="w-full rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60">
-            {saving ? "Adding..." : "Add Class"}
-          </button>
+          <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Class"}</Button>
         </div>
         {error && <p className="sm:col-span-3 text-sm text-[var(--danger)]">{error}</p>}
       </form>
 
+      {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
+      {!classes && !loadError && <div className="mt-6"><LoadingSkeleton lines={2} /></div>}
+
       {classes && (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-[var(--border)] bg-white">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3">Name</th><th className="p-3">Level</th></tr></thead>
-            <tbody>
-              {classes.map((c) => (
-                <tr key={c.id} className="border-b border-[var(--border)] last:border-b-0">
-                  <td className="p-3 font-medium">{c.name}</td>
-                  <td className="p-3">{c.level ?? "—"}</td>
-                </tr>
-              ))}
-              {classes.length === 0 && <tr><td colSpan={2} className="p-4 text-center text-[var(--slate-quiet)]">No classes yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="mt-4 space-y-2 md:hidden">
+            {classes.length === 0 && <EmptyState>No classes yet.</EmptyState>}
+            {classes.map((c) => (
+              <MobileRecordCard key={c.id}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium text-[var(--ink)]">{c.name}</p>
+                  <p className="text-xs text-[var(--slate-quiet)]">{c.level != null ? `Level ${c.level}` : "No level set"}</p>
+                </div>
+              </MobileRecordCard>
+            ))}
+          </div>
+
+          <div className="mt-4 hidden overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] md:block">
+            <table className="w-full text-left text-sm">
+              <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]"><th className="p-3 font-medium">Name</th><th className="p-3 font-medium">Level</th></tr></thead>
+              <tbody>
+                {classes.map((c) => (
+                  <tr key={c.id} className="border-b border-[var(--border)] last:border-b-0">
+                    <td className="p-3 font-medium">{c.name}</td>
+                    <td className="p-3">{c.level ?? "—"}</td>
+                  </tr>
+                ))}
+                {classes.length === 0 && <tr><td colSpan={2} className="p-4 text-center text-[var(--slate-quiet)]">No classes yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
+
+      <Toast {...toast} onDismiss={dismissToast} />
     </DashboardShell>
   );
 }
