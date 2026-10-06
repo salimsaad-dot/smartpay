@@ -16,9 +16,11 @@ import {
   Modal,
   PageHeader,
   StatusBadge,
+  Toast,
   inputClass,
   labelClass,
   statusTone,
+  useToast,
 } from "@/components/ui";
 
 const STATUS_LABELS = { unpaid: "Unpaid", partially_paid: "Partially Paid", paid: "Paid", void: "Void" };
@@ -129,7 +131,7 @@ function RecordPaymentModal({ invoice, currency, onClose, onSaved }) {
 
 // Rendered as a plain block so it works inside a table row on desktop and
 // under a card on phones.
-function PaymentsPanel({ invoice, currency, onChanged }) {
+function PaymentsPanel({ invoice, currency, onChanged, onToast }) {
   const [payments, setPayments] = useState(null);
   const [voidingId, setVoidingId] = useState(null);
   const [voidReason, setVoidReason] = useState("");
@@ -152,6 +154,7 @@ function PaymentsPanel({ invoice, currency, onChanged }) {
       setVoidReason("");
       load();
       onChanged();
+      onToast("Payment voided.");
     } catch (err) {
       setError(err.message);
     }
@@ -221,6 +224,7 @@ export default function InvoicesPage() {
   const [structures, setStructures] = useState([]);
   const [payingInvoice, setPayingInvoice] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const { toast, showToast, dismissToast } = useToast();
 
   function load() {
     setLoadError("");
@@ -235,6 +239,11 @@ export default function InvoicesPage() {
 
   function toggleHistory(id) {
     setExpandedId(expandedId === id ? null : id);
+  }
+
+  function handlePaymentRecorded() {
+    load();
+    showToast("Payment recorded successfully.");
   }
 
   function actions(inv) {
@@ -282,7 +291,7 @@ export default function InvoicesPage() {
                 <div className="mt-3 border-t border-[var(--border)] pt-3">{actions(inv)}</div>
                 {expandedId === inv.id && (
                   <div className="mt-3 rounded-lg bg-[var(--hover)] p-3">
-                    <PaymentsPanel invoice={inv} currency={currency} onChanged={load} />
+                    <PaymentsPanel invoice={inv} currency={currency} onChanged={load} onToast={showToast} />
                   </div>
                 )}
               </MobileRecordCard>
@@ -318,7 +327,7 @@ export default function InvoicesPage() {
                     {expandedId === inv.id && (
                       <tr className="border-b border-[var(--border)] bg-[var(--hover)]">
                         <td colSpan={7} className="p-3">
-                          <PaymentsPanel invoice={inv} currency={currency} onChanged={load} />
+                          <PaymentsPanel invoice={inv} currency={currency} onChanged={load} onToast={showToast} />
                         </td>
                       </tr>
                     )}
@@ -336,9 +345,11 @@ export default function InvoicesPage() {
           invoice={payingInvoice}
           currency={currency}
           onClose={() => setPayingInvoice(null)}
-          onSaved={load}
+          onSaved={handlePaymentRecorded}
         />
       )}
+
+      <Toast {...toast} onDismiss={dismissToast} />
     </DashboardShell>
   );
 }

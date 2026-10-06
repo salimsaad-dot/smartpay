@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "@/lib/format";
 
@@ -161,6 +161,46 @@ export function Modal({ title, description, onClose, children }) {
         <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
         {description && <p className="mt-1 text-sm text-[var(--slate-quiet)]">{description}</p>}
         <div className="mt-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const TOAST_TONES = {
+  success: "bg-[var(--ink)]",
+  danger: "bg-[var(--danger)]",
+};
+
+// A page-local toast, not a global provider — this app has one toast
+// visible at a time per page, triggered by a single financial action, so a
+// queue/context system would be more machinery than the actual need.
+// Usage: const { toast, showToast } = useToast(); then <Toast {...toast} />.
+export function useToast() {
+  const [toast, setToast] = useState(null);
+  const timerRef = useRef(null);
+
+  const showToast = useCallback((message, tone = "success") => {
+    clearTimeout(timerRef.current);
+    setToast({ message, tone });
+    timerRef.current = setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return { toast, showToast, dismissToast: () => setToast(null) };
+}
+
+export function Toast({ message, tone = "success", onDismiss }) {
+  if (!message) return null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-x-4 bottom-4 z-50 flex justify-center sm:inset-x-auto sm:right-6"
+    >
+      <div className={`flex max-w-sm items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-xl ${TOAST_TONES[tone]}`}>
+        <span>{message}</span>
+        <button onClick={onDismiss} aria-label="Dismiss notification" className="text-white/70 hover:text-white">✕</button>
       </div>
     </div>
   );
