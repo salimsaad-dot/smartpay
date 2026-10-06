@@ -63,6 +63,7 @@ export default function PaymentStatusPage({ params }) {
           <>
             <h1 className="text-lg font-semibold text-[var(--success)]">Payment successful</h1>
             <p className="mt-1 text-sm text-[var(--slate-quiet)]">{formatMoney(amount, currency)} received. Thank you.</p>
+            <p className="mt-3 text-xs text-[var(--slate-quiet)]">Reference: <span className="font-mono">{reference}</span></p>
           </>
         )}
         {!error && (status === "initiated" || status === "pending") && (
@@ -74,7 +75,13 @@ export default function PaymentStatusPage({ params }) {
         {!error && (status === "failed" || status === "cancelled") && (
           <>
             <h1 className="text-lg font-semibold text-[var(--danger)]">Payment not completed</h1>
-            <p className="mt-1 text-sm text-[var(--slate-quiet)]">Your payment was not completed. You can go back to the payment link and try again.</p>
+            <p className="mt-1 text-sm text-[var(--slate-quiet)]">Your payment was not completed. You can go back and try again.</p>
+            <button
+              onClick={() => window.history.back()}
+              className="mt-4 flex min-h-[44px] w-full items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-semibold text-white hover:bg-[var(--primary-bright)]"
+            >
+              Go Back
+            </button>
           </>
         )}
       </div>

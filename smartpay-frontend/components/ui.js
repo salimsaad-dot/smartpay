@@ -144,20 +144,50 @@ export function MobileRecordCard({ children }) {
 
 // Dialog with Escape to close. Clicking the backdrop does NOT close it, so a
 // half-typed payment or reminder is never lost to a stray tap.
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ title, description, onClose, children }) {
   const titleId = useId();
+  const dialogRef = useRef(null);
 
   useEffect(() => {
+    // Move focus into the dialog on open, and give it back to whatever
+    // triggered the dialog on close — a screen-reader/keyboard user should
+    // never be left on a background element they can no longer see past
+    // the overlay, nor lose their place once the dialog goes away.
+    const previouslyFocused = document.activeElement;
+    const dialog = dialogRef.current;
+    const firstField = dialog?.querySelector(FOCUSABLE_SELECTOR);
+    (firstField || dialog)?.focus();
+
     function onKey(e) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll(FOCUSABLE_SELECTOR));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
   }, [onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-white p-5 shadow-xl outline-none">
         <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
         {description && <p className="mt-1 text-sm text-[var(--slate-quiet)]">{description}</p>}
         <div className="mt-4">{children}</div>

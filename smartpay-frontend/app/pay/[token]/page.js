@@ -79,10 +79,10 @@ export default function PublicCheckoutPage({ params }) {
                     <button
                       key={inv.id}
                       onClick={() => pickInvoice(inv)}
-                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
+                      className={`flex min-h-[44px] w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
                         selectedInvoice?.id === inv.id
-                          ? "border-[var(--primary)] bg-blue-50"
-                          : "border-[var(--border)] hover:bg-gray-50"
+                          ? "border-[var(--primary)] bg-[var(--primary-wash)]"
+                          : "border-[var(--border)] hover:bg-[var(--hover)]"
                       }`}
                     >
                       <span>
@@ -101,8 +101,9 @@ export default function PublicCheckoutPage({ params }) {
         {selectedInvoice && (
           <form onSubmit={handlePay} className="mt-5 space-y-3 border-t border-[var(--border)] pt-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">Amount to pay</label>
+              <label htmlFor="pay-amount" className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">Amount to pay</label>
               <input
+                id="pay-amount"
                 required
                 type="number"
                 min="0.01"
@@ -110,25 +111,26 @@ export default function PublicCheckoutPage({ params }) {
                 max={selectedInvoice.balance}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-base focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
               />
               <p className="mt-1 text-xs text-[var(--slate-quiet)]">Outstanding balance: {formatMoney(selectedInvoice.balance, data.currency)}. You may pay part of this amount.</p>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">Email (for your payment receipt)</label>
+              <label htmlFor="pay-email" className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">Email (for your payment receipt)</label>
               <input
+                id="pay-email"
                 required
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-base focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
               />
             </div>
             {submitError && <p className="text-sm text-[var(--danger)]">{submitError}</p>}
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60"
+              className="flex min-h-[48px] w-full items-center justify-center rounded-lg bg-[var(--primary)] px-4 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60"
             >
               {submitting ? "Redirecting to secure payment..." : `Pay ${formatMoney(amount || 0, data.currency)}`}
             </button>
