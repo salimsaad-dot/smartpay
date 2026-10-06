@@ -483,14 +483,139 @@ for a full management system.
     facing checkout/status pages were already fine, unaffected by this
     bug) fits cleanly, and the drawer opens/closes correctly including
     auto-closing on navigation.
-  - **Explicitly not yet done**: creating the actual Aiven database, the
-    Render web service, the Vercel project, GitHub repo secrets
-    (`SMARTPAY_BACKEND_URL`, `CRON_SECRET`), production env vars (a fresh
-    `JWT_SECRET`, `NODE_ENV=production`, `FRONTEND_URL` pointed at the
-    real Vercel domain), running `schema.sql` against the new production
-    database, and pointing Paystack's/mNotify's dashboards at the live
-    URLs. Paused at the user's request to check mobile responsiveness
-    first — resume from here next session.
+- **Phase 11 — deployment: completed 2026-10-04/06.** Resumed and
+  finished live-hosting. Aiven MySQL (new, separate account/org from
+  Academia Hub's — SmartPay's first attempt to share Academia Hub's
+  existing Aiven server ran into a grant-scoping mistake that nearly
+  weakened Academia Hub's own DB access; abandoned in favor of a clean
+  separate account rather than risk it), Render web service (`smartpay`,
+  free tier, Frankfurt, public-Git-URL deploy — not the GitHub App
+  integration, which matters below), Vercel frontend (`smartpay-tan.vercel.app`,
+  `/api/:path*` rewrite proxy to the Render origin so cookies work
+  cross-origin the same way Academia Hub's already-proven pattern does),
+  GitHub Actions secrets for the Friday-reminders cron, fresh
+  production `JWT_SECRET`/`CRON_SECRET`. End-to-end verified live, not
+  just via `curl`: registered a school and logged in through the real
+  deployed frontend.
+  - **A real production incident, caught and fixed same-day**: the live
+    backend started 500ing on login (and on every other DB-touching
+    route) — Aiven's free tier had auto-paused the database from
+    inactivity, the same failure mode Academia Hub hit before. Added a
+    `GET /api/keepalive` endpoint for UptimeRobot to hit every 5
+    minutes, modeled on Academia Hub's own unconfirmed experiment: a
+    real `UPDATE` against a dedicated single-row table rather than a
+    read-only health check, on the theory that write I/O is more likely
+    to register as genuine activity than a read (Aiven doesn't publish
+    the actual threshold, so this remains unconfirmed, not a guaranteed
+    fix). Deliberately self-bootstrapping — it creates its own table and
+    seeds its row on first call if missing — since production DB
+    credentials live only in Render/Aiven, never in this codebase or any
+    local `.env`, so there was no safe way to run a one-off `CREATE
+    TABLE` against prod from outside it.
+  - **Auto-deploy left off on purpose**: Render's "On Commit" setting
+    was already enabled by default, but a service connected via a
+    public Git URL (rather than the GitHub App) only polls for new
+    commits instead of getting an instant webhook — in practice two
+    pushes sat live-stale for roughly two days before anyone noticed.
+    Rather than reconnect through the GitHub App for truly instant
+    deploys, the user chose to keep deploying manually ("Deploy latest
+    commit", one click) — low push frequency on this project makes
+    knowing exactly when prod changes more valuable than automatic
+    speed.
+- **UI/UX refinement pass: SHIPPED 2026-10-03/06**, against a
+  29-section spec document (`SmartPay_UI_UX_Improvement_Specification_Claude_Code.docx`)
+  covering every page. No backend changes — this was a pure frontend
+  pass, phase-by-phase against the spec's own implementation order,
+  each step committed and verified independently:
+  - **Design tokens + shell** (`globals.css`, `DashboardShell`): the
+    spec's full color/radius/shadow token set, a visible focus ring, a
+    reduced-motion guard; navigation regrouped into the spec's named
+    sections (School setup / Fees & payments / Reminders / Reports /
+    Admin) with `aria-current` on the active link.
+  - **A shared `components/ui.js`** grew incrementally across the whole
+    pass rather than being designed upfront: `Button`/`LinkButton`,
+    `PageHeader`/`Panel`/`MetricCard`/`AmountDisplay`/`StatusBadge` (+ a
+    single `statusTone()` mapping every status word across invoices,
+    payments, SMS, and scheduled jobs to one of 4 tones), `EmptyState`/
+    `LoadingSkeleton`/`ErrorState`, `MobileRecordCard`, a page-local
+    `useToast()`/`<Toast/>` (deliberately not a global context/queue —
+    this app only ever has one toast live from one financial action at
+    a time, so a provider would be more machinery than the actual
+    need), and a `<Field>` wrapper (see below).
+  - **Dashboard** rebuilt from a static "coming soon" placeholder into
+    real data — collection summary, largest outstanding balances, last
+    Friday run, recent payments — reading only existing endpoints; two
+    backend additions (child-count on the parent list, a payment
+    reference on the status endpoint) were proposed and explicitly
+    **not approved**, so neither was built, and nothing downstream
+    depends on them.
+  - **Every list page** (Arrears, Invoices, Fee Structures, Students,
+    Parents, Classes, Academic Setup, Reminders, SMS Templates,
+    Reports, Audit Log) got the same treatment: shared components,
+    stacked mobile cards below `md` with the existing desktop table
+    kept above it, loading/empty/error states, and a toast on every
+    create/update/set-current action per the spec's explicit feedback-
+    states section — broader than just payments, as the spec actually
+    asks for it on all CRUD.
+  - **Two real bugs found and fixed along the way, not just cosmetic
+    changes**: the Fee Structures builder's live running total called
+    `formatMoney()` with no currency argument, silently defaulting to
+    GHS regardless of a school's actual configured currency — exactly
+    the mistake the spec's own Fee Structures section warns against by
+    name. And a stray `key` field added to the first toast draft (for
+    no real purpose — `Toast` isn't rendered in a list) triggered a
+    React key-spread warning in the console, caught by a Puppeteer
+    console listener during verification, not by code review.
+  - **Dialog focus management** (`Modal`, used by Record Payment and
+    Send Reminder): the first draft closed on Escape but never managed
+    focus otherwise. Rebuilt to move focus into the dialog on open, trap
+    Tab/Shift+Tab inside it, and return focus to the trigger element on
+    close — spec section 23 calls this out by name, and it's the kind
+    of gap that's easy to ship silently since the dialog still looks
+    and functions fine without it.
+  - **Site-wide accessible-label sweep**: every form on the site used
+    a label and its input as markup-adjacent siblings with no `for`/`id`
+    pairing — reads fine visually, fails "every field needs an
+    accessible label" programmatically. Added `<Field>` (wires
+    `htmlFor`/`id` via `useId()` + `cloneElement` automatically) and
+    applied it across all ~35 affected fields in one pass, plus
+    `aria-label` on a few inputs too compact for a visible label (the
+    inline link-parent row, the repeating fee-item rows, two previously
+    fully-unlabeled filter selects on Reminders/Audit Log). Verified
+    with an automated Puppeteer sweep across all 12 dashboard pages at
+    once (not spot-checked) confirming zero orphaned labels, rather
+    than trusting the refactor by inspection.
+  - **Public payment pages** (`/pay/[token]`, `/pay/status/[reference]`)
+    deliberately kept visually distinct from the admin dashboard per
+    spec section 18 ("should not resemble the admin dashboard") — no
+    shared shell, no dashboard chrome — while still fixing real issues
+    on the app's single highest-stakes form: `htmlFor`/`id` label
+    pairing, input font-size bumped to 16px to stop iOS Safari's
+    auto-zoom-on-focus at 320–414px, touch targets bumped toward the
+    spec's ~44px, two hard-coded Tailwind colors swapped for the shared
+    tokens already used everywhere else. The status page now shows the
+    payment reference on success (already available client-side from
+    the URL, no backend change needed) and turns the failed/cancelled
+    state's "go back" text into a real working button.
+  - **One known gap flagged, not fixed**: every route — including the
+    public, unauthenticated payment pages — gets wrapped in
+    `AuthProvider` by the root layout, which fires a session-restore
+    call on mount regardless of path, producing a harmless but
+    unnecessary 401 on every public-page load. Pre-existing, affects
+    every route in the app, and restructuring the root layout was
+    judged out of scope for a page-by-page UI pass — left as a known
+    inefficiency for a future, deliberate pass rather than touched
+    unprompted.
+  - Verified throughout with real Puppeteer browser runs against
+    freshly seeded test schools (never against production) at
+    320/390/414/1280px — not just `next build` passing — catching, among
+    other things, that reminder history in the admin UI renders twice
+    in the DOM (once per responsive layout, CSS-hidden rather than
+    unmounted) when picking a target for an automated click, and that
+    Puppeteer's own `.type()` doesn't reliably fill a native
+    `<input type="date">` (an apparent "Nov 30, 1899" date bug was
+    traced to the test script, not the app, and the app's real date
+    handling was separately re-confirmed correct).
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -550,3 +675,8 @@ for a full management system.
 | 2026-10-03 | `friday_send_time` gating (`respectSendTime`) is applied only to `runFridayJobForAllSchools`, never to the admin-facing manual-run endpoint, and the real GitHub Actions trigger fires hourly on Fridays rather than once at a single time. | The spec's own manual-run endpoint exists specifically so an admin can test/troubleshoot immediately, not wait for a configured time — gating it would contradict its purpose. Firing the real scheduler hourly (rather than once) is what actually makes a *per-school* configurable send time meaningful at all; a single daily/weekly firing could only ever honor one global time for every school, which isn't what the settings UI promises. |
 | 2026-10-03 | The mobile hamburger/drawer pattern was independently reimplemented against SmartPay's own plain-Tailwind color palette, not copied verbatim from Academia Hub's (which uses a dark navy `#0F172A` sidebar and its own `app-modal-backdrop` CSS keyframe animation). | Matches the standing decision that SmartPay deliberately doesn't reuse Academia Hub's ink+gold visual identity (different product, different customers) — only the *structural* interaction pattern (off-canvas drawer, hamburger trigger, overlay, `md` breakpoint) was worth replicating, since that's what was actually proven to work, not the specific color scheme underneath it. |
 | 2026-10-03 | Every table wrapper across the app was changed from `overflow-hidden` to `overflow-x-auto`. | `overflow-hidden` on a container narrower than its table doesn't make the table responsive — it silently *clips* the rightmost columns with no way to ever see them, which is strictly worse than a plain unstyled table. `overflow-x-auto` lets a wide table scroll within its own card on a narrow screen, which is the actual, standard fix once the page itself (via the sidebar drawer fix) no longer forces full-page horizontal scroll. |
+| 2026-10-04/06 | The UI/UX refinement's toast (`useToast()`/`<Toast/>`) is a page-local hook, not a global context/provider with a queue. | This app only ever has one toast visible at a time, triggered by one financial action a user just took — a global queue/provider (the "normal" toast-library pattern) would be real added machinery solving a problem that doesn't exist here. If a page ever needs to show two overlapping toasts, that's the signal to revisit this, not a reason to build it upfront. |
+| 2026-10-06 | The Parents list page does not show a child-count badge on each collapsed row, even though the UI/UX spec asks for it "where available." | `GET /api/parents` doesn't return a child count — only the earlier-proposed, user-not-approved backend addition would add one — and fetching each parent's full detail just to get a count before the row is even expanded would be exactly the kind of unnecessary decorative API call the same spec explicitly warns against elsewhere. The count stays inside the existing expand-to-view-children action instead, which already has the real data. |
+| 2026-10-06 | Reports' six report tables keep horizontal-scroll as their mobile strategy, not stacked cards (the pattern used everywhere else in this pass). | The spec itself lists horizontal scroll as one of three explicitly acceptable mobile strategies, alongside cards and stacked rows. Reports is read-only, data-dense, column-heavy, and column order/alignment is part of how a report is actually read — rebuilding six different tables as cards would be a large amount of work for a strictly worse reading experience on exactly the pages where comparing numbers across columns matters most. |
+| 2026-10-06 | `GET /api/keepalive` is self-bootstrapping (creates its own table and seeds its row on first call if missing) rather than requiring a one-off migration step against production. | Production DB credentials live only in Render/Aiven, never in this codebase or any local `.env` — there was no safe way to run a one-off `CREATE TABLE` against prod from outside it without asking for those credentials, which is something this project's standing practice avoids. Self-bootstrapping means the feature just works the moment the code deploys, with no manual DB step for anyone to remember. |
+| 2026-10-06 | Render's auto-deploy stayed on (it already defaults to "On Commit"), but deploys are done manually ("Deploy latest commit") rather than reconnecting through the GitHub App for instant webhook-triggered deploys. | A service connected via a public Git URL only polls for commits instead of getting an instant webhook, which let two real pushes sit live-stale for about two days before anyone noticed — a genuine incident, not theoretical. Given how infrequently this project pushes, the user chose predictability (always knowing exactly when prod changes) over automatic speed, rather than spending the effort to reconnect through GitHub's App integration. |
