@@ -1,14 +1,22 @@
 const pool = require('../db');
 
+// Redesign addition (2026-10): the primary parent's name/phone, via the
+// same is_primary flag the Arrears/Outstanding-Fees queries already rely
+// on — purely additive to the response shape, every existing field and
+// filter is unchanged. A student with no linked parent, or no parent
+// marked primary yet, simply gets null here rather than a join failure.
 exports.list = async (req, res) => {
     try {
         const { classId, academicYearId, search } = req.query;
         const params = [req.user.schoolId];
         let sql = `
-            SELECT s.*, c.name AS class_name, ay.name AS academic_year_name
+            SELECT s.*, c.name AS class_name, ay.name AS academic_year_name,
+                   pr.full_name AS parent_name, pr.phone AS parent_phone
             FROM students s
             JOIN classes c ON c.id = s.class_id
             JOIN academic_years ay ON ay.id = s.academic_year_id
+            LEFT JOIN parent_student ps ON ps.student_id = s.id AND ps.is_primary = 1
+            LEFT JOIN parents pr ON pr.id = ps.parent_id
             WHERE s.school_id = ?`;
         if (classId) { sql += ' AND s.class_id = ?'; params.push(classId); }
         if (academicYearId) { sql += ' AND s.academic_year_id = ?'; params.push(academicYearId); }
