@@ -4,6 +4,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
+const pool = require('./db');
 const authRoutes = require('./routes/authRoutes');
 const academicYearRoutes = require('./routes/academicYearRoutes');
 const termRoutes = require('./routes/termRoutes');
@@ -70,6 +71,44 @@ app.use(cookieParser());
 
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'success', message: 'SmartPay API is running.' });
+});
+
+// UptimeRobot pings this every 5 minutes. Same pattern as Academia Hub's
+// keepalive, on the same Aiven free-tier auto-power-off problem: a plain
+// read-only health check wasn't enough to prevent the service pausing, so
+// this does a real UPDATE against a dedicated single-row table instead, on
+// the theory that write I/O is more likely to register as genuine usage.
+// Unconfirmed whether this actually prevents it — Aiven doesn't publicly
+// document the exact threshold — this is a real experiment, not a
+// guaranteed fix. If it also fails, the next step is Aiven's paid tier,
+// which explicitly disables auto-power-off.
+//
+// Self-bootstrapping on purpose: production DB credentials live only in
+// Render/Aiven, not in this codebase or anyone's local .env, so there's no
+// safe way to run a one-off CREATE TABLE against prod from outside it. The
+// first call after a deploy creates the table and seeds its one row; every
+// call after that (within this process's lifetime) skips straight to the
+// UPDATE.
+let keepaliveReady = false;
+app.get('/api/keepalive', async (req, res) => {
+    try {
+        if (!keepaliveReady) {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS keepalive_heartbeat (
+                    id INT NOT NULL,
+                    pinged_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            `);
+            await pool.query('INSERT IGNORE INTO keepalive_heartbeat (id) VALUES (1)');
+            keepaliveReady = true;
+        }
+        await pool.query('UPDATE keepalive_heartbeat SET pinged_at = CURRENT_TIMESTAMP WHERE id = 1');
+        res.status(200).json({ status: 'success', message: 'Heartbeat recorded.' });
+    } catch (error) {
+        console.error('Keepalive error:', error);
+        res.status(500).json({ status: 'error', message: 'Database connection failed' });
+    }
 });
 
 app.use('/api/auth', authRoutes);
