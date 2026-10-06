@@ -61,12 +61,12 @@ export default function PublicCheckoutPage({ params }) {
 
   return (
     <div className="mx-auto min-h-screen max-w-lg px-4 py-8">
-      <div className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
         <h1 className="text-xl font-semibold text-[var(--ink)]">{data.schoolName}</h1>
         <p className="mt-1 text-sm text-[var(--slate-quiet)]">Dear {data.parentName}, here are your children&apos;s outstanding balances.</p>
 
         {data.children.length === 0 ? (
-          <p className="mt-6 rounded-lg bg-green-50 p-4 text-sm text-[var(--success)]">
+          <p className="mt-6 rounded-lg bg-[var(--success-wash)] p-4 text-sm text-[var(--success)]">
             Great news — there are no outstanding balances right now.
           </p>
         ) : (
@@ -144,7 +144,7 @@ export default function PublicCheckoutPage({ params }) {
 function CenteredMessage({ title, children }) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="max-w-sm rounded-xl border border-[var(--border)] bg-white p-6 text-center shadow-sm">
+      <div className="max-w-sm rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 text-center shadow-sm">
         {title && <h1 className="text-lg font-semibold text-[var(--ink)]">{title}</h1>}
         <p className="mt-1 text-sm text-[var(--slate-quiet)]">{children}</p>
       </div>

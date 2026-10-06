@@ -11,6 +11,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { Logo, LogoMark } from "@/components/Logo";
 import { SearchBar } from "@/components/ui2";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const NAV_GROUPS = [
   { label: null, items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
@@ -213,7 +214,8 @@ export default function DashboardShell({ children }) {
               className="max-w-sm"
             />
           </form>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
         </header>

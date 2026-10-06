@@ -6,7 +6,7 @@ import { formatMoney } from "@/lib/format";
 
 // Shared form styling, so every input on every page looks and focuses the same.
 export const inputClass =
-  "w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
+  "w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
 export const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
 
 // Wires a label to its one form control via htmlFor/id automatically —
@@ -31,7 +31,7 @@ export function Field({ label, hint, error, className = "", children }) {
 
 const BUTTON_VARIANTS = {
   primary: "bg-[var(--primary)] text-white hover:bg-[var(--primary-bright)]",
-  secondary: "border border-[var(--border)] bg-white text-[var(--slate)] hover:bg-[var(--hover)]",
+  secondary: "border border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:bg-[var(--hover)]",
   danger: "bg-[var(--danger)] text-white hover:opacity-90",
 };
 
@@ -207,7 +207,7 @@ export function Modal({ title, description, onClose, children }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-white p-5 shadow-xl outline-none">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-[var(--card)] p-5 shadow-xl outline-none">
         <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
         {description && <p className="mt-1 text-sm text-[var(--slate-quiet)]">{description}</p>}
         <div className="mt-4">{children}</div>

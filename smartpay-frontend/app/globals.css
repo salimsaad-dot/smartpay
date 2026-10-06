@@ -58,6 +58,124 @@
   --avatar-6: #059669; --avatar-6-wash: #ECFDF5;
 }
 
+/* Dark mode (2026-10). Same two-layer pattern already proven on Academia
+   Hub: a prefers-color-scheme block for "no explicit choice made yet",
+   and a [data-theme] override for the manual toggle — identical values,
+   so OS-preference and the manual toggle can never visually disagree.
+   The sidebar/brand tokens below are deliberately left unchanged: the
+   sidebar is a fixed dark-navy brand element in both themes (like Slack
+   or Linear's sidebar), not something the toggle affects — only the main
+   content surface (bg/card/ink/borders/status colors) actually themes. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0B1120;
+    --card: #131C2E;
+    --surface: #131C2E;
+    --ink: #F1F5F9;
+    --slate: #94A3B8;
+    --slate-quiet: #64748B;
+    --border: #253148;
+    --primary: #3B82F6;
+    --primary-bright: #60A5FA;
+    --primary-wash: rgba(59, 130, 246, 0.14);
+    --success: #34D399;
+    --success-wash: rgba(52, 211, 153, 0.12);
+    --warning: #FBBF24;
+    --warning-wash: rgba(251, 191, 36, 0.12);
+    --danger: #F87171;
+    --danger-wash: rgba(248, 113, 113, 0.12);
+    --focus: #60A5FA;
+    --hover: #1A2740;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.35);
+
+    --brand-navy: #F1F5F9;
+    --brand-green: #34D399;
+    --brand-green-dark: #10B981;
+    --violet: #A78BFA;
+    --violet-wash: rgba(167, 139, 250, 0.14);
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.35);
+
+    --avatar-1-wash: rgba(59, 130, 246, 0.16);
+    --avatar-2-wash: rgba(219, 39, 119, 0.16);
+    --avatar-3-wash: rgba(124, 58, 237, 0.18);
+    --avatar-4-wash: rgba(234, 88, 12, 0.16);
+    --avatar-5-wash: rgba(13, 148, 136, 0.18);
+    --avatar-6-wash: rgba(5, 150, 105, 0.16);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0B1120;
+  --card: #131C2E;
+  --surface: #131C2E;
+  --ink: #F1F5F9;
+  --slate: #94A3B8;
+  --slate-quiet: #64748B;
+  --border: #253148;
+  --primary: #3B82F6;
+  --primary-bright: #60A5FA;
+  --primary-wash: rgba(59, 130, 246, 0.14);
+  --success: #34D399;
+  --success-wash: rgba(52, 211, 153, 0.12);
+  --warning: #FBBF24;
+  --warning-wash: rgba(251, 191, 36, 0.12);
+  --danger: #F87171;
+  --danger-wash: rgba(248, 113, 113, 0.12);
+  --focus: #60A5FA;
+  --hover: #1A2740;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --brand-navy: #F1F5F9;
+  --brand-green: #34D399;
+  --brand-green-dark: #10B981;
+  --violet: #A78BFA;
+  --violet-wash: rgba(167, 139, 250, 0.14);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --avatar-1-wash: rgba(59, 130, 246, 0.16);
+  --avatar-2-wash: rgba(219, 39, 119, 0.16);
+  --avatar-3-wash: rgba(124, 58, 237, 0.18);
+  --avatar-4-wash: rgba(234, 88, 12, 0.16);
+  --avatar-5-wash: rgba(13, 148, 136, 0.18);
+  --avatar-6-wash: rgba(5, 150, 105, 0.16);
+}
+
+:root[data-theme="light"] {
+  --bg: #F8FAFC;
+  --card: #FFFFFF;
+  --surface: #FFFFFF;
+  --ink: #0F172A;
+  --slate: #475569;
+  --slate-quiet: #64748B;
+  --border: #E2E8F0;
+  --primary: #2563EB;
+  --primary-bright: #1D4ED8;
+  --primary-wash: #EFF6FF;
+  --success: #10B981;
+  --success-wash: #ECFDF5;
+  --warning: #B45309;
+  --warning-wash: #FFFBEB;
+  --danger: #DC2626;
+  --danger-wash: #FDECEC;
+  --focus: #2563EB;
+  --hover: #F1F5F9;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+
+  --brand-navy: #0F172A;
+  --brand-green: #10B981;
+  --brand-green-dark: #059669;
+  --violet: #7C3AED;
+  --violet-wash: #F3E8FF;
+  --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+
+  --avatar-1-wash: #EFF6FF;
+  --avatar-2-wash: #FCE7F3;
+  --avatar-3-wash: #F3E8FF;
+  --avatar-4-wash: #FFF1E6;
+  --avatar-5-wash: #E6FFFB;
+  --avatar-6-wash: #ECFDF5;
+}
+
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

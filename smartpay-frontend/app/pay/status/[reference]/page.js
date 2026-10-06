@@ -52,7 +52,7 @@ export default function PaymentStatusPage({ params }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="max-w-sm rounded-xl border border-[var(--border)] bg-white p-6 text-center shadow-sm">
+      <div className="max-w-sm rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 text-center shadow-sm">
         {error && (
           <>
             <h1 className="text-lg font-semibold text-[var(--ink)]">We couldn&apos;t find this payment</h1>

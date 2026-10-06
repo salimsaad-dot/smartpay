@@ -3,6 +3,7 @@
 import { CreditCard, Bell, Users, BarChart3 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { IconBadge } from "@/components/ui2";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const FEATURES = [
   { icon: CreditCard, tone: "success", title: "Secure Online Payments", desc: "Fast, safe and reliable" },
@@ -15,8 +16,9 @@ const FEATURES = [
 // plus a centered card for the form itself.
 export function AuthSplitLayout({ children }) {
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
-      <div className="hidden flex-col justify-center bg-gradient-to-br from-[var(--primary-wash)] via-[#EAF2FE] to-[var(--card)] px-12 py-16 lg:flex lg:w-1/2 xl:px-20">
+    <div className="relative flex min-h-screen flex-col lg:flex-row">
+      <ThemeToggle className="absolute right-4 top-4 z-10 bg-[var(--card)] shadow-[var(--shadow-soft)]" />
+      <div className="hidden flex-col justify-center bg-gradient-to-br from-[var(--primary-wash)] to-[var(--card)] px-12 py-16 lg:flex lg:w-1/2 xl:px-20">
         <Logo size={40} showTagline />
         <h1 className="mt-10 text-4xl font-bold leading-tight text-[var(--brand-navy)]">
           Smarter school fee management for a brighter future.
