@@ -10,6 +10,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LoadingSkeleton,
   MobileRecordCard,
   PageHeader,
@@ -68,40 +69,36 @@ function StructureForm({ years, terms, classes, currency, onCreated }) {
   return (
     <form onSubmit={handleSubmit} className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <label className={labelClass}>Academic Year</label>
+        <Field label="Academic Year">
           <select required value={academicYearId} onChange={(e) => { setAcademicYearId(e.target.value); setTermId(""); }} className={inputClass}>
             <option value="">Select...</option>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Term</label>
+        </Field>
+        <Field label="Term">
           <select required value={termId} onChange={(e) => setTermId(e.target.value)} className={inputClass} disabled={!academicYearId}>
             <option value="">Select...</option>
             {termsForYear.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Class</label>
+        </Field>
+        <Field label="Class">
           <select required value={classId} onChange={(e) => setClassId(e.target.value)} className={inputClass}>
             <option value="">Select...</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Structure Name</label>
+        </Field>
+        <Field label="Structure Name">
           <input required placeholder="e.g. Term 1 Fees" value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
-        </div>
+        </Field>
       </div>
 
-      <div className="mt-4">
-        <label className={labelClass}>Fee Items</label>
+      <fieldset className="mt-4">
+        <legend className={labelClass}>Fee Items</legend>
         <div className="space-y-2">
           {items.map((item, i) => (
             <div key={i} className="flex items-center gap-2">
-              <input required placeholder="e.g. Tuition" value={item.name} onChange={(e) => updateItem(i, "name", e.target.value)} className={inputClass} />
-              <input required type="number" min="0.01" step="0.01" placeholder="Amount" value={item.amount} onChange={(e) => updateItem(i, "amount", e.target.value)} className={`${inputClass} w-28 sm:w-40`} />
+              <input required aria-label={`Fee item ${i + 1} name`} placeholder="e.g. Tuition" value={item.name} onChange={(e) => updateItem(i, "name", e.target.value)} className={inputClass} />
+              <input required type="number" min="0.01" step="0.01" aria-label={`Fee item ${i + 1} amount`} placeholder="Amount" value={item.amount} onChange={(e) => updateItem(i, "amount", e.target.value)} className={`${inputClass} w-28 sm:w-40`} />
               {items.length > 1 && (
                 <button type="button" onClick={() => removeItem(i)} aria-label={`Remove fee item ${i + 1}`} className="flex min-h-[44px] items-center text-xs font-medium text-[var(--danger)] sm:min-h-0">
                   Remove
@@ -113,7 +110,7 @@ function StructureForm({ years, terms, classes, currency, onCreated }) {
         <button type="button" onClick={addItem} className="mt-2 flex min-h-[44px] items-center text-xs font-medium text-[var(--primary)] hover:underline sm:min-h-0">
           + Add another fee item
         </button>
-      </div>
+      </fieldset>
 
       {/* The running total is the most prominent thing in the builder, per spec. */}
       <div className="mt-3 flex flex-col gap-3 border-t border-[var(--border)] pt-3 sm:flex-row sm:items-center sm:justify-between">

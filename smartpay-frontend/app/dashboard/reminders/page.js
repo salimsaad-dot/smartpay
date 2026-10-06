@@ -37,7 +37,7 @@ export default function RemindersPage() {
       <PageHeader title="Reminder History" description="Every manual fee reminder sent, successful or not." />
 
       <div className="mt-4">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${inputClass} w-full sm:w-56`}>
+        <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`${inputClass} w-full sm:w-56`}>
           <option value="">All statuses</option>
           <option value="sent">Sent</option>
           <option value="delivered">Delivered</option>

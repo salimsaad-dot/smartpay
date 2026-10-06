@@ -7,12 +7,12 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LoadingSkeleton,
   MobileRecordCard,
   PageHeader,
   Toast,
   inputClass,
-  labelClass,
   useToast,
 } from "@/components/ui";
 
@@ -53,14 +53,12 @@ export default function ClassesPage() {
       <PageHeader title="Classes" description="The set of classes students can be placed in, e.g. Basic 1, Basic 2, JHS 1." />
 
       <form onSubmit={handleSubmit} className="mt-4 grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-3">
-        <div>
-          <label className={labelClass}>Class Name</label>
+        <Field label="Class Name">
           <input required placeholder="e.g. Basic 1" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputClass} />
-        </div>
-        <div>
-          <label className={labelClass}>Level (optional, for sort order)</label>
+        </Field>
+        <Field label="Level (optional, for sort order)">
           <input type="number" placeholder="e.g. 1" value={form.level} onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))} className={inputClass} />
-        </div>
+        </Field>
         <div className="flex items-end">
           <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Class"}</Button>
         </div>

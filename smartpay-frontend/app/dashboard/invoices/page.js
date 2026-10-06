@@ -10,6 +10,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LinkButton,
   LoadingSkeleton,
   MobileRecordCard,
@@ -18,7 +19,6 @@ import {
   StatusBadge,
   Toast,
   inputClass,
-  labelClass,
   statusTone,
   useToast,
 } from "@/components/ui";
@@ -50,13 +50,12 @@ function GenerateInvoicesPanel({ structures, onGenerated }) {
 
   return (
     <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4">
-      <div className="w-full sm:min-w-[260px] sm:w-auto">
-        <label className={labelClass}>Fee Structure</label>
+      <Field label="Fee Structure" className="w-full sm:min-w-[260px] sm:w-auto">
         <select required value={feeStructureId} onChange={(e) => setFeeStructureId(e.target.value)} className={inputClass}>
           <option value="">Select a fee structure...</option>
           {structures.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.class_name} · {s.term_name}</option>)}
         </select>
-      </div>
+      </Field>
       <Button type="submit" disabled={saving}>{saving ? "Generating..." : "Generate Invoices"}</Button>
       {result && (
         <p className="w-full text-sm text-[var(--slate)]">
@@ -101,24 +100,20 @@ function RecordPaymentModal({ invoice, currency, onClose, onSaved }) {
       onClose={onClose}
     >
       <form onSubmit={handleSubmit} className="space-y-3">
-        <div>
-          <label className={labelClass}>Amount</label>
+        <Field label="Amount">
           <input required type="number" min="0.01" step="0.01" max={invoice.balance} value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
-        </div>
-        <div>
-          <label className={labelClass}>Method</label>
+        </Field>
+        <Field label="Method">
           <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputClass}>
             {Object.entries(METHOD_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Reference (optional)</label>
+        </Field>
+        <Field label="Reference (optional)">
           <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. MoMo transaction ID" className={inputClass} />
-        </div>
-        <div>
-          <label className={labelClass}>Note (optional)</label>
+        </Field>
+        <Field label="Note (optional)">
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
-        </div>
+        </Field>
         {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>

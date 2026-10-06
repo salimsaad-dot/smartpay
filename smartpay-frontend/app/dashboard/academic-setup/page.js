@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LinkButton,
   LoadingSkeleton,
   MobileRecordCard,
@@ -15,7 +16,6 @@ import {
   StatusBadge,
   Toast,
   inputClass,
-  labelClass,
   useToast,
 } from "@/components/ui";
 
@@ -41,18 +41,15 @@ function YearForm({ onCreated }) {
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4">
-      <div>
-        <label className={labelClass}>Year Name</label>
+      <Field label="Year Name">
         <input required placeholder="e.g. 2026/2027" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Start Date</label>
+      </Field>
+      <Field label="Start Date">
         <input required type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>End Date</label>
+      </Field>
+      <Field label="End Date">
         <input required type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} />
-      </div>
+      </Field>
       <div className="flex items-end">
         <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Year"}</Button>
       </div>
@@ -83,25 +80,21 @@ function TermForm({ years, onCreated }) {
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-5">
-      <div>
-        <label className={labelClass}>Academic Year</label>
+      <Field label="Academic Year">
         <select required value={form.academicYearId} onChange={(e) => setForm((f) => ({ ...f, academicYearId: e.target.value }))} className={inputClass}>
           <option value="">Select...</option>
           {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
         </select>
-      </div>
-      <div>
-        <label className={labelClass}>Term Name</label>
+      </Field>
+      <Field label="Term Name">
         <input required placeholder="e.g. Term 1" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Start Date</label>
+      </Field>
+      <Field label="Start Date">
         <input required type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>End Date</label>
+      </Field>
+      <Field label="End Date">
         <input required type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} />
-      </div>
+      </Field>
       <div className="flex items-end">
         <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Term"}</Button>
       </div>

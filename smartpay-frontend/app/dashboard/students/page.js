@@ -7,13 +7,13 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LinkButton,
   LoadingSkeleton,
   MobileRecordCard,
   PageHeader,
   Toast,
   inputClass,
-  labelClass,
   useToast,
 } from "@/components/ui";
 
@@ -42,32 +42,27 @@ function StudentForm({ classes, years, onCreated }) {
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-6">
-      <div>
-        <label className={labelClass}>Admission No.</label>
+      <Field label="Admission No.">
         <input required value={form.admissionNo} onChange={(e) => setForm((f) => ({ ...f, admissionNo: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>First Name</label>
+      </Field>
+      <Field label="First Name">
         <input required value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Last Name</label>
+      </Field>
+      <Field label="Last Name">
         <input required value={form.lastName} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Class</label>
+      </Field>
+      <Field label="Class">
         <select required value={form.classId} onChange={(e) => setForm((f) => ({ ...f, classId: e.target.value }))} className={inputClass}>
           <option value="">Select...</option>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-      </div>
-      <div>
-        <label className={labelClass}>Academic Year</label>
+      </Field>
+      <Field label="Academic Year">
         <select required value={form.academicYearId} onChange={(e) => setForm((f) => ({ ...f, academicYearId: e.target.value }))} className={inputClass}>
           <option value="">Select...</option>
           {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
         </select>
-      </div>
+      </Field>
       <div className="flex items-end">
         <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Student"}</Button>
       </div>
@@ -96,11 +91,11 @@ function LinkParentRow({ studentId, parents, onLinked }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select value={parentId} onChange={(e) => setParentId(e.target.value)} className={`${inputClass} w-full sm:w-auto`}>
+      <select aria-label="Link a parent" value={parentId} onChange={(e) => setParentId(e.target.value)} className={`${inputClass} w-full sm:w-auto`}>
         <option value="">Link a parent...</option>
         {parents.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.phone})</option>)}
       </select>
-      <input placeholder="Relationship (e.g. Father)" value={relationship} onChange={(e) => setRelationship(e.target.value)} className={`${inputClass} w-full sm:w-auto`} />
+      <input aria-label="Relationship" placeholder="Relationship (e.g. Father)" value={relationship} onChange={(e) => setRelationship(e.target.value)} className={`${inputClass} w-full sm:w-auto`} />
       <Button variant="secondary" onClick={handleLink}>Link</Button>
       {error && <span className="text-xs text-[var(--danger)]">{error}</span>}
     </div>

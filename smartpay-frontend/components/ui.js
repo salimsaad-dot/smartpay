@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { cloneElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "@/lib/format";
 
@@ -8,6 +8,26 @@ import { formatMoney } from "@/lib/format";
 export const inputClass =
   "w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
 export const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
+
+// Wires a label to its one form control via htmlFor/id automatically —
+// a <label> and <input> that are merely adjacent in the markup (the
+// pattern every form on this site used before) read fine visually but
+// aren't programmatically associated, which fails "every field needs an
+// accessible label." className is applied to the wrapping div, not the
+// label, so existing grid/flex layouts (sm:col-span-2 etc.) keep working
+// unchanged at call sites.
+export function Field({ label, hint, error, className = "", children }) {
+  const id = useId();
+  const descId = hint || error ? `${id}-desc` : undefined;
+  return (
+    <div className={className}>
+      <label htmlFor={id} className={labelClass}>{label}</label>
+      {cloneElement(children, { id, ...(descId ? { "aria-describedby": descId } : {}) })}
+      {hint && <p id={descId} className="mt-1 text-xs text-[var(--slate-quiet)]">{hint}</p>}
+      {error && <p id={descId} className="mt-1 text-xs text-[var(--danger)]">{error}</p>}
+    </div>
+  );
+}
 
 const BUTTON_VARIANTS = {
   primary: "bg-[var(--primary)] text-white hover:bg-[var(--primary-bright)]",

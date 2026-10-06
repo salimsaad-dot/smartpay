@@ -54,7 +54,7 @@ export default function AuditLogPage() {
       <PageHeader title="Audit Log" description="Every financial and administrative action, with who did it and when." />
 
       <div className="mt-4">
-        <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className={`${inputClass} w-full sm:w-64`}>
+        <select aria-label="Filter by action" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className={`${inputClass} w-full sm:w-64`}>
           <option value="">All actions</option>
           {Object.entries(ACTION_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
         </select>

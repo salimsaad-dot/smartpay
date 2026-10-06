@@ -10,6 +10,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LinkButton,
   LoadingSkeleton,
   MetricCard,
@@ -17,7 +18,6 @@ import {
   Modal,
   PageHeader,
   inputClass,
-  labelClass,
 } from "@/components/ui";
 
 function PaymentLinkCell({ parentId }) {
@@ -218,28 +218,24 @@ export default function ArrearsPage() {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 sm:grid-cols-5">
-        <div>
-          <label className={labelClass}>Class</label>
+        <Field label="Class">
           <select value={filters.classId} onChange={(e) => setFilters((f) => ({ ...f, classId: e.target.value }))} className={inputClass}>
             <option value="">All classes</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Term</label>
+        </Field>
+        <Field label="Term">
           <select value={filters.termId} onChange={(e) => setFilters((f) => ({ ...f, termId: e.target.value }))} className={inputClass}>
             <option value="">All terms</option>
             {terms.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Min Balance</label>
+        </Field>
+        <Field label="Min Balance">
           <input type="number" min="0" value={filters.minBalance} onChange={(e) => setFilters((f) => ({ ...f, minBalance: e.target.value }))} className={inputClass} />
-        </div>
-        <div>
-          <label className={labelClass}>Max Balance</label>
+        </Field>
+        <Field label="Max Balance">
           <input type="number" min="0" value={filters.maxBalance} onChange={(e) => setFilters((f) => ({ ...f, maxBalance: e.target.value }))} className={inputClass} />
-        </div>
+        </Field>
         <div className="flex items-end">
           <label className="flex min-h-[44px] items-center gap-2 text-sm text-[var(--ink)]">
             <input type="checkbox" checked={groupByParent} onChange={(e) => setGroupByParent(e.target.checked)} className="h-4 w-4" />

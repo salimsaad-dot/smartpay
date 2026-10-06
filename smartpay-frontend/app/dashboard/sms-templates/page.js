@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LinkButton,
   LoadingSkeleton,
   PageHeader,
@@ -26,6 +27,7 @@ function TemplateForm({ initial, onSave, onCancel }) {
   const [body, setBody] = useState(initial?.body || "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const messageId = useId();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -47,13 +49,12 @@ function TemplateForm({ initial, onSave, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
-      <div>
-        <label className={labelClass}>Template Name</label>
+      <Field label="Template Name">
         <input required value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
-      </div>
+      </Field>
       <div>
-        <label className={labelClass}>Message</label>
-        <textarea required rows={4} value={body} onChange={(e) => setBody(e.target.value)} className={inputClass} />
+        <label htmlFor={messageId} className={labelClass}>Message</label>
+        <textarea id={messageId} required rows={4} value={body} onChange={(e) => setBody(e.target.value)} className={inputClass} />
         <div className="mt-2 flex flex-wrap gap-1.5">
           {VARIABLES.map((v) => (
             <code key={v} className="rounded bg-[var(--hover)] px-1.5 py-0.5 text-xs text-[var(--slate)]">{`{{${v}}}`}</code>
@@ -129,8 +130,7 @@ function FridayAutomationPanel({ templates, showToast }) {
           />
           Enabled
         </label>
-        <div>
-          <label className={labelClass}>Template</label>
+        <Field label="Template">
           <select
             value={settings.friday_template_id || ""}
             onChange={(e) => save({ fridayTemplateId: e.target.value ? Number(e.target.value) : null })}
@@ -139,23 +139,21 @@ function FridayAutomationPanel({ templates, showToast }) {
             <option value="">Default (first active template)</option>
             {templates?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-        </div>
-        <div>
-          <label className={labelClass}>Min Balance (optional)</label>
+        </Field>
+        <Field label="Min Balance (optional)">
           <input
             type="number" min="0" defaultValue={settings.reminder_min_balance ?? ""}
             onBlur={(e) => save({ reminderMinBalance: e.target.value })}
             className={inputClass}
           />
-        </div>
-        <div>
-          <label className={labelClass}>Cooldown (days, optional)</label>
+        </Field>
+        <Field label="Cooldown (days, optional)">
           <input
             type="number" min="0" defaultValue={settings.reminder_cooldown_days ?? ""}
             onBlur={(e) => save({ reminderCooldownDays: e.target.value })}
             className={inputClass}
           />
-        </div>
+        </Field>
       </div>
 
       {saving && <p className="mt-2 text-xs text-[var(--slate-quiet)]">Saving...</p>}

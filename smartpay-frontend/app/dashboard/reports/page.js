@@ -8,11 +8,11 @@ import DashboardShell from "@/components/DashboardShell";
 import {
   EmptyState,
   ErrorState,
+  Field,
   LoadingSkeleton,
   MetricCard,
   PageHeader,
   inputClass,
-  labelClass,
 } from "@/components/ui";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -50,20 +50,18 @@ function TabFrame({ loadError, loading, children }) {
 function FilterBar({ classes, terms, filters, setFilters, extra }) {
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
-      <div>
-        <label className={labelClass}>Class</label>
+      <Field label="Class">
         <select value={filters.classId} onChange={(e) => setFilters((f) => ({ ...f, classId: e.target.value }))} className={inputClass}>
           <option value="">All classes</option>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-      </div>
-      <div>
-        <label className={labelClass}>Term</label>
+      </Field>
+      <Field label="Term">
         <select value={filters.termId} onChange={(e) => setFilters((f) => ({ ...f, termId: e.target.value }))} className={inputClass}>
           <option value="">All terms</option>
           {terms.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-      </div>
+      </Field>
       {extra}
     </div>
   );
@@ -121,8 +119,8 @@ function OutstandingFeesTab({ classes, terms, currency }) {
         classes={classes} terms={terms} filters={filters} setFilters={setFilters}
         extra={
           <>
-            <div><label className={labelClass}>Min Balance</label><input type="number" value={filters.minBalance} onChange={(e) => setFilters((f) => ({ ...f, minBalance: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Max Balance</label><input type="number" value={filters.maxBalance} onChange={(e) => setFilters((f) => ({ ...f, maxBalance: e.target.value }))} className={inputClass} /></div>
+            <Field label="Min Balance"><input type="number" value={filters.minBalance} onChange={(e) => setFilters((f) => ({ ...f, minBalance: e.target.value }))} className={inputClass} /></Field>
+            <Field label="Max Balance"><input type="number" value={filters.maxBalance} onChange={(e) => setFilters((f) => ({ ...f, maxBalance: e.target.value }))} className={inputClass} /></Field>
             <CsvExportLink path="/reports/outstanding-fees" params={filters} />
           </>
         }
@@ -171,15 +169,14 @@ function PaymentHistoryTab({ currency }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
-        <div><label className={labelClass}>From</label><input type="date" value={filters.startDate} onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))} className={inputClass} /></div>
-        <div><label className={labelClass}>To</label><input type="date" value={filters.endDate} onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} /></div>
-        <div>
-          <label className={labelClass}>Method</label>
+        <Field label="From"><input type="date" value={filters.startDate} onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))} className={inputClass} /></Field>
+        <Field label="To"><input type="date" value={filters.endDate} onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Method">
           <select value={filters.method} onChange={(e) => setFilters((f) => ({ ...f, method: e.target.value }))} className={inputClass}>
             <option value="">All methods</option><option value="cash">Cash</option><option value="mobile_money">Mobile Money</option>
             <option value="bank_transfer">Bank Transfer</option><option value="card">Card</option><option value="other">Other</option>
           </select>
-        </div>
+        </Field>
         <CsvExportLink path="/reports/payment-history" params={filters} />
       </div>
       <TabFrame loadError={loadError} loading={!data}>
@@ -234,13 +231,12 @@ function InvoiceReportTab({ classes, terms, currency }) {
         classes={classes} terms={terms} filters={filters} setFilters={setFilters}
         extra={
           <>
-            <div>
-              <label className={labelClass}>Status</label>
+            <Field label="Status">
               <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} className={inputClass}>
                 <option value="">All</option><option value="unpaid">Unpaid</option><option value="partially_paid">Partially Paid</option>
                 <option value="paid">Paid</option><option value="void">Void</option>
               </select>
-            </div>
+            </Field>
             <CsvExportLink path="/reports/invoices" params={filters} />
           </>
         }
@@ -287,8 +283,8 @@ function SmsActivityTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
-        <div><label className={labelClass}>From</label><input type="date" value={filters.startDate} onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))} className={inputClass} /></div>
-        <div><label className={labelClass}>To</label><input type="date" value={filters.endDate} onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} /></div>
+        <Field label="From"><input type="date" value={filters.startDate} onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))} className={inputClass} /></Field>
+        <Field label="To"><input type="date" value={filters.endDate} onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))} className={inputClass} /></Field>
         <CsvExportLink path="/reports/sms-activity" params={filters} />
       </div>
       <TabFrame loadError={loadError} loading={!data}>
@@ -354,19 +350,17 @@ function StatementsTab({ currency }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] print:hidden">
-        <div>
-          <label className={labelClass}>Statement For</label>
+        <Field label="Statement For">
           <select value={mode} onChange={(e) => { setMode(e.target.value); setSelectedId(""); setStatement(null); setLoadError(""); }} className={inputClass}>
             <option value="student">Student</option><option value="parent">Parent/Guardian</option>
           </select>
-        </div>
-        <div className="min-w-[220px]">
-          <label className={labelClass}>{mode === "student" ? "Student" : "Parent"}</label>
+        </Field>
+        <Field label={mode === "student" ? "Student" : "Parent"} className="min-w-[220px]">
           <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className={inputClass}>
             <option value="">Select...</option>
             {options.map((o) => <option key={o.id} value={o.id}>{mode === "student" ? `${o.first_name} ${o.last_name}` : o.full_name}</option>)}
           </select>
-        </div>
+        </Field>
         <button onClick={load} disabled={!selectedId} className="flex min-h-[44px] items-center rounded-lg bg-[var(--primary)] px-4 text-sm font-semibold text-white hover:bg-[var(--primary-bright)] disabled:opacity-60 sm:min-h-0 sm:py-2">
           View Statement
         </button>

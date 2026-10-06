@@ -7,13 +7,13 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Field,
   LinkButton,
   LoadingSkeleton,
   MobileRecordCard,
   PageHeader,
   Toast,
   inputClass,
-  labelClass,
   useToast,
 } from "@/components/ui";
 
@@ -39,18 +39,15 @@ function ParentForm({ onCreated }) {
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4">
-      <div>
-        <label className={labelClass}>Full Name</label>
+      <Field label="Full Name">
         <input required value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Phone</label>
+      </Field>
+      <Field label="Phone">
         <input required value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Email (optional)</label>
+      </Field>
+      <Field label="Email (optional)">
         <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputClass} />
-      </div>
+      </Field>
       <div className="flex items-end">
         <Button type="submit" disabled={saving} className="w-full">{saving ? "Adding..." : "Add Parent"}</Button>
       </div>
