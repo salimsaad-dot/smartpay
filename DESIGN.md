@@ -998,6 +998,169 @@ for a full management system.
       received on a real phone within minutes, confirmed by the user
       directly. `PENDING APPROVAL` evidently doesn't block real delivery
       on Arkesel the way it was assumed to.
+    - **Confirmed end-to-end on the live production "Send Reminder" flow
+      too**, not just the earlier adapter-level test send: the real
+      reminder for the live "Saad Salim" dummy-data student was sent from
+      production, the UI showed "Reminder sent.", and the user confirmed
+      actual receipt on their phone — this time taking closer to 20
+      minutes to arrive rather than the few minutes seen on the first test
+      send, still well within a usable range for a Friday-arrears
+      reminder (not a time-sensitive OTP).
+  - **Council-audited security fix, 2026-10-07: session revocation +
+    per-account login lockout.** A product-tester security/multi-tenancy
+    audit (live adversarial cross-tenant testing — 36/36 passed — plus a
+    full controller/route trace) found tenant isolation itself sound, but
+    surfaced a real, provably-exploitable gap pressure-tested further via
+    the `llm-council` skill: `token_version` (the field `verifyToken`
+    already checked on every request for revocation) was never
+    incremented anywhere, there was no password-change endpoint, and
+    login had only a per-IP rate limit, no per-account lockout. Combined
+    with exactly one `school_admin` per school, a phished or stuffed
+    credential was valid and **unrevokable for up to 24 hours** — no
+    multi-tenancy bug required to do real damage to a school's live fee
+    ledger. The council's own peer-review round converged hard on this
+    being the single highest-priority item, ahead of the multi-tenancy
+    result itself. Fixed same day:
+    - `POST /auth/change-password` — verifies the current password,
+      updates the hash, and bumps `token_version`, which immediately
+      kills every other already-issued token for that user; the request's
+      own session is kept alive by re-signing a fresh token against the
+      new version in the same response.
+    - `POST /auth/revoke-sessions` — a separate, faster kill-switch for
+      "I think a device is compromised but can't change the password
+      right now": bumps `token_version` and clears the *calling* device's
+      own cookie too, so the only way back in anywhere is a fresh login.
+    - Per-account lockout: 5 wrong passwords locks the account for 15
+      minutes (`423`), independent of source IP — closes the gap the
+      existing generous 60-req/15min per-IP limit couldn't, since that
+      budget is deliberately wide to tolerate a shared staffroom IP. A
+      correct login always clears both counters.
+    - `users.failed_login_attempts`/`locked_until` added via a direct
+      `ALTER TABLE` (no migrations system, same convention as everything
+      else here) — `schema.sql` regenerated.
+    - A minimal `/dashboard/account` page shipped in the same pass so
+      these aren't dead API routes — without a UI, this would repeat the
+      exact "machinery exists but nothing ever calls it" failure the
+      audit just found.
+    - Verified twice: 18 new/updated Jest integration tests (lockout,
+      change-password's old-token-dies/new-token-lives/new-password-login
+      behavior, revoke-sessions including killing the calling session) —
+      full suite 21/21 suites, 197 passed + 1 skipped — and independently
+      against the real running local server via raw HTTP calls (register
+      → change password → confirm old cookie dead/new cookie alive/old
+      password rejected/new password accepted → revoke → confirm dead →
+      6 failed logins → confirm `423`), not just the test suite.
+  - **Follow-up to the same council pressure-test, 2026-10-07: independent
+    verification of the multi-tenancy result beyond ID-substitution.** The
+    council's sharpest objection to the original audit: 36/36 passing
+    tests only proved the `WHERE id = ? AND school_id = ?` ownership-check
+    path. It never exercised this codebase's real SQL-level aggregate
+    queries (`GROUP BY` + `SUM`/`COUNT`) — `classController.list`'s
+    student count, `feeStructureController.list`'s fee total/item count,
+    `parentController.list`'s children count/outstanding balance — which
+    could in principle leak silently as a contaminated 200 instead of a
+    404. Checked two ways:
+    - **Read every one.** All three correctly scope the GROUP BY to an
+      already-`school_id`-filtered base row (`fs.id`/`c.id`/`p.id`) and
+      join down to child tables only via exact foreign-key paths, never a
+      second independently-filterable `school_id`. `classController.js`
+      additionally double-guards with `s.school_id = c.school_id` in the
+      join condition itself — the most explicit version of this defense
+      found anywhere in the codebase.
+    - **Then proved it empirically rather than trusting the read**, per
+      the council's own recommendation: a new test,
+      `tests/tenantIsolationAggregates.integration.test.js`, seeds School
+      A with small, specific numbers and School B with deliberately huge,
+      unmistakable ones (10 students vs. 3, a 99,999-range fee total vs.
+      150, a 99,999-range unpaid balance vs. 200) and confirms School A's
+      own `/classes`, `/fee-structures`, and `/parents` totals reconcile
+      exactly to School A's own rows — not inflated by School B's. All 4
+      assertions passed on the real DB. This doesn't replace a genuinely
+      independent (different-author) adversarial pass, which the council
+      also recommended and which hasn't happened — noted honestly rather
+      than claimed.
+    - **Also checked the audit's route-inventory completeness claim**,
+      which the council flagged as unverified: "only 2 routes without
+      `verifyToken`" turned out to be undercounting by one.
+      `POST /api/payments/webhook` (Paystack's server-to-server callback)
+      is a third, legitimately unauthenticated route — correctly protected
+      instead by an HMAC-SHA512 signature check against the raw request
+      body with `crypto.timingSafeEqual` (`utils/paystackGateway.js`), not
+      a vulnerability, but the original "2 unauthenticated routes" count
+      was simply wrong and needed correcting rather than left standing.
+    - Full suite after adding the new test: 22/22 suites, 201 passed + 1
+      skipped.
+  - **Two remaining ship-today items from the same council audit, closed
+    2026-10-07: JWT algorithm pin + CSV/formula-injection guard.**
+    - `verifyToken` now calls `jwt.verify(token, process.env.JWT_SECRET,
+      { algorithms: ['HS256'] })` instead of leaving `algorithms` unset.
+      Confirmed this was a real, demonstrable gap before the fix, not
+      just theoretical: a token forged with the correct secret but signed
+      `HS384` instead of `HS256` was silently accepted by the old code (a
+      direct `jwt.verify` call proved it), and is correctly rejected now.
+      Real risk was always low here — no RSA/asymmetric keys exist
+      anywhere in this app, so the classic RS256-to-HS256 confusion
+      attack has no public key to exploit — but the HMAC-variant gap was
+      real, not hypothetical. Regression test added to
+      `tests/authFlow.integration.test.js`.
+    - `utils/csv.js`'s `csvEscape` now prefixes any cell value starting
+      with `=`, `+`, `-`, or `@` with a leading apostrophe before RFC 4180
+      quoting, per OWASP's standard CSV/formula-injection mitigation.
+      Affects all 4 report exports that include parent/student-entered
+      names. New `tests/csv.test.js` covers all four trigger characters,
+      the combined prefix+RFC4180-quoting case, and confirms ordinary
+      values are left untouched.
+    - Full suite: 23/23 suites, 209 passed + 1 skipped (one
+      `onlinePayments.integration.test.js` timeout seen once, against a
+      real Paystack sandbox call, reproduced as flaky/network-load-
+      dependent by re-running — passes 24/24 alone and on a clean rerun
+      of the full suite; unrelated to anything changed in this pass).
+  - **Last item from the same council audit, closed 2026-10-07: auth
+    event logging (detection, not just prevention).** Every fix above
+    (lockout, revocation, algorithm pin, CSV guard) prevents or narrows a
+    specific attack. None of them helped anyone *notice* a credential-
+    stuffing run, a suspicious password change, or a lockout happening —
+    the council flagged this as a gap the entire audit shared, missed by
+    all five advisors individually and only caught in peer review.
+    `audit_logs` already existed for financial/administrative actions
+    (`logAction`, used by payments/invoices/settings/templates) but
+    nothing in `authController.js` ever wrote to it — login itself is a
+    pre-auth endpoint with no `req.user` yet, so the existing helper
+    couldn't be reused as-is.
+    - New `logAuthEvent(req, { schoolId, userId, action })` in
+      `utils/auditLog.js`, alongside the existing `logAction`, for the
+      pre-auth case where `schoolId`/`userId` have to be passed in
+      explicitly rather than read off `req.user`.
+    - Now logged: `auth.login_success`, `auth.login_failed`,
+      `auth.login_blocked` (attempted while locked out),
+      `auth.account_locked` (the moment the 5th failure actually sets the
+      lock — written alongside, not instead of, that attempt's own
+      `auth.login_failed`), `auth.password_changed`,
+      `auth.sessions_revoked` — all visible on the existing
+      `/dashboard/audit-log` page a school admin already has, no new UI
+      surface needed, just new labels added to its `ACTION_LABELS` map.
+    - **Deliberately out of scope, not an oversight**: a login attempt
+      against a *non-existent* email is never logged. `audit_logs.school_
+      id` is `NOT NULL` and the table is inherently per-tenant (surfaced
+      to a school's own admin as their own trail) — there's no school to
+      attach an unknown-email attempt to. A platform-wide log of
+      unauthenticated attempts would need its own schema and is a
+      separate, bigger decision than this pass; noted here so it isn't
+      mistaken for something missed.
+    - **Also deliberately out of scope**: alerting/paging on these
+      events (e.g. notifying someone in real time on repeated failures).
+      This pass is logging only — someone has to actually open the Audit
+      Log page to see it. The council's own recommendation called this a
+      "new workstream," not a same-day patch; logging first, since
+      alerting needs a real decision about who gets notified and how
+      (email? SMS? which threshold?) that shouldn't be invented
+      unprompted.
+    - 8 new tests in `tests/authFlow.integration.test.js` confirm real
+      rows land in `audit_logs` (not just correct HTTP responses) for
+      every case above, including that hitting the lockout threshold logs
+      both the triggering failure AND the lock itself, and that the
+      nonexistent-email case correctly writes nothing. Full suite: 23/23
+      suites, 216 passed + 1 skipped.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -1075,3 +1238,5 @@ for a full management system.
 | 2026-10-07 | Arkesel chosen as the second SMS provider over Africa's Talking/Hubtel. | Ghana-specific direct carrier connections (MTN/Telecel/AirtelTigo, not routed through a third country), GHS billing with Mobile Money top-up (easiest to fund from Ghana), free signup with an API key in minutes, pricing in line with what mNotify charged. Africa's Talking is more established pan-African but less Ghana-optimized; noted as the fallback option if Arkesel doesn't work out either. |
 | 2026-10-07 | `SMS_PROVIDER` defaults to `mnotify` when unset, rather than defaulting to whichever provider was added most recently. | Arkesel's failure-response shape started out unconfirmed (unlike mNotify's, already proven against multiple real sends) — an explicit opt-in (`SMS_PROVIDER=arkesel`) avoids silently switching every school's live sends onto the less-proven path the moment the env var exists, versus only switching where someone deliberately set it. |
 | 2026-10-07 | Tests that mock an SMS provider must mock `utils/smsProvider` (the switch), never a specific adapter module directly. | Found live: `fridayJob.integration.test.js`'s existing mock (there specifically to prevent real, billable sends during tests) silently stopped intercepting the moment `fridayJob.js`'s own import changed to go through the switch — a real, unmocked call reached the real Arkesel API during a routine test run before this was caught. A second, related gap in `sms.integration.test.js` (gated on one adapter's env var by name, not on whichever provider is actually active) was tightened the same way even though it hadn't yet caused a real failure, since the next provider added would have hit the identical mismatch. |
+| 2026-10-07 | Password complexity stays at "length ≥ 8 only" — deliberately, not revisited as part of the council security audit. | Flagged by the audit as a finding to weigh, not assumed either way. Decision: this matches the product's own stated premise (a simpler alternative to the complicated system it replaces), and there's no incident or specific threat motivating more friction at signup right now. Documented here so a future audit doesn't re-flag it as an open gap — if revisited, the trigger should be a real incident or a customer/compliance requirement, not audit tidiness. |
+| 2026-10-07 | File-upload validation is explicitly out of scope — confirmed absent, not a gap. | The same council audit confirmed via grep that no file-upload feature exists anywhere in this codebase. There is nothing to validate. Documented so this doesn't get listed as a missing control in a future pass; revisit only if a file-upload feature is actually added. |

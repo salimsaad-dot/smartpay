@@ -24,4 +24,33 @@ async function logAction(req, { action, entityType, entityId, oldValues, newValu
     }
 }
 
-module.exports = { logAction };
+// A council-pressure-tested security audit (2026-10-07) found that auth
+// events — logins, failed logins, lockouts, password changes, session
+// revocations — were never logged at all, anywhere. Every other finding
+// in that audit was about PREVENTING a compromise; this closes the
+// separate gap of having no way to NOTICE one happening. logAction above
+// can't be reused for login itself: it's a pre-auth endpoint with no
+// verifyToken, so req.user doesn't exist yet at the point a login
+// succeeds, fails, or gets blocked by the lockout — schoolId/userId have
+// to be passed in explicitly instead of read off req.user.
+//
+// A login attempt against a NON-EXISTENT email has no school_id to
+// attach to (this table is per-tenant, keyed on a NOT NULL school_id,
+// and is surfaced to a school's own admin as THEIR audit trail) — that
+// case is deliberately not logged here. That's a real, narrower scope
+// than "every auth event platform-wide," noted so it isn't mistaken for
+// an oversight: a platform-wide unauthenticated-attempt log would need
+// its own un-scoped table and is a bigger decision than this pass.
+async function logAuthEvent(req, { schoolId, userId, action }) {
+    try {
+        await pool.query(
+            `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, ip_address, user_agent)
+             VALUES (?, ?, ?, 'user', ?, ?, ?)`,
+            [schoolId, userId, action, userId || null, req.ip, (req.headers['user-agent'] || '').slice(0, 255)]
+        );
+    } catch (error) {
+        console.error('Audit log write failed (action proceeded anyway):', action, error);
+    }
+}
+
+module.exports = { logAction, logAuthEvent };

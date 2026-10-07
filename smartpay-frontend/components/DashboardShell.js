@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, CalendarDays, School, GraduationCap, Users,
   Receipt, FileText, AlertTriangle, Bell, MessageSquareText,
-  BarChart3, ClipboardList, LogOut, ChevronDown, Menu, X,
+  BarChart3, ClipboardList, LogOut, ChevronDown, Menu, X, ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Logo, LogoMark } from "@/components/Logo";
@@ -40,7 +40,13 @@ const NAV_GROUPS = [
     ],
   },
   { label: "Reports", items: [{ href: "/dashboard/reports", label: "Reports", icon: BarChart3 }] },
-  { label: "Admin", items: [{ href: "/dashboard/audit-log", label: "Audit Log", icon: ClipboardList }] },
+  {
+    label: "Admin",
+    items: [
+      { href: "/dashboard/audit-log", label: "Audit Log", icon: ClipboardList },
+      { href: "/dashboard/account", label: "Account & Security", icon: ShieldCheck },
+    ],
+  },
 ];
 
 function NavLinks({ pathname, onNavigate }) {
@@ -110,6 +116,13 @@ function UserMenu({ user, onLogout }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full z-20 mt-2 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]">
+          <Link
+            href="/dashboard/account"
+            onClick={() => setOpen(false)}
+            className="flex min-h-[44px] w-full items-center gap-2 px-3 text-left text-sm font-medium text-[var(--slate)] hover:bg-[var(--hover)] sm:min-h-0 sm:py-2"
+          >
+            <ShieldCheck size={16} /> Account & Security
+          </Link>
           <button
             onClick={onLogout}
             className="flex min-h-[44px] w-full items-center gap-2 px-3 text-left text-sm font-medium text-[var(--slate)] hover:bg-[var(--hover)] sm:min-h-0 sm:py-2"

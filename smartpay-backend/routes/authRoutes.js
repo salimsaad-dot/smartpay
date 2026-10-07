@@ -8,5 +8,7 @@ router.post('/register-school', registerRateLimit, authController.registerSchool
 router.post('/login', loginRateLimit, authController.login);
 router.post('/logout', authController.logout);
 router.get('/me', verifyToken, authController.getMe);
+router.post('/change-password', verifyToken, loginRateLimit, authController.changePassword);
+router.post('/revoke-sessions', verifyToken, authController.revokeSessions);
 
 module.exports = router;

@@ -21,6 +21,12 @@ const ACTION_LABELS = {
   "settings.update": "Settings updated",
   "sms_template.create": "SMS template created",
   "sms_template.update": "SMS template updated",
+  "auth.login_success": "Signed in",
+  "auth.login_failed": "Failed sign-in attempt",
+  "auth.login_blocked": "Sign-in blocked (account locked)",
+  "auth.account_locked": "Account locked (too many failed attempts)",
+  "auth.password_changed": "Password changed",
+  "auth.sessions_revoked": "Logged out everywhere",
 };
 
 function LogDetails({ log }) {

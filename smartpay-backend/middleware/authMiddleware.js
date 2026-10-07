@@ -20,7 +20,14 @@ exports.verifyToken = async (req, res, next) => {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Pinned explicitly: this app only ever signs with HS256 (one
+        // symmetric JWT_SECRET, no RSA/asymmetric keys anywhere), so a
+        // classic RS256-to-HS256 "algorithm confusion" attack has no
+        // public key to exploit here — low real risk — but leaving
+        // `algorithms` unset means jwt.verify would accept any algorithm
+        // the token itself claims, which is a one-line defense-in-depth
+        // gap with no reason to leave open.
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
         const [[user]] = await pool.query(
             'SELECT school_id, status, token_version FROM users WHERE id = ?',
