@@ -255,14 +255,33 @@ for a full management system.
   project), on the same underlying BMS.africa/mNotify account (no
   separate-business feature exists there the way Paystack has one; the
   project-scoped key is the closest real equivalent and was confirmed
-  sufficient). The "SmartPay" Sender ID itself is still pending mNotify's
+  sufficient). The "SmartPay" Sender ID itself was still pending mNotify's
   approval (they require a business registration certificate before
   releasing a custom sender ID) — live-verified that the integration
   itself is wired correctly by triggering a real send against the real
   API: it returned a genuine `401` from mNotify (not a code-side error),
   which the app recorded cleanly as a failed reminder rather than
-  crashing. A real successful send-through-delivery is still pending
-  that approval.
+  crashing. **Update 2026-10-07: real end-to-end delivery confirmed.**
+  With "SmartPay" still on hold, switched `MNOTIFY_SENDER_ID` to the
+  already-approved `"AcademiaHub"` as a deliberate, user-approved stopgap
+  (local `.env` + Render) — same underlying mNotify account, different
+  registered business name, so messages read "From: AcademiaHub" until
+  "SmartPay" clears review, at which point it switches back. Confirmed
+  live, in this order: (1) a real send attempt failed cleanly with `402`
+  (account balance was 0, not a code or sender-ID problem — mNotify's
+  balance-check API, read-only, confirmed this directly); (2) after the
+  user topped up the wallet, the exact same send succeeded
+  (`success: true`) and **the SMS was independently confirmed received**
+  on a real phone. Along the way, found and fixed a real bug in
+  `mnotifyProvider.js`'s `providerMessageId` extraction — it checked
+  `summary.id` and `data[0]._id`, neither of which the real API response
+  shape (`{ summary: { message_id, _id, ... } }`) ever contains, so the
+  field was silently `null` on every real send since Phase 7 shipped.
+  Fixed to read `summary.message_id` (falling back to `summary._id`),
+  pinned down with 3 new mocked-fetch unit tests
+  (`tests/mnotifyProvider.test.js`) built from the real captured response
+  — no further live sends needed to verify it. 124/125 backend tests
+  passing (1 pre-existing skip).
 - **Phase 8 — Friday automation: SHIPPED 2026-10-03.** The actual
   weekly engine: `utils/fridayJob.js` runs the spec's exact 14.1
   algorithm (acquire lock → query eligible invoices → group by parent →
@@ -746,3 +765,4 @@ for a full management system.
 | 2026-10-07 | Academic Setup's redesigned tabs drop the mockup's "Grading System" tab entirely and relabel "School Settings" to "Reminder Settings", scoped to only the Friday-SMS-automation fields that actually have a backend. | User's explicit choice between three options. SmartPay has no grading/results feature at all (it's a fees-only product, per the original spec) — a Grading System tab would have nothing real behind it. The Friday-reminder backend (`friday_reminders_enabled`/`friday_send_time`/`friday_template_id`/`reminder_min_balance`/`reminder_cooldown_days` on `schools`) has existed since Phase 8 with zero UI anywhere until this tab. |
 | 2026-10-07 | The Classes mockup's "Capacity" column was dropped rather than added to the schema. | User's explicit choice. No `capacity` field exists on `classes`, and showing the column would mean fabricating data — consistent with this project's standing rule of never inventing content a live mockup implies but the real data model doesn't back. |
 | 2026-10-07 | `GET /classes` takes an optional `?status=` filter (default: active-only, unchanged for every existing caller) instead of always returning active classes. | The redesigned Classes page needs to show archived classes too (via `?status=all`), but every other existing caller (Students' and Academic Setup's class dropdowns, invoice generation) has always assumed active-only — changing the default would have silently broken them. |
+| 2026-10-07 | `MNOTIFY_SENDER_ID` is temporarily `"AcademiaHub"` (the already-approved sender ID on the shared mNotify account) instead of `"SmartPay"` (still pending mNotify's own approval), in both local `.env` and Render production. | User's explicit, informed choice after being told the tradeoff: messages read "From: AcademiaHub" in the meantime, a different registered business than the one actually sending — not ideal, but it unblocks real SMS delivery now rather than leaving it dark until approval clears. **Must be switched back to `"SmartPay"` once that approval comes through** — nothing in the code enforces or reminds about this; it's a manual env-var flip in both places. |

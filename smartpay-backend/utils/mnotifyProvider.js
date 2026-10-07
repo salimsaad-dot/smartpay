@@ -47,10 +47,15 @@ async function sendSms(to, message) {
             return { success: false, providerMessageId: null, error: body?.message || `mNotify error (${response.status})` };
         }
 
-        // mNotify's quick-send response isn't fully documented here — this
-        // extracts whatever identifier it returns defensively, confirmed
-        // and corrected against a real response during live verification.
-        const providerMessageId = body?.data?.[0]?._id || body?.summary?.id || null;
+        // Confirmed against a real mNotify response (2026-10-07): a
+        // successful quick-send returns `{ summary: { message_id, _id,
+        // ... } }`, not `{ data: [...] }` or `summary.id` (no underscore)
+        // — both of which this previously checked and both of which are
+        // always undefined, so providerMessageId was silently null on
+        // every real send until now. `message_id` is mNotify's own
+        // human-meaningful tracking id (e.g. "20261007233577428684V2");
+        // `summary._id` is an internal record id, kept as a fallback.
+        const providerMessageId = body?.summary?.message_id || body?.summary?._id || null;
         return { success: true, providerMessageId, error: null };
     } catch (error) {
         return { success: false, providerMessageId: null, error: error.message };
