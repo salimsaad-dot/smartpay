@@ -866,6 +866,28 @@ for a full management system.
       confirmed via the actual selected `<option>` text, not just that a
       value was set. `next build` clean; no backend changes this pass, so
       only a frontend QA round was needed.
+  - **`createPaymentLink` deadlock: actually fixed, 2026-10-07** — the
+    `ER_LOCK_DEADLOCK` first flagged-but-not-fixed during the earlier
+    redesign's QA (found again live in production: a real "Send Reminder"
+    attempt on a real invoice failed with "Server error while sending the
+    reminder") now retries automatically instead of surfacing as a bare
+    500. New `utils/retryOnDeadlock.js` — on `ER_LOCK_DEADLOCK`
+    specifically (MySQL's own documented guidance is "the application
+    should retry the transaction," since InnoDB already rolled the losing
+    attempt back entirely as its resolution mechanism), re-runs the
+    *whole* attempt (fresh connection, fresh `beginTransaction`) up to 3
+    times with a short increasing delay, not just the one query that
+    happened to report it. Wired into both call sites that share
+    `createPaymentLink` — `reminderController.send` (where this was hit
+    live) and `parentController.generatePaymentLink`. 4 new unit tests on
+    the retry logic itself (mocked), plus a real concurrency integration
+    test (`tests/paymentLinkConcurrency.integration.test.js`): 10 truly
+    simultaneous payment-link requests for the *same* parent — the exact
+    shape of contention that deadlocks InnoDB's gap locking on
+    `payment_links`' `UPDATE`-then-`INSERT` pattern — all 10 succeed, and
+    exactly one active link survives (confirming `createPaymentLink`'s
+    own revoke-before-insert behavior still holds under real concurrent
+    load, not just sequentially). 142/143 backend tests passing.
 
 ## Decisions Log
 | Date | Decision | Rationale |

@@ -3,6 +3,7 @@ const { createPaymentLink } = require('../utils/paymentLink');
 const { renderTemplate } = require('../utils/smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('../utils/reminderCore');
 const smsProvider = require('../utils/mnotifyProvider');
+const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
 
 // Preview never generates a real payment link — doing that on every
 // preview click (which may not lead to an actual send) would needlessly
@@ -63,18 +64,24 @@ exports.send = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'SMS provider is not configured.' });
         }
 
-        const connection = await pool.getConnection();
-        let link;
-        try {
-            await connection.beginTransaction();
-            link = await createPaymentLink(connection, { schoolId: req.user.schoolId, parentId, createdBy: req.user.userId });
-            await connection.commit();
-        } catch (err) {
-            await connection.rollback();
-            throw err;
-        } finally {
-            connection.release();
-        }
+        // Retried whole — a deadlock means MySQL already rolled the entire
+        // attempt back, so getting a fresh connection and starting over is
+        // the correct unit to retry, not just the query that happened to
+        // report it.
+        const link = await withDeadlockRetry(async () => {
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
+                const result = await createPaymentLink(connection, { schoolId: req.user.schoolId, parentId, createdBy: req.user.userId });
+                await connection.commit();
+                return result;
+            } catch (err) {
+                await connection.rollback();
+                throw err;
+            } finally {
+                connection.release();
+            }
+        });
 
         const [[linkRow]] = await pool.query('SELECT id FROM payment_links WHERE parent_id = ? AND status = "active" ORDER BY id DESC LIMIT 1', [parentId]);
 

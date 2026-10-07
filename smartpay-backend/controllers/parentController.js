@@ -1,6 +1,7 @@
 const pool = require('../db');
 const { createPaymentLink } = require('../utils/paymentLink');
 const { logAction } = require('../utils/auditLog');
+const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
 
 exports.list = async (req, res) => {
     try {
@@ -152,31 +153,41 @@ exports.getById = async (req, res) => {
 // Friday SMS job (a later phase) will call the same underlying insert
 // automatically instead of requiring a manual click.
 exports.generatePaymentLink = async (req, res) => {
-    const connection = await pool.getConnection();
     try {
-        const [[parent]] = await connection.query(
+        const [[parent]] = await pool.query(
             'SELECT id FROM parents WHERE id = ? AND school_id = ?',
             [req.params.id, req.user.schoolId]
         );
         if (!parent) {
-            connection.release();
             return res.status(404).json({ status: 'error', message: 'Parent/guardian not found.' });
         }
 
-        await connection.beginTransaction();
-        const { url, expiresAt } = await createPaymentLink(connection, {
-            schoolId: req.user.schoolId,
-            parentId: req.params.id,
-            createdBy: req.user.userId,
+        // Retried whole — a deadlock means MySQL already rolled the entire
+        // attempt back, so getting a fresh connection and starting over is
+        // the correct unit to retry, not just the query that happened to
+        // report it. Hit live in production via this exact endpoint.
+        const { url, expiresAt } = await withDeadlockRetry(async () => {
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
+                const result = await createPaymentLink(connection, {
+                    schoolId: req.user.schoolId,
+                    parentId: req.params.id,
+                    createdBy: req.user.userId,
+                });
+                await connection.commit();
+                return result;
+            } catch (err) {
+                await connection.rollback();
+                throw err;
+            } finally {
+                connection.release();
+            }
         });
-        await connection.commit();
 
         res.status(201).json({ status: 'success', data: { url, expiresAt } });
     } catch (error) {
-        await connection.rollback();
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while generating the payment link.' });
-    } finally {
-        connection.release();
     }
 };
