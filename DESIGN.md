@@ -920,6 +920,24 @@ for a full management system.
     actually catches the bug by deliberately reintroducing it and
     confirming the test fails, then reverting. 144 backend tests passing
     (1 skipped).
+  - **`mnotifyProvider.js` error logging, 2026-10-07**: after the fix
+    above, the real "Send Reminder" attempt got past the SQL bug but
+    then failed with a genuine, non-standard `mNotify error (419)` — and
+    `sendSms`'s own error path (`response.json().catch(() => null)`) was
+    silently discarding whatever mNotify's actual response body said,
+    leaving nothing in the server logs beyond the bare status code.
+    Neither mNotify's own docs (JS-rendered, already known to be
+    incomplete — see Phase 7) nor a general web search turned up a
+    documented meaning for `419` specifically. Rather than keep
+    guessing, fixed the real, fixable gap: `sendSms` now reads the
+    response as text first (never assumes JSON), attempts to parse it,
+    and `console.error`s the raw body (truncated to 1000 chars, server-
+    side only, never in the client-facing message) whenever a send
+    fails — so the *next* unexplained provider error is actually
+    diagnosable from Render's logs instead of a bare, undocumented code.
+    1 new unit test (a non-JSON/HTML-shaped failure response, confirming
+    both that it's still handled cleanly and that its content reaches
+    the log). 145 backend tests passing (1 skipped).
 
 ## Decisions Log
 | Date | Decision | Rationale |

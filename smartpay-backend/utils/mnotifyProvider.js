@@ -42,8 +42,21 @@ async function sendSms(to, message) {
             }),
         });
 
-        const body = await response.json().catch(() => null);
+        // Read as text first, not straight to .json() — a non-2xx response
+        // from mNotify (or anything in front of it, e.g. a WAF/rate-limit
+        // page) isn't guaranteed to be JSON, and .json().catch(() => null)
+        // was silently discarding the actual error content on exactly the
+        // responses where it mattered most. Logged here (server-side only,
+        // never put in the client-facing message) so a real failure is
+        // diagnosable from the server logs instead of just a bare status
+        // code — hit live in production: a 419 with no further detail
+        // surfaced anywhere, including the logs, until this.
+        const rawBody = await response.text().catch(() => '');
+        let body = null;
+        try { body = JSON.parse(rawBody); } catch { /* non-JSON response, body stays null */ }
+
         if (!response.ok || body?.status === 'error') {
+            console.error(`mNotify send failed: HTTP ${response.status}. Raw response: ${rawBody.slice(0, 1000)}`);
             return { success: false, providerMessageId: null, error: body?.message || `mNotify error (${response.status})` };
         }
 

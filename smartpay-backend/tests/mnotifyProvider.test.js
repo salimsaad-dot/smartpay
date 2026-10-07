@@ -17,7 +17,15 @@ function mockFetchOnce(status, body) {
     global.fetch = jest.fn().mockResolvedValue({
         ok: status >= 200 && status < 300,
         status,
-        json: async () => body,
+        text: async () => JSON.stringify(body),
+    });
+}
+
+function mockFetchOnceRaw(status, rawText) {
+    global.fetch = jest.fn().mockResolvedValue({
+        ok: status >= 200 && status < 300,
+        status,
+        text: async () => rawText,
     });
 }
 
@@ -71,5 +79,27 @@ describe('mnotifyProvider.sendSms — providerMessageId extraction', () => {
         expect(result.success).toBe(false);
         expect(result.providerMessageId).toBeNull();
         expect(result.error).toMatch(/402/);
+    });
+
+    // Hit live in production, 2026-10-07: a 419 with no further detail
+    // from mNotify. The old .json().catch(() => null) silently discarded
+    // whatever the real response body actually said — this confirms a
+    // non-JSON (or otherwise unparseable) failure response is still
+    // handled cleanly, and that its raw content is at least logged
+    // server-side instead of vanishing entirely.
+    test('a non-JSON failure response (e.g. a WAF/rate-limit HTML page) is handled cleanly and logged', async () => {
+        process.env.MNOTIFY_API_KEY = 'test-key';
+        mockFetchOnceRaw(419, '<html><body>Rate limited</body></html>');
+        const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        const { sendSms } = require('../utils/mnotifyProvider');
+        const result = await sendSms('0577428684', 'Test message');
+
+        expect(result.success).toBe(false);
+        expect(result.providerMessageId).toBeNull();
+        expect(result.error).toMatch(/419/);
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Rate limited'));
+
+        consoleSpy.mockRestore();
     });
 });
