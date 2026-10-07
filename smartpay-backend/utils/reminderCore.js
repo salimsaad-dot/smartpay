@@ -73,7 +73,7 @@ async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
 // wins when given (the manual-send "pick a template" case).
 async function getTemplate(schoolId, { templateId, preferType } = {}) {
     if (templateId) {
-        const [[t]] = await pool.query('SELECT * FROM sms_templates WHERE id = ? AND school_id = ? AND status = "active"', [templateId, schoolId]);
+        const [[t]] = await pool.query("SELECT * FROM sms_templates WHERE id = ? AND school_id = ? AND status = 'active'", [templateId, schoolId]);
         return t || null;
     }
     if (preferType) {

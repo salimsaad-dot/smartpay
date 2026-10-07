@@ -162,7 +162,7 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                 } finally {
                     connection.release();
                 }
-                const [[linkRow]] = await pool.query('SELECT id FROM payment_links WHERE parent_id = ? AND status = "active" ORDER BY id DESC LIMIT 1', [parentId]);
+                const [[linkRow]] = await pool.query("SELECT id FROM payment_links WHERE parent_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [parentId]);
 
                 const variables = await buildVariables(schoolId, scope, link.url, school);
                 const message = renderTemplate(template.body, variables);

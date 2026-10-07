@@ -83,7 +83,7 @@ exports.send = async (req, res) => {
             }
         });
 
-        const [[linkRow]] = await pool.query('SELECT id FROM payment_links WHERE parent_id = ? AND status = "active" ORDER BY id DESC LIMIT 1', [parentId]);
+        const [[linkRow]] = await pool.query("SELECT id FROM payment_links WHERE parent_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [parentId]);
 
         const variables = await buildVariables(req.user.schoolId, scope, link.url);
         const message = renderTemplate(template.body, variables);

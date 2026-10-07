@@ -888,6 +888,38 @@ for a full management system.
     exactly one active link survives (confirming `createPaymentLink`'s
     own revoke-before-insert behavior still holds under real concurrent
     load, not just sequentially). 142/143 backend tests passing.
+  - **The actual cause of the production "Send Reminder" failure — found
+    via real Render logs, 2026-10-07.** The deadlock fix above shipped
+    first on a plausible-but-wrong diagnosis (the generic client-side
+    "Server error" message gave no real signal) and genuinely improved a
+    real, separate hazard — but deploying it did **not** fix the user's
+    actual failure, which recurred identically on retry. Only reading the
+    real Render log (not guessable from here, no production access)
+    surfaced the true cause: `ER_BAD_FIELD_ERROR` / "Unknown column
+    'active' in 'where clause'" on `... AND status = "active" ...`.
+    **Local MySQL (XAMPP) and Aiven (production) evidently run different
+    SQL modes** — under `ANSI_QUOTES` (or a mode that includes it),
+    double-quoted text is parsed as an *identifier*, not a string
+    literal, so `"active"` was read as a column named `active` rather
+    than the word "active". Every other SQL string literal in this
+    codebase already uses single quotes; these were the sole
+    exceptions — genuine, pre-existing typos, not something this
+    session's own changes introduced, that could only ever surface in
+    production, never locally. Three occurrences, all in reminder code,
+    fixed to single quotes: `reminderController.js` (the exact line that
+    failed live), `fridayJob.js` (the **automated Friday reminder job
+    shares this same line** — would have failed in production the first
+    time it ran for any school, silently, until someone noticed reminders
+    weren't arriving), and `reminderCore.js`'s `getTemplate` (hit only
+    when a specific `templateId` is requested). Since no local test can
+    exercise the actual bug (local SQL mode doesn't reproduce it), added
+    a static-source regression test instead
+    (`tests/noDoubleQuotedSqlStrings.test.js`) that scans every
+    `controllers/`/`utils/` file for a double-quoted bareword next to
+    `=` inside a `pool.query`/`connection.query` call — verified it
+    actually catches the bug by deliberately reintroducing it and
+    confirming the test fails, then reverting. 144 backend tests passing
+    (1 skipped).
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -961,3 +993,4 @@ for a full management system.
 | 2026-10-07 | The new inline parent-at-enrollment flow dedups by exact phone-string match within the same school, not a normalized/E.164 comparison. | Matches every other phone-handling path already in this codebase (`parentController.create` also just trims and stores as typed, no normalization). Two siblings' parent typed differently across two separate Add Student submissions could still produce a duplicate parent row — a pre-existing class of imperfection, not a new gap introduced by this feature. |
 | 2026-10-07 | `xlsx` (for bulk-import's Excel support) is installed from `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, not `npm install xlsx`. | The npm-registry version carries two unpatched high-severity advisories (prototype pollution, ReDoS) with "No fix available" per `npm audit` — SheetJS ships patched releases only from their own CDN for licensing reasons, a well-known situation in this ecosystem. Academia Hub's own `package.json` already makes this exact same call; confirmed by inspecting it before installing anything here, rather than accepting the vulnerable default. |
 | 2026-10-07 | Bulk-import column headers must never contain a literal comma, even though the UI also accepts `.xlsx` (which has no such risk). | Found live: `"Academic Year (optional, defaults to current)"` as a header silently broke column alignment in an unquoted CSV, swapping Parent Name and Parent Phone. The auto-generated `.xlsx` template is immune, but a hand-typed or differently-exported CSV isn't — a comma-containing header is a latent landmine for a comma-*delimited* format no matter how well the parser handles quoting. |
+| 2026-10-07 | Every SQL string literal in this codebase must use single quotes, never double quotes — now enforced by a static regression test, not just convention. | Production (Aiven) and local (XAMPP) MySQL evidently run different SQL modes: a double-quoted literal like `status = "active"` works locally but throws `ER_BAD_FIELD_ERROR` in production under `ANSI_QUOTES`, since double quotes there mean identifier-quoting, not a string. Found live via Render's logs after a plausible-but-wrong deadlock diagnosis didn't fix a real Send Reminder failure. No local test can exercise this directly (local SQL mode doesn't reproduce it), so the guard is a static source scan instead — deliberately verified to actually catch the bug (reintroduced it, confirmed the test failed, reverted) before trusting it. |
