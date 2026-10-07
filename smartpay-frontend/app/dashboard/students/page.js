@@ -22,7 +22,10 @@ import {
 import { Avatar, Badge2, Button2, Card2, StatCard } from "@/components/ui2";
 
 function AddStudentModal({ classes, years, onClose, onCreated }) {
-  const [form, setForm] = useState({ admissionNo: "", firstName: "", lastName: "", classId: "", academicYearId: "" });
+  const [form, setForm] = useState({
+    admissionNo: "", firstName: "", lastName: "", classId: "", academicYearId: "",
+    parentFullName: "", parentPhone: "", relationship: "",
+  });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -62,6 +65,19 @@ function AddStudentModal({ classes, years, onClose, onCreated }) {
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
           </select>
         </Field>
+
+        <div className="border-t border-[var(--border)] pt-3">
+          <p className="text-sm font-semibold text-[var(--ink)]">Parent / Guardian <span className="font-normal text-[var(--slate-quiet)]">(optional — can be added later instead)</span></p>
+          <p className="mt-0.5 text-xs text-[var(--slate-quiet)]">
+            Add it now to skip a separate step. If this phone number matches an existing parent, that record is reused — not duplicated.
+          </p>
+          <div className="mt-3 space-y-3">
+            <Field label="Parent/Guardian Name"><input value={form.parentFullName} onChange={(e) => setForm((f) => ({ ...f, parentFullName: e.target.value }))} className={inputClass} /></Field>
+            <Field label="Parent/Guardian Phone"><input value={form.parentPhone} onChange={(e) => setForm((f) => ({ ...f, parentPhone: e.target.value }))} className={inputClass} /></Field>
+            <Field label="Relationship (optional)"><input placeholder="e.g. Mother, Father, Guardian" value={form.relationship} onChange={(e) => setForm((f) => ({ ...f, relationship: e.target.value }))} className={inputClass} /></Field>
+          </div>
+        </div>
+
         {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button2 variant="secondary" type="button" onClick={onClose}>Cancel</Button2>

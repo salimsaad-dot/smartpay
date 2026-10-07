@@ -697,6 +697,45 @@ for a full management system.
     cross-tenant check. 121/121 backend tests passing. Verified live via
     Puppeteer at 1440px and 390px against a freshly registered test
     school — all QA data cleaned from the DB afterward.
+  - **mNotify real end-to-end delivery confirmed, 2026-10-07**: real send,
+    real receipt on a real phone, via the already-approved `"AcademiaHub"`
+    sender ID as a deliberate stopgap while `"SmartPay"` is still pending
+    mNotify's own approval (env var updated in both Render and local
+    `.env` — see Decisions Log). Found and fixed a real bug in
+    `mnotifyProvider.js`'s `providerMessageId` extraction along the way
+    (checked `summary.id`/`data[0]._id`, neither of which the real API
+    response ever contains — silently `null` on every send since Phase
+    7), pinned down with 3 new mocked-fetch unit tests
+    (`tests/mnotifyProvider.test.js`) built from the real captured
+    response shape.
+  - **Parent/guardian collection moved onto Add Student, 2026-10-07**:
+    the Add Student modal now has an optional "Parent/Guardian" section
+    (name, phone, relationship) collected in the same request, mirroring
+    Academia Hub's `enrollOneStudent` lookup-or-create-parent pattern —
+    user's explicit request, having found the old two-step flow (add
+    student, then separately add-and-link a parent) unnecessarily
+    cumbersome. `POST /students` now does student-create + parent-
+    lookup-or-create + link, all in one transaction: an existing parent
+    sharing the same phone *within that school* is reused, not
+    duplicated (the real sibling case — two children, one parent, added
+    separately) — matched by exact phone string, same as the rest of
+    this codebase's phone handling (no format normalization at storage
+    time anywhere else either). Deliberately stayed **optional**, not
+    required like Academia Hub's version (user's explicit choice): a
+    student can still be added with no parent on file and linked later
+    from the Students page, unchanged from before. 5 new integration
+    tests (`tests/studentEnrollment.integration.test.js`) cover the
+    no-parent path, partial-parent-fields rejection, new-parent
+    creation, sibling dedup (confirmed only one parent row exists after
+    two linked students), and that a matching phone in a *different*
+    school is never reused across tenants. 129/130 backend tests passing
+    (1 pre-existing skip). Verified live via Puppeteer: registered a
+    fresh school, added two children under the same parent phone through
+    the real modal, confirmed the Students table showed the parent
+    immediately on both rows with zero extra steps, confirmed the
+    Parents page showed exactly one parent with 2 children (not two
+    duplicate rows), and confirmed a third student added with no parent
+    fields still works exactly as before.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -766,3 +805,5 @@ for a full management system.
 | 2026-10-07 | The Classes mockup's "Capacity" column was dropped rather than added to the schema. | User's explicit choice. No `capacity` field exists on `classes`, and showing the column would mean fabricating data — consistent with this project's standing rule of never inventing content a live mockup implies but the real data model doesn't back. |
 | 2026-10-07 | `GET /classes` takes an optional `?status=` filter (default: active-only, unchanged for every existing caller) instead of always returning active classes. | The redesigned Classes page needs to show archived classes too (via `?status=all`), but every other existing caller (Students' and Academic Setup's class dropdowns, invoice generation) has always assumed active-only — changing the default would have silently broken them. |
 | 2026-10-07 | `MNOTIFY_SENDER_ID` is temporarily `"AcademiaHub"` (the already-approved sender ID on the shared mNotify account) instead of `"SmartPay"` (still pending mNotify's own approval), in both local `.env` and Render production. | User's explicit, informed choice after being told the tradeoff: messages read "From: AcademiaHub" in the meantime, a different registered business than the one actually sending — not ideal, but it unblocks real SMS delivery now rather than leaving it dark until approval clears. **Must be switched back to `"SmartPay"` once that approval comes through** — nothing in the code enforces or reminds about this; it's a manual env-var flip in both places. |
+| 2026-10-07 | Parent/guardian collection on Add Student stays optional (can still be left blank and linked later), not required like Academia Hub's `enrollOneStudent`. | User's explicit choice between the two, having asked for the *convenience* of one-step collection, not a hard requirement — forcing it would regress the existing ability to add a student before a parent's phone number is known. |
+| 2026-10-07 | The new inline parent-at-enrollment flow dedups by exact phone-string match within the same school, not a normalized/E.164 comparison. | Matches every other phone-handling path already in this codebase (`parentController.create` also just trims and stores as typed, no normalization). Two siblings' parent typed differently across two separate Add Student submissions could still produce a duplicate parent row — a pre-existing class of imperfection, not a new gap introduced by this feature. |

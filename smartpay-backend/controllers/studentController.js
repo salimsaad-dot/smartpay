@@ -34,33 +34,89 @@ exports.list = async (req, res) => {
     }
 };
 
+// Redesign addition (2026-10): optionally collect the parent/guardian's
+// name + phone in the same Add Student request, mirroring Academia Hub's
+// enrollOneStudent pattern (one form, one transaction, lookup-existing-
+// parent-or-create) adapted to SmartPay's lighter parent model (no login,
+// just name/phone — phone is the dedup key here, not email-or-phone,
+// since every SmartPay parent has a phone but most won't have an email).
+// Both parent fields stay optional — the admin can still add a student
+// with no parent on file yet and link one later from the Students page,
+// unchanged from before this addition (user's explicit choice).
 exports.create = async (req, res) => {
+    const connection = await pool.getConnection();
     try {
-        const { admissionNo, firstName, middleName, lastName, classId, academicYearId, gender, dateOfBirth } = req.body;
+        const { admissionNo, firstName, middleName, lastName, classId, academicYearId, gender, dateOfBirth, parentFullName, parentPhone, relationship } = req.body;
         if (!admissionNo?.trim() || !firstName?.trim() || !lastName?.trim() || !classId || !academicYearId) {
+            connection.release();
             return res.status(400).json({ status: 'error', message: 'Admission number, first name, last name, class, and academic year are required.' });
+        }
+        // Partial parent info isn't actionable — both schema columns
+        // (parents.full_name, parents.phone) are NOT NULL, so either both
+        // are given or neither is.
+        if ((parentFullName?.trim() || parentPhone?.trim()) && !(parentFullName?.trim() && parentPhone?.trim())) {
+            connection.release();
+            return res.status(400).json({ status: 'error', message: 'Parent name and phone must be provided together, or both left blank.' });
         }
 
         // class_id and academic_year_id are client-supplied foreign keys —
         // re-verify both actually belong to this school before trusting
         // them, same rule as everywhere else.
-        const [[cls]] = await pool.query('SELECT id FROM classes WHERE id = ? AND school_id = ?', [classId, req.user.schoolId]);
-        if (!cls) return res.status(404).json({ status: 'error', message: 'Class not found.' });
-        const [[year]] = await pool.query('SELECT id FROM academic_years WHERE id = ? AND school_id = ?', [academicYearId, req.user.schoolId]);
-        if (!year) return res.status(404).json({ status: 'error', message: 'Academic year not found.' });
+        const [[cls]] = await connection.query('SELECT id FROM classes WHERE id = ? AND school_id = ?', [classId, req.user.schoolId]);
+        if (!cls) { connection.release(); return res.status(404).json({ status: 'error', message: 'Class not found.' }); }
+        const [[year]] = await connection.query('SELECT id FROM academic_years WHERE id = ? AND school_id = ?', [academicYearId, req.user.schoolId]);
+        if (!year) { connection.release(); return res.status(404).json({ status: 'error', message: 'Academic year not found.' }); }
 
-        const [result] = await pool.query(
+        await connection.beginTransaction();
+
+        const [studentResult] = await connection.query(
             `INSERT INTO students (school_id, admission_no, first_name, middle_name, last_name, class_id, academic_year_id, gender, date_of_birth)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [req.user.schoolId, admissionNo.trim(), firstName.trim(), middleName?.trim() || null, lastName.trim(), classId, academicYearId, gender || null, dateOfBirth || null]
         );
-        res.status(201).json({ status: 'success', message: 'Student created.', data: { id: result.insertId } });
+        const studentId = studentResult.insertId;
+
+        let parentId = null;
+        if (parentFullName?.trim() && parentPhone?.trim()) {
+            // Reuse an existing parent sharing this phone within the school
+            // (the sibling case — two children, same parent, added
+            // separately) rather than creating a duplicate parent row.
+            // Exact match after trim, same as the rest of this codebase
+            // (no phone-format normalization at storage time anywhere else
+            // either) — a differently-typed duplicate is a pre-existing,
+            // unchanged possibility, not a new gap introduced here.
+            const [[existingParent]] = await connection.query(
+                'SELECT id FROM parents WHERE school_id = ? AND phone = ?',
+                [req.user.schoolId, parentPhone.trim()]
+            );
+            if (existingParent) {
+                parentId = existingParent.id;
+            } else {
+                const [parentResult] = await connection.query(
+                    'INSERT INTO parents (school_id, full_name, phone) VALUES (?, ?, ?)',
+                    [req.user.schoolId, parentFullName.trim(), parentPhone.trim()]
+                );
+                parentId = parentResult.insertId;
+            }
+            // Brand-new student, so this is unconditionally its first (and
+            // only, so far) parent link — always primary.
+            await connection.query(
+                'INSERT INTO parent_student (parent_id, student_id, relationship, is_primary) VALUES (?, ?, ?, 1)',
+                [parentId, studentId, relationship?.trim() || null]
+            );
+        }
+
+        await connection.commit();
+        res.status(201).json({ status: 'success', message: 'Student created.', data: { id: studentId, parentId } });
     } catch (error) {
+        await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ status: 'error', message: 'A student with that admission number already exists.' });
         }
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while creating the student.' });
+    } finally {
+        connection.release();
     }
 };
 
