@@ -1,7 +1,14 @@
 const request = require('supertest');
 const app = require('../server');
 const db = require('../db');
-const smsProvider = require('../utils/mnotifyProvider');
+// Mocked against utils/smsProvider (the SMS_PROVIDER switch), not a
+// specific adapter directly — fridayJob.js itself now goes through that
+// switch (added 2026-10-07), so spying on a specific adapter module
+// stopped actually intercepting fridayJob's real calls the moment the
+// active provider became something other than that one adapter. Caught
+// live: this exact mismatch let a real, unmocked send reach the real
+// Arkesel API during a routine test run.
+const smsProvider = require('../utils/smsProvider');
 const { fridayCycleKey } = require('../utils/fridayJob');
 
 describe('Friday automation job — cycle locks, filtering, and cron trigger (real DB, real HTTP)', () => {

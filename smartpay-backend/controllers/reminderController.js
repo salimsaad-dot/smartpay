@@ -2,7 +2,7 @@ const pool = require('../db');
 const { createPaymentLink } = require('../utils/paymentLink');
 const { renderTemplate } = require('../utils/smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('../utils/reminderCore');
-const smsProvider = require('../utils/mnotifyProvider');
+const smsProvider = require('../utils/smsProvider');
 const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
 
 // Preview never generates a real payment link — doing that on every

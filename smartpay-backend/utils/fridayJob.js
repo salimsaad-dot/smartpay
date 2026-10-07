@@ -2,7 +2,7 @@ const pool = require('../db');
 const { createPaymentLink } = require('./paymentLink');
 const { renderTemplate } = require('./smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('./reminderCore');
-const smsProvider = require('./mnotifyProvider');
+const smsProvider = require('./smsProvider');
 
 // A job that's been 'running' longer than this is treated as abandoned
 // (server crashed mid-run) rather than genuinely in progress, and its

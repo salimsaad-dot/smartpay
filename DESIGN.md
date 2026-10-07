@@ -938,6 +938,62 @@ for a full management system.
     1 new unit test (a non-JSON/HTML-shaped failure response, confirming
     both that it's still handled cleanly and that its content reaches
     the log). 145 backend tests passing (1 skipped).
+  - **Second real SMS provider: Arkesel, 2026-10-07.** mNotify's account
+    was flagged as fraudulent and suspended mid-use (likely triggered by
+    today's real test-send volume combined with sending under
+    `"AcademiaHub"`, a sender ID that doesn't match this account's own
+    name — flagged as the probable cause in the support request sent to
+    mNotify, not confirmed). Rather than wait on that resolution with no
+    ETA, added a second, independent provider — the whole point of
+    `utils/smsProvider.js`'s documented contract from Phase 7, now used
+    for real for the first time. New `utils/arkeselProvider.js`
+    implements the same 3-function shape (Ghana-specific: direct
+    MTN/Telecel/AirtelTigo connections, GHS/Mobile-Money billing).
+    `utils/smsProvider.js` itself now does the actual provider selection
+    (previously just a documented contract with nothing routing through
+    it) — a new `SMS_PROVIDER` env var picks the active adapter,
+    defaulting to `mnotify` (explicit opt-in to Arkesel, not a silent
+    default flip, since Arkesel's failure-response shape started
+    unconfirmed). `reminderController.js` and `fridayJob.js` — the only
+    two real call sites — now import `./smsProvider` instead of a
+    specific adapter directly; neither needed any other change, since
+    both already named the import `smsProvider`.
+    - **A real bug this surfaced, not introduced**: `fridayJob`'s own
+      integration test explicitly mocks `sendSms` specifically *because*
+      "a real Friday-job send is a billable, irreversible side effect" —
+      but it mocked `mnotifyProvider` directly, which stopped being what
+      `fridayJob.js` actually calls the moment the import changed to go
+      through the switch. The mock silently stopped intercepting, and a
+      live test run made real, unmocked calls to the real Arkesel API
+      with the real key — caught by the full suite's own `ECONNREFUSED`
+      failure (MySQL had separately gone down) forcing a second full run,
+      which is what surfaced the real-send log lines. Fixed: the test now
+      mocks `utils/smsProvider` instead. Checked every other test file
+      for the same mock-target mismatch — `sms.integration.test.js` had a
+      related, less acute version (`hasRealMnotifyKey`, hardcoded to one
+      adapter's env var, by coincidence still correctly gated the
+      real-send test today only because `MNOTIFY_API_KEY` also happens to
+      be set) — tightened to check `smsProvider.validateConfiguration()`
+      instead, so it tracks whichever provider is actually active rather
+      than one adapter by name. Confirmed no real credits were actually
+      consumed by the incident (Arkesel balance unchanged on the
+      dashboard before and after).
+    - **A second real response-shape surprise, found the same way as
+      mNotify's**: a real, deliberate verification send returned
+      `success: true` but a silently-null `providerMessageId` — Arkesel's
+      real response is `{ data: [{ id, recipient }], ... }`, `data` an
+      *array*, not an object with `.id` directly, which their documented
+      example didn't make obvious. Fixed and pinned down with a real
+      captured response in the unit test, same discipline as
+      `mnotifyProvider.js`'s identical class of bug a few hours earlier
+      in this same session.
+    - **Real send accepted by the API** after fixing an unrelated issue
+      (the generated Arkesel API key had to be explicitly
+      "Updated"/committed in their dashboard before it was valid — an
+      earlier attempt correctly failed clean with `"Invalid key"`, not a
+      crash). `success: true` from the real endpoint; actual phone
+      receipt confirmation was still pending at the point this was
+      written — update this line once confirmed, don't assume it.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -1012,3 +1068,6 @@ for a full management system.
 | 2026-10-07 | `xlsx` (for bulk-import's Excel support) is installed from `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, not `npm install xlsx`. | The npm-registry version carries two unpatched high-severity advisories (prototype pollution, ReDoS) with "No fix available" per `npm audit` — SheetJS ships patched releases only from their own CDN for licensing reasons, a well-known situation in this ecosystem. Academia Hub's own `package.json` already makes this exact same call; confirmed by inspecting it before installing anything here, rather than accepting the vulnerable default. |
 | 2026-10-07 | Bulk-import column headers must never contain a literal comma, even though the UI also accepts `.xlsx` (which has no such risk). | Found live: `"Academic Year (optional, defaults to current)"` as a header silently broke column alignment in an unquoted CSV, swapping Parent Name and Parent Phone. The auto-generated `.xlsx` template is immune, but a hand-typed or differently-exported CSV isn't — a comma-containing header is a latent landmine for a comma-*delimited* format no matter how well the parser handles quoting. |
 | 2026-10-07 | Every SQL string literal in this codebase must use single quotes, never double quotes — now enforced by a static regression test, not just convention. | Production (Aiven) and local (XAMPP) MySQL evidently run different SQL modes: a double-quoted literal like `status = "active"` works locally but throws `ER_BAD_FIELD_ERROR` in production under `ANSI_QUOTES`, since double quotes there mean identifier-quoting, not a string. Found live via Render's logs after a plausible-but-wrong deadlock diagnosis didn't fix a real Send Reminder failure. No local test can exercise this directly (local SQL mode doesn't reproduce it), so the guard is a static source scan instead — deliberately verified to actually catch the bug (reintroduced it, confirmed the test failed, reverted) before trusting it. |
+| 2026-10-07 | Arkesel chosen as the second SMS provider over Africa's Talking/Hubtel. | Ghana-specific direct carrier connections (MTN/Telecel/AirtelTigo, not routed through a third country), GHS billing with Mobile Money top-up (easiest to fund from Ghana), free signup with an API key in minutes, pricing in line with what mNotify charged. Africa's Talking is more established pan-African but less Ghana-optimized; noted as the fallback option if Arkesel doesn't work out either. |
+| 2026-10-07 | `SMS_PROVIDER` defaults to `mnotify` when unset, rather than defaulting to whichever provider was added most recently. | Arkesel's failure-response shape started out unconfirmed (unlike mNotify's, already proven against multiple real sends) — an explicit opt-in (`SMS_PROVIDER=arkesel`) avoids silently switching every school's live sends onto the less-proven path the moment the env var exists, versus only switching where someone deliberately set it. |
+| 2026-10-07 | Tests that mock an SMS provider must mock `utils/smsProvider` (the switch), never a specific adapter module directly. | Found live: `fridayJob.integration.test.js`'s existing mock (there specifically to prevent real, billable sends during tests) silently stopped intercepting the moment `fridayJob.js`'s own import changed to go through the switch — a real, unmocked call reached the real Arkesel API during a routine test run before this was caught. A second, related gap in `sms.integration.test.js` (gated on one adapter's env var by name, not on whichever provider is actually active) was tightened the same way even though it hadn't yet caused a real failure, since the next provider added would have hit the identical mismatch. |
