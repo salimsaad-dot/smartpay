@@ -17,8 +17,12 @@ restate the spec.
 
 Backend = `smartpay-backend` (Node/Express/MySQL, local dev DB
 `smartpay_db`, port 5100). Frontend = `smartpay-frontend` (Next.js 16 App
-Router + Tailwind v4, port 3100). No visual design system yet — deliberate,
-see Decisions Log.
+Router + Tailwind v4, port 3100). A visual redesign (replicating a set of
+reference mockups the user supplies incrementally) is in progress,
+page-by-page, on top of the original UI/UX-spec pass below — see the
+redesign entries in Build Progress for what's been replaced so far
+(`components/ui2.js` is its shared component library, alongside the
+original `components/ui.js`).
 
 ## Product Context
 
@@ -616,6 +620,64 @@ for a full management system.
     `<input type="date">` (an apparent "Nov 30, 1899" date bug was
     traced to the test script, not the app, and the app's real date
     handling was separately re-confirmed correct).
+- **Visual redesign (reference mockups), page by page**: replaces the
+  UI/UX-spec pass above with a closely-matched implementation of mockups
+  the user supplies incrementally, on `components/ui2.js` (`Avatar`,
+  `Badge2`, `Card2`, `IconBadge`, `StatCard`, `Button2`, `SearchBar`) plus
+  a redesigned `DashboardShell`/`Logo`/`ThemeToggle`. Shipped so far:
+  foundation + Login/Register, Dashboard, Students (2026-10-06), dark mode
+  across the whole app (2026-10-06), then **Classes, Parents, and
+  Academic Setup (2026-10-07)**:
+  - **Classes**: Grade Level ("Basic" vs "Junior High") is derived from
+    the class name's own naming convention, not a stored field — no
+    `capacity` column exists in the schema, so the mockup's Capacity
+    column was dropped rather than fabricated (user's explicit call).
+    Added a real per-class `student_count` (active students only) and an
+    archive/reactivate status toggle (`PATCH /classes/:id/status`) — a
+    class is never hard-deleted since fee structures and students
+    reference it historically.
+  - **Parents**: added real aggregates to `GET /parents` — `children_count`,
+    `outstanding_balance` (summed from each child's non-void invoices
+    with a balance), and `child_class_ids` (lets the class filter work
+    entirely client-side, matching the rest of the app's fetch-once
+    pattern) — plus an active/inactive status toggle
+    (`PATCH /parents/:id/status`), mirroring Classes'.
+  - **Academic Setup**: the mockup's 4 tabs (Academic Year, Terms,
+    Grading System, School Settings) don't all map to a real feature —
+    SmartPay has no grading/results concept at all. User chose (via
+    explicit options, not assumed): drop Grading System entirely, and
+    relabel "School Settings" to **"Reminder Settings"**, the first UI
+    ever built for the Friday-SMS-automation backend
+    (`schoolSettingsController.js`'s `friday-reminders` endpoints), which
+    has existed since Phase 8 with no way for an admin to see or change
+    it until now.
+  - **A real crash found and fixed**: `Field`'s `cloneElement(children,
+    ...)` pattern (see the UI/UX pass above) requires exactly one child
+    element — the new Reminder Settings tab passed a `<select>` plus a
+    conditional helper `<p>` as two children, which crashed the whole
+    tab (`Element type is invalid: ... undefined`) the moment a user with
+    no "Friday reminder" SMS template opened it. Caught via a live
+    Puppeteer run with full page-error stack capture, not `next build`
+    (which doesn't exercise this runtime branch) — fixed by moving the
+    helper text outside the `Field` wrapper.
+  - **A real environment bug, not an app bug, caught by the same QA
+    pass**: the backend dev server had been running since the previous
+    day via a direct `node server.js` (no file-watcher), so it was
+    silently serving yesterday's code — new parents showed "GHS NaN" for
+    Outstanding Balance because the live response simply had none of
+    today's new aggregate fields. Restarted on `nodemon` (already the
+    project's own `npm run dev` script) so this can't recur silently.
+  - **One pre-existing issue flagged, not fixed**: generating a payment
+    link (`parentController.generatePaymentLink`, untouched by this
+    pass) hit a real `ER_LOCK_DEADLOCK` once during QA. Out of scope for
+    a page-redesign pass; the new `PaymentLinkModal` was confirmed to
+    surface it as a clean in-modal error message rather than crashing,
+    which is the behavior that actually mattered for today's work.
+  - 5 new integration tests (`tests/classesParents.integration.test.js`)
+    cover the new aggregates and both status endpoints, including a
+    cross-tenant check. 121/121 backend tests passing. Verified live via
+    Puppeteer at 1440px and 390px against a freshly registered test
+    school — all QA data cleaned from the DB afterward.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -681,3 +743,6 @@ for a full management system.
 | 2026-10-06 | `GET /api/keepalive` is self-bootstrapping (creates its own table and seeds its row on first call if missing) rather than requiring a one-off migration step against production. | Production DB credentials live only in Render/Aiven, never in this codebase or any local `.env` — there was no safe way to run a one-off `CREATE TABLE` against prod from outside it without asking for those credentials, which is something this project's standing practice avoids. Self-bootstrapping means the feature just works the moment the code deploys, with no manual DB step for anyone to remember. |
 | 2026-10-06 | Render's auto-deploy stayed on (it already defaults to "On Commit"), but deploys are done manually ("Deploy latest commit") rather than reconnecting through the GitHub App for instant webhook-triggered deploys. | A service connected via a public Git URL only polls for commits instead of getting an instant webhook, which let two real pushes sit live-stale for about two days before anyone noticed — a genuine incident, not theoretical. Given how infrequently this project pushes, the user chose predictability (always knowing exactly when prod changes) over automatic speed, rather than spending the effort to reconnect through GitHub's App integration. |
 | 2026-10-06 | `linkParent` now auto-marks a student's *first* linked parent/guardian as primary (`is_primary = 1`) when the request doesn't explicitly say otherwise, rather than always defaulting to `false`. | Found via the UI/UX pass's own end-to-end regression test, not inspection: the only UI that links a parent (the Students page) never sends `isPrimary`, so every parent linked through it was silently non-primary — and Arrears' parent/payment-link column and the Outstanding Fees report both require `is_primary = 1` to show a parent at all. A school admin linking a parent the only way the UI lets them meant that parent could never appear in Arrears or receive a payment link, with no error anywhere. User explicitly chose this fix (over adding a "set primary" UI control, or dropping the `is_primary` requirement in Arrears/Reports) as the simplest option matching how the feature is actually used — one parent per student in practice. Locks the student's existing `parent_student` rows (`SELECT ... FOR UPDATE`) before deciding, so two concurrent first-links for the same student can't both claim to be first. A one-time backfill (`scripts/backfill-primary-parent.sql`) fixes existing data — not run automatically, since production DB credentials aren't available from the codebase; the user runs it once via Aiven. The Friday automation job and manual reminder-sending were separately confirmed **not** to depend on `is_primary`, so SMS reminders to arrears parents were never affected by this gap. |
+| 2026-10-07 | Academic Setup's redesigned tabs drop the mockup's "Grading System" tab entirely and relabel "School Settings" to "Reminder Settings", scoped to only the Friday-SMS-automation fields that actually have a backend. | User's explicit choice between three options. SmartPay has no grading/results feature at all (it's a fees-only product, per the original spec) — a Grading System tab would have nothing real behind it. The Friday-reminder backend (`friday_reminders_enabled`/`friday_send_time`/`friday_template_id`/`reminder_min_balance`/`reminder_cooldown_days` on `schools`) has existed since Phase 8 with zero UI anywhere until this tab. |
+| 2026-10-07 | The Classes mockup's "Capacity" column was dropped rather than added to the schema. | User's explicit choice. No `capacity` field exists on `classes`, and showing the column would mean fabricating data — consistent with this project's standing rule of never inventing content a live mockup implies but the real data model doesn't back. |
+| 2026-10-07 | `GET /classes` takes an optional `?status=` filter (default: active-only, unchanged for every existing caller) instead of always returning active classes. | The redesigned Classes page needs to show archived classes too (via `?status=all`), but every other existing caller (Students' and Academic Setup's class dropdowns, invoice generation) has always assumed active-only — changing the default would have silently broken them. |
