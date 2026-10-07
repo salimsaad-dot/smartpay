@@ -824,6 +824,48 @@ for a full management system.
     schools it creates) instead of matching by name. Confirmed fixed by
     running the full suite twice in direct succession after the fix —
     137/138 passing, clean exit, no hang, both times.
+  - **Students page: class cards replace the always-visible flat list,
+    2026-10-07** — user's explicit request, mirroring Academia Hub's own
+    Students structure, prompted by a real concern (the flat list only
+    gets longer as a school's roll grows, meaning more scrolling over
+    time with no ceiling). Discussed before building, not assumed:
+    confirmed the one genuinely open question (what the top-nav search
+    redirect should do once the landing view is cards, not a list) before
+    writing any code.
+    - Default view is a grid of class cards (name, student count, an
+      "N inactive" hint) — the same role the old "Filter by Class"
+      sidebar panel and the "All Classes"/"All Statuses" dropdowns used
+      to play, now the primary navigation instead of a secondary control;
+      both are gone. Clicking a card shows just that class's roster, with
+      a breadcrumb back, and an inactive-student toggle (hidden by
+      default) replacing the old status dropdown — same hidden-by-default
+      reasoning Academia Hub's own class roster page uses.
+    - Implemented as `?classId`-equivalent local component state on the
+      existing Students route, not a new nested route the way Academia
+      Hub's `/students/class/[gradeLevel]` is — SmartPay's classes are
+      admin-named text, not a fixed enum, and the existing single-page
+      pattern this app already uses elsewhere (`?search=`) covers the
+      same need without a second route to maintain.
+    - Search stays a single box, but doubles as an intentional override:
+      typing anything shows a flat, cross-class match list (so the
+      top-nav search redirect, which lands here with `?search=`, keeps
+      working exactly as before) and takes priority over whichever class
+      is open; clearing it returns to cards or the previously-open class.
+      Decided via a direct question rather than assumed, since it's the
+      one place "card-ify everything" could have silently broken an
+      existing, separate feature.
+    - Add Student now pre-selects the open class in its Class dropdown
+      when launched from inside a class's roster (still editable) — a
+      small but real improvement to the exact workflow this redesign is
+      about: adding a student without extra clicks.
+    - Verified live via Puppeteer, desktop and 390px mobile: cards show
+      correct per-class counts, clicking in shows the right roster with
+      correct breadcrumb, clearing a class-scoped view and returning to
+      cards works, global search correctly finds a student in a class
+      that isn't currently open, and the Add Student class-prefill was
+      confirmed via the actual selected `<option>` text, not just that a
+      value was set. `next build` clean; no backend changes this pass, so
+      only a frontend QA round was needed.
 
 ## Decisions Log
 | Date | Decision | Rationale |
