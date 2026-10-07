@@ -1273,13 +1273,12 @@ for a full management system.
       223 passed + 1 skipped. Clean frontend build; the SMS Templates
       page confirmed to render (HTTP 200) against a real local dev
       server.
-    - **Not yet applied to production**: same `ALTER TABLE` situation as
-      the lockout-column incident earlier this session — this needs to be
-      run against the live Aiven database (`smartpay_db`) *before* the
-      next Render deploy of this commit, not after, or every settings
-      read/write and every reminder preview/send will 500 exactly the
-      way login did. Flagged explicitly this time instead of assuming it
-      would be remembered.
+    - **Production migration applied proactively this time**, correcting
+      the order that caused the lockout-column incident earlier this
+      session: the `ALTER TABLE` was run directly against the live Aiven
+      database (`smartpay_db`) right after pushing this commit and
+      *before* the next Render deploy, confirmed via `SHOW COLUMNS`. Not
+      left to be remembered or discovered via a production 500.
 
 ## Decisions Log
 | Date | Decision | Rationale |
