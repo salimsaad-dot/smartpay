@@ -195,6 +195,14 @@ describe('payments — manual payment recording, voiding, and balance recalculat
         expect(res.body.data).toHaveLength(0);
     });
 
+    test('GET /payments filters by startDate/endDate (added for the standalone Payments page)', async () => {
+        const todayList = await request(app).get('/api/payments?startDate=2000-01-01&endDate=2099-12-31').set('Cookie', cookieA);
+        expect(todayList.body.data.length).toBeGreaterThan(0);
+
+        const noneInThePast = await request(app).get('/api/payments?startDate=2000-01-01&endDate=2000-01-02').set('Cookie', cookieA);
+        expect(noneInThePast.body.data).toHaveLength(0);
+    });
+
     test('a payment against a voided invoice is rejected', async () => {
         await db.query("UPDATE invoices SET status = 'void' WHERE id = ?", [invoice1Id]);
         const res = await request(app).post('/api/payments').set('Cookie', cookieA)

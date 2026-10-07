@@ -2,6 +2,7 @@
 
 import { cloneElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { X } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 
 // Shared form styling, so every input on every page looks and focuses the same.
@@ -208,8 +209,20 @@ export function Modal({ title, description, onClose, children }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-[var(--card)] p-5 shadow-xl outline-none">
-        <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
-        {description && <p className="mt-1 text-sm text-[var(--slate-quiet)]">{description}</p>}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
+            {description && <p className="mt-1 text-sm text-[var(--slate-quiet)]">{description}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-[var(--slate-quiet)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+          >
+            <X size={18} />
+          </button>
+        </div>
         <div className="mt-4">{children}</div>
       </div>
     </div>

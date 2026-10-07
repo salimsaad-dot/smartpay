@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, CalendarDays, School, GraduationCap, Users,
-  Receipt, FileText, AlertTriangle, Bell, MessageSquareText,
+  Receipt, FileText, AlertTriangle, Bell, MessageSquareText, Wallet,
   BarChart3, ClipboardList, LogOut, ChevronDown, Menu, X, ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -29,6 +29,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/dashboard/fee-structures", label: "Fee Structures", icon: FileText },
       { href: "/dashboard/invoices", label: "Invoices", icon: Receipt },
+      { href: "/dashboard/payments", label: "Payments", icon: Wallet },
       { href: "/dashboard/arrears", label: "Arrears", icon: AlertTriangle },
     ],
   },

@@ -1161,6 +1161,71 @@ for a full management system.
       both the triggering failure AND the lock itself, and that the
       nonexistent-email case correctly writes nothing. Full suite: 23/23
       suites, 216 passed + 1 skipped.
+  - **mNotify account reactivated, 2026-10-07.** User received a real SMS
+    from mNotify confirming the fraud-flag suspension (see the Arkesel
+    entry above) has been lifted — resolution came through on its own;
+    the drafted support email's role in that, if any, is unconfirmed.
+    No code change made: `SMS_PROVIDER=arkesel` stays the active default
+    (Arkesel is the one already proven end-to-end in production), mNotify
+    credentials stay configured alongside as a working second provider
+    rather than being removed. Revisit which provider is primary only as
+    a deliberate choice, not as a side effect of this reactivation.
+  - **Production incident + fix, 2026-10-07: login broken in production
+    after the security-audit deploy.** The new lockout logic touches
+    `failed_login_attempts`/`locked_until` on every login (success and
+    failure), but the `ALTER TABLE` that added those columns had only
+    been run against the local dev database, not production — Render's
+    backend deploy picked up the new code expecting columns that didn't
+    exist yet there. Every login (success or failure) threw
+    `ER_BAD_FIELD_ERROR` and returned a 500, which is exactly the "error
+    during login" the user hit minutes after deploying. Fixed live: the
+    user shared the production Aiven credentials, the same `ALTER TABLE`
+    was run directly against it (found the live database is actually
+    named `smartpay_db`, not the Aiven service's own default `defaultdb`
+    — checked via `SHOW DATABASES` rather than assumed), verified both by
+    schema (`SHOW COLUMNS`) and by the login route no longer 500ing.
+    Lesson, worth remembering for any future schema change: this
+    project's "no migrations system" convention means a schema change
+    has to be manually applied to **both** databases as two separate
+    steps — running it locally is necessary but not sufficient, and nothing
+    currently prevents forgetting the production half.
+  - **Two real product fixes from live user feedback, 2026-10-07.**
+    - **Every modal in the app was missing a close button.** The shared
+      `Modal` component (`components/ui.js`) only ever closed via Escape
+      — no visible X, no backdrop-click. A couple of call sites happened
+      to add their own "Close"/"Cancel" button inside their own content;
+      most didn't, including Manage Parents on the Students page (the
+      one the user actually got stuck in) and the "linked children" view
+      on the Parents page. Fixed at the root: added a close (X) button to
+      the shared `Modal` header itself, so every current and future modal
+      gets it automatically rather than depending on each call site
+      remembering to add one. Verified via a clean build and matching an
+      already-proven identical close-button pattern elsewhere in this
+      codebase (`DashboardShell`'s mobile nav drawer) — not a live
+      click-through, since this project has no browser-automation tooling
+      installed; flagged honestly rather than claimed as fully verified.
+    - **New standalone Payments page** (`/dashboard/payments`). Before
+      this, the only way to see or void a payment was from inside its
+      specific invoice on the Invoices page. The backend already fully
+      supported a standalone view (`GET /payments` with filters,
+      `POST /payments/:id/void`) — only `startDate`/`endDate` filters
+      were added (mirroring the existing pattern in
+      `reportsController.paymentHistory`), covered by a new test. The
+      page itself: date-range + method filters server-side, a client-side
+      text search over student/invoice/reference (same "fetch once,
+      filter in the browser" pattern as Students/Parents), a running
+      total of collected amount, inline void with a required reason, and
+      a "Record Payment" flow that — since this page isn't launched from
+      inside one specific invoice — first searches/picks an outstanding
+      invoice, then shows the same fields as the Invoices page's own
+      in-context payment form (duplicated rather than shared, matching
+      this codebase's existing per-page-owns-its-own-form convention).
+      Added to the sidebar under "Fees & payments", after Invoices.
+      Verified: full backend suite green (23/23 suites, 217 passed + 1
+      skipped) and a clean frontend build; the page was also confirmed to
+      actually render (HTTP 200, no server-side crash) against a real
+      local dev server — short of a full interactive click-through, for
+      the same browser-automation-tooling reason as above.
 
 ## Decisions Log
 | Date | Decision | Rationale |

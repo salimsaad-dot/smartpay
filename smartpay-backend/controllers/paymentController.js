@@ -6,7 +6,7 @@ const VALID_METHODS = ['cash', 'mobile_money', 'bank_transfer', 'other'];
 
 exports.list = async (req, res) => {
     try {
-        const { invoiceId, studentId, method, status } = req.query;
+        const { invoiceId, studentId, method, status, startDate, endDate } = req.query;
         const params = [req.user.schoolId];
         let sql = `
             SELECT p.*, s.admission_no, s.first_name, s.last_name, inv.invoice_no
@@ -18,6 +18,8 @@ exports.list = async (req, res) => {
         if (studentId) { sql += ' AND p.student_id = ?'; params.push(studentId); }
         if (method) { sql += ' AND p.method = ?'; params.push(method); }
         if (status) { sql += ' AND p.status = ?'; params.push(status); }
+        if (startDate) { sql += ' AND DATE(p.created_at) >= ?'; params.push(startDate); }
+        if (endDate) { sql += ' AND DATE(p.created_at) <= ?'; params.push(endDate); }
         sql += ' ORDER BY p.paid_at DESC';
 
         const [payments] = await pool.query(sql, params);
