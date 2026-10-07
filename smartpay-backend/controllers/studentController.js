@@ -34,82 +34,96 @@ exports.list = async (req, res) => {
     }
 };
 
-// Redesign addition (2026-10): optionally collect the parent/guardian's
-// name + phone in the same Add Student request, mirroring Academia Hub's
-// enrollOneStudent pattern (one form, one transaction, lookup-existing-
-// parent-or-create) adapted to SmartPay's lighter parent model (no login,
-// just name/phone — phone is the dedup key here, not email-or-phone,
-// since every SmartPay parent has a phone but most won't have an email).
-// Both parent fields stay optional — the admin can still add a student
-// with no parent on file yet and link one later from the Students page,
-// unchanged from before this addition (user's explicit choice).
+// Core single-student creation, shared by the Add Student form
+// (exports.create, classId/academicYearId already resolved from its
+// dropdowns) and the bulk-import endpoint below (exports.bulkEnroll,
+// which resolves a CSV row's plain-text class/year names to these same
+// IDs first). Takes an already-open, already-in-transaction connection —
+// the bulk path commits/rolls back per row, not all-or-nothing, so it
+// owns that boundary itself rather than this function managing it.
+//
+// Optionally collects the parent/guardian's name + phone in the same
+// request, mirroring Academia Hub's enrollOneStudent pattern (lookup an
+// existing parent sharing this phone within the school — the sibling
+// case — or create one) adapted to SmartPay's lighter parent model (no
+// login, just name/phone). Both parent fields stay optional, unlike
+// Academia Hub's required version — user's explicit choice, so a student
+// can still be added with no parent on file and linked later.
+async function enrollOneStudent(connection, schoolId, data) {
+    const { admissionNo, firstName, middleName, lastName, classId, academicYearId, gender, dateOfBirth, parentFullName, parentPhone, relationship } = data;
+
+    if (!admissionNo?.trim() || !firstName?.trim() || !lastName?.trim() || !classId || !academicYearId) {
+        throw { status: 400, message: 'Admission number, first name, last name, class, and academic year are required.' };
+    }
+    // Partial parent info isn't actionable — both schema columns
+    // (parents.full_name, parents.phone) are NOT NULL, so either both are
+    // given or neither is.
+    if ((parentFullName?.trim() || parentPhone?.trim()) && !(parentFullName?.trim() && parentPhone?.trim())) {
+        throw { status: 400, message: 'Parent name and phone must be provided together, or both left blank.' };
+    }
+
+    const [studentResult] = await connection.query(
+        `INSERT INTO students (school_id, admission_no, first_name, middle_name, last_name, class_id, academic_year_id, gender, date_of_birth)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [schoolId, admissionNo.trim(), firstName.trim(), middleName?.trim() || null, lastName.trim(), classId, academicYearId, gender?.trim() || null, dateOfBirth?.trim() || null]
+    );
+    const studentId = studentResult.insertId;
+
+    let parentId = null;
+    if (parentFullName?.trim() && parentPhone?.trim()) {
+        // Reuse an existing parent sharing this phone within the school
+        // rather than creating a duplicate parent row. Exact match after
+        // trim, same as the rest of this codebase (no phone-format
+        // normalization at storage time anywhere else either).
+        const [[existingParent]] = await connection.query(
+            'SELECT id FROM parents WHERE school_id = ? AND phone = ?',
+            [schoolId, parentPhone.trim()]
+        );
+        if (existingParent) {
+            parentId = existingParent.id;
+        } else {
+            const [parentResult] = await connection.query(
+                'INSERT INTO parents (school_id, full_name, phone) VALUES (?, ?, ?)',
+                [schoolId, parentFullName.trim(), parentPhone.trim()]
+            );
+            parentId = parentResult.insertId;
+        }
+        // Brand-new student, so this is unconditionally its first (and
+        // only, so far) parent link — always primary.
+        await connection.query(
+            'INSERT INTO parent_student (parent_id, student_id, relationship, is_primary) VALUES (?, ?, ?, 1)',
+            [parentId, studentId, relationship?.trim() || null]
+        );
+    }
+
+    return { studentId, parentId };
+}
+
 exports.create = async (req, res) => {
     const connection = await pool.getConnection();
     try {
-        const { admissionNo, firstName, middleName, lastName, classId, academicYearId, gender, dateOfBirth, parentFullName, parentPhone, relationship } = req.body;
-        if (!admissionNo?.trim() || !firstName?.trim() || !lastName?.trim() || !classId || !academicYearId) {
-            connection.release();
-            return res.status(400).json({ status: 'error', message: 'Admission number, first name, last name, class, and academic year are required.' });
+        const { classId, academicYearId } = req.body;
+        if (classId) {
+            // class_id and academic_year_id are client-supplied foreign
+            // keys — re-verify both actually belong to this school before
+            // trusting them, same rule as everywhere else.
+            const [[cls]] = await connection.query('SELECT id FROM classes WHERE id = ? AND school_id = ?', [classId, req.user.schoolId]);
+            if (!cls) { connection.release(); return res.status(404).json({ status: 'error', message: 'Class not found.' }); }
         }
-        // Partial parent info isn't actionable — both schema columns
-        // (parents.full_name, parents.phone) are NOT NULL, so either both
-        // are given or neither is.
-        if ((parentFullName?.trim() || parentPhone?.trim()) && !(parentFullName?.trim() && parentPhone?.trim())) {
-            connection.release();
-            return res.status(400).json({ status: 'error', message: 'Parent name and phone must be provided together, or both left blank.' });
+        if (academicYearId) {
+            const [[year]] = await connection.query('SELECT id FROM academic_years WHERE id = ? AND school_id = ?', [academicYearId, req.user.schoolId]);
+            if (!year) { connection.release(); return res.status(404).json({ status: 'error', message: 'Academic year not found.' }); }
         }
-
-        // class_id and academic_year_id are client-supplied foreign keys —
-        // re-verify both actually belong to this school before trusting
-        // them, same rule as everywhere else.
-        const [[cls]] = await connection.query('SELECT id FROM classes WHERE id = ? AND school_id = ?', [classId, req.user.schoolId]);
-        if (!cls) { connection.release(); return res.status(404).json({ status: 'error', message: 'Class not found.' }); }
-        const [[year]] = await connection.query('SELECT id FROM academic_years WHERE id = ? AND school_id = ?', [academicYearId, req.user.schoolId]);
-        if (!year) { connection.release(); return res.status(404).json({ status: 'error', message: 'Academic year not found.' }); }
 
         await connection.beginTransaction();
-
-        const [studentResult] = await connection.query(
-            `INSERT INTO students (school_id, admission_no, first_name, middle_name, last_name, class_id, academic_year_id, gender, date_of_birth)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [req.user.schoolId, admissionNo.trim(), firstName.trim(), middleName?.trim() || null, lastName.trim(), classId, academicYearId, gender || null, dateOfBirth || null]
-        );
-        const studentId = studentResult.insertId;
-
-        let parentId = null;
-        if (parentFullName?.trim() && parentPhone?.trim()) {
-            // Reuse an existing parent sharing this phone within the school
-            // (the sibling case — two children, same parent, added
-            // separately) rather than creating a duplicate parent row.
-            // Exact match after trim, same as the rest of this codebase
-            // (no phone-format normalization at storage time anywhere else
-            // either) — a differently-typed duplicate is a pre-existing,
-            // unchanged possibility, not a new gap introduced here.
-            const [[existingParent]] = await connection.query(
-                'SELECT id FROM parents WHERE school_id = ? AND phone = ?',
-                [req.user.schoolId, parentPhone.trim()]
-            );
-            if (existingParent) {
-                parentId = existingParent.id;
-            } else {
-                const [parentResult] = await connection.query(
-                    'INSERT INTO parents (school_id, full_name, phone) VALUES (?, ?, ?)',
-                    [req.user.schoolId, parentFullName.trim(), parentPhone.trim()]
-                );
-                parentId = parentResult.insertId;
-            }
-            // Brand-new student, so this is unconditionally its first (and
-            // only, so far) parent link — always primary.
-            await connection.query(
-                'INSERT INTO parent_student (parent_id, student_id, relationship, is_primary) VALUES (?, ?, ?, 1)',
-                [parentId, studentId, relationship?.trim() || null]
-            );
-        }
-
+        const result = await enrollOneStudent(connection, req.user.schoolId, req.body);
         await connection.commit();
-        res.status(201).json({ status: 'success', message: 'Student created.', data: { id: studentId, parentId } });
+        res.status(201).json({ status: 'success', message: 'Student created.', data: { id: result.studentId, parentId: result.parentId } });
     } catch (error) {
         await connection.rollback();
+        if (error.status) {
+            return res.status(error.status).json({ status: 'error', message: error.message });
+        }
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ status: 'error', message: 'A student with that admission number already exists.' });
         }
@@ -118,6 +132,76 @@ exports.create = async (req, res) => {
     } finally {
         connection.release();
     }
+};
+
+// Bulk import — same enrollOneStudent core as the single form, but a CSV
+// row gives class/academic year as plain text names (a human filling in a
+// spreadsheet has no reason to know internal ids), resolved here against
+// this school's own classes/academic_years before handing off to the
+// shared core. Academic Year is optional per row — left blank, it falls
+// back to whichever year is marked current, since in practice almost
+// every row in one import belongs to the same year and re-typing it on
+// every line is pure friction. Each row gets its own transaction (not
+// all-or-nothing) so one bad row (a class-name typo, a duplicate
+// admission number) doesn't roll back an otherwise-good batch — same
+// reasoning and the same 200-row cap as Academia Hub's own bulk import.
+exports.bulkEnroll = async (req, res) => {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ status: 'error', message: 'rows must be a non-empty array.' });
+    }
+    if (rows.length > 200) {
+        return res.status(400).json({ status: 'error', message: 'Maximum 200 students per import.' });
+    }
+
+    const schoolId = req.user.schoolId;
+    const [classes] = await pool.query('SELECT id, name FROM classes WHERE school_id = ?', [schoolId]);
+    const [years] = await pool.query('SELECT id, name, is_current FROM academic_years WHERE school_id = ?', [schoolId]);
+    const classByName = new Map(classes.map((c) => [c.name.trim().toLowerCase(), c.id]));
+    const yearByName = new Map(years.map((y) => [y.name.trim().toLowerCase(), y.id]));
+    const currentYearId = years.find((y) => y.is_current)?.id || null;
+
+    const connection = await pool.getConnection();
+    const results = [];
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+            let classId = null;
+            if (row.className?.trim()) {
+                classId = classByName.get(row.className.trim().toLowerCase());
+                if (!classId) throw { status: 400, message: `Class "${row.className}" not found.` };
+            }
+            let academicYearId = null;
+            if (row.academicYear?.trim()) {
+                academicYearId = yearByName.get(row.academicYear.trim().toLowerCase());
+                if (!academicYearId) throw { status: 400, message: `Academic year "${row.academicYear}" not found.` };
+            } else {
+                academicYearId = currentYearId;
+                if (!academicYearId) throw { status: 400, message: 'No current academic year is set, and none was given in this row.' };
+            }
+
+            await connection.beginTransaction();
+            const outcome = await enrollOneStudent(connection, schoolId, { ...row, classId, academicYearId });
+            await connection.commit();
+            results.push({ row: i + 1, status: 'success', firstName: row.firstName, lastName: row.lastName, ...outcome });
+        } catch (error) {
+            await connection.rollback();
+            const message = error.status
+                ? error.message
+                : error.code === 'ER_DUP_ENTRY'
+                    ? 'A student with that admission number already exists.'
+                    : 'Unexpected server error.';
+            if (!error.status && error.code !== 'ER_DUP_ENTRY') console.error(error);
+            results.push({ row: i + 1, status: 'error', firstName: row.firstName, lastName: row.lastName, message });
+        }
+    }
+    connection.release();
+
+    const successCount = results.filter((r) => r.status === 'success').length;
+    res.status(200).json({
+        status: 'success',
+        data: { successCount, failCount: results.length - successCount, results },
+    });
 };
 
 exports.getById = async (req, res) => {

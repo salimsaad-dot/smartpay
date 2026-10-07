@@ -3,10 +3,11 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Users, GraduationCap, UserPlus, UserX, Plus, School, Search,
+  Users, GraduationCap, UserPlus, UserX, Plus, School, Search, Upload,
 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import DashboardShell from "@/components/DashboardShell";
+import BulkImportPanel from "@/components/BulkImportPanel";
 import {
   EmptyState,
   ErrorState,
@@ -20,6 +21,25 @@ import {
   useToast,
 } from "@/components/ui";
 import { Avatar, Badge2, Button2, Card2, StatCard } from "@/components/ui2";
+
+const STUDENT_IMPORT_COLUMNS = [
+  { header: "Admission No.", key: "admissionNo", required: true },
+  { header: "First Name", key: "firstName", required: true },
+  { header: "Last Name", key: "lastName", required: true },
+  { header: "Middle Name", key: "middleName" },
+  { header: "Class", key: "className", required: true },
+  { header: "Academic Year", key: "academicYear" },
+  { header: "Gender", key: "gender" },
+  { header: "Date of Birth (YYYY-MM-DD)", key: "dateOfBirth" },
+  { header: "Parent/Guardian Name", key: "parentFullName" },
+  { header: "Parent/Guardian Phone", key: "parentPhone" },
+  { header: "Relationship", key: "relationship" },
+];
+
+const STUDENT_IMPORT_EXAMPLE = [
+  "S-2026-001", "Kofi", "Mensah", "", "Basic 1", "", "male", "2015-03-12",
+  "Mrs Mensah", "0241234567", "Mother",
+];
 
 function AddStudentModal({ classes, years, onClose, onCreated }) {
   const [form, setForm] = useState({
@@ -164,6 +184,7 @@ function StudentsPageInner() {
   const [classFilter, setClassFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [managingStudent, setManagingStudent] = useState(null);
   const { toast, showToast, dismissToast } = useToast();
 
@@ -204,10 +225,31 @@ function StudentsPageInner() {
           <h1 className="text-2xl font-bold text-[var(--ink)]">Students</h1>
           <p className="mt-1 text-sm text-[var(--slate-quiet)]">Manage and view all students in your school.</p>
         </div>
-        <Button2 onClick={() => setShowAddModal(true)}><Plus size={16} /> Add Student</Button2>
+        <div className="flex flex-wrap gap-2">
+          <Button2 variant="secondary" onClick={() => setShowBulkImport((v) => !v)}>
+            <Upload size={16} /> {showBulkImport ? "Hide Bulk Import" : "Bulk Import"}
+          </Button2>
+          <Button2 onClick={() => setShowAddModal(true)}><Plus size={16} /> Add Student</Button2>
+        </div>
       </div>
 
       {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
+
+      {showBulkImport && (
+        <div className="mt-6">
+          <p className="mb-3 text-xs text-[var(--slate-quiet)]">
+            Class and Academic Year are matched by name against what you&apos;ve already set up. Leave Academic Year blank to use whichever year is currently marked Current.
+          </p>
+          <BulkImportPanel
+            columns={STUDENT_IMPORT_COLUMNS}
+            exampleRow={STUDENT_IMPORT_EXAMPLE}
+            templateFilename="student-bulk-import-template.xlsx"
+            endpoint="/students/bulk-enroll"
+            entityLabel="student"
+            onImported={() => { load(); showToast("Students imported."); }}
+          />
+        </div>
+      )}
 
       {/* Stat cards */}
       <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Student summary">

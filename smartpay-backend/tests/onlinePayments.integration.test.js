@@ -29,7 +29,7 @@ function chargeSuccessPayload({ reference, amountGhs, channel = 'mobile_money' }
 describe('online payments — secure payment links, public checkout, and Paystack webhook (real DB, real HTTP)', () => {
     const MARKER = `CI-ONLINE-${Date.now()}`;
     let cookieA, cookieB;
-    let schoolIdA;
+    let schoolIdA, schoolIdB;
     let parentIdA, parentIdB;
     let invoiceId, student1Id;
 
@@ -50,7 +50,9 @@ describe('online payments — secure payment links, public checkout, and Paystac
         const a = await registerSchool('a');
         cookieA = a.cookie;
         schoolIdA = a.schoolId;
-        cookieB = (await registerSchool('b')).cookie;
+        const b = await registerSchool('b');
+        cookieB = b.cookie;
+        schoolIdB = b.schoolId;
 
         const yearRes = await request(app).post('/api/academic-years').set('Cookie', cookieA)
             .send({ name: '2026/2027', startDate: '2026-09-01', endDate: '2027-07-31' });
@@ -93,8 +95,14 @@ describe('online payments — secure payment links, public checkout, and Paystac
         await db.query('DELETE FROM invoices WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id IN (SELECT id FROM fee_structures WHERE school_id = ?)', [schoolIdA]);
         await db.query('DELETE FROM fee_structures WHERE school_id = ?', [schoolIdA]);
-        await db.query('DELETE FROM parents WHERE full_name LIKE ?', [`%Mensah%`]);
-        await db.query('DELETE FROM parents WHERE full_name LIKE ?', [`%Owusu%`]);
+        // Scoped by school_id, not a global full_name LIKE match — this
+        // database is shared with other test files that reuse the same
+        // "Mensah"/"Owusu" fixture names, and a global delete here can hit
+        // another test's still-referenced parent row and fail the whole
+        // afterAll on an FK constraint (hit live: this exact line broke
+        // when run alongside another file using the same names).
+        await db.query('DELETE FROM parents WHERE school_id = ?', [schoolIdA]);
+        await db.query('DELETE FROM parents WHERE school_id = ?', [schoolIdB]);
         await db.query('DELETE FROM students WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM classes WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM terms WHERE school_id = ?', [schoolIdA]);

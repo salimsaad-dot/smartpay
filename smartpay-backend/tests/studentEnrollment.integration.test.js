@@ -10,7 +10,7 @@ const db = require('../db');
 describe('POST /students — optional inline parent collection (real DB, real HTTP)', () => {
     const MARKER = `CI-ENROLL-${Date.now()}`;
     let cookieA, cookieB;
-    let schoolIdA;
+    let schoolIdA, schoolIdB;
     let classIdA, yearIdA;
 
     async function registerSchool(suffix) {
@@ -30,7 +30,9 @@ describe('POST /students — optional inline parent collection (real DB, real HT
         const a = await registerSchool('a');
         cookieA = a.cookie;
         schoolIdA = a.schoolId;
-        cookieB = (await registerSchool('b')).cookie;
+        const b = await registerSchool('b');
+        cookieB = b.cookie;
+        schoolIdB = b.schoolId;
 
         const yearRes = await request(app).post('/api/academic-years').set('Cookie', cookieA)
             .send({ name: '2026/2027', startDate: '2026-09-01', endDate: '2027-07-31' });
@@ -112,21 +114,42 @@ describe('POST /students — optional inline parent collection (real DB, real HT
             .send({ name: '2026/2027', startDate: '2026-09-01', endDate: '2027-07-31' });
         const classB = await request(app).post('/api/classes').set('Cookie', cookieB).send({ name: 'Basic 1' });
 
-        const res = await request(app).post('/api/students').set('Cookie', cookieB).send({
-            admissionNo: `${MARKER}-CROSS`, firstName: 'Esi', lastName: 'CrossTenant',
-            classId: classB.body.data.id, academicYearId: yearB.body.data.id,
-            parentFullName: 'Mr Owusu', parentPhone: '0241111111',
-        });
+        // try/finally — this test's cleanup must run even if an assertion
+        // below fails, or School B's year/class/student/parent orphan the
+        // database, which then breaks afterAll's own schools delete on its
+        // *next* run (a real failure mode hit live: an earlier version of
+        // this test used a global, unscoped phone-count assertion that a
+        // sibling test file's reused fixture phone number could break when
+        // the full suite ran together, silently skipping everything below
+        // it and leaving exactly this kind of orphaned data).
+        try {
+            const res = await request(app).post('/api/students').set('Cookie', cookieB).send({
+                admissionNo: `${MARKER}-CROSS`, firstName: 'Esi', lastName: 'CrossTenant',
+                classId: classB.body.data.id, academicYearId: yearB.body.data.id,
+                parentFullName: 'Mr Owusu', parentPhone: '0241111111',
+            });
+            expect(res.status).toBe(201);
 
-        expect(res.status).toBe(201);
-        const [[count]] = await db.query('SELECT COUNT(*) AS n FROM parents WHERE phone = ?', ['0241111111']);
-        expect(count.n).toBe(2); // one per school, never shared across tenants
+            // Scoped per school, not a global count — this database is
+            // shared with other test files that may reuse the same fixture
+            // phone number, so a global count is never a safe assertion.
+            const [[schoolBParent]] = await db.query('SELECT id FROM parents WHERE school_id = ? AND phone = ?', [schoolIdB, '0241111111']);
+            expect(schoolBParent).toBeTruthy();
+            expect(schoolBParent.id).toBe(res.body.data.parentId);
 
-        // Cleanup this school B data so it doesn't linger.
-        await db.query('DELETE FROM parent_student WHERE student_id = ?', [res.body.data.id]);
-        await db.query('DELETE FROM parents WHERE id = ?', [res.body.data.parentId]);
-        await db.query('DELETE FROM students WHERE id = ?', [res.body.data.id]);
-        await db.query('DELETE FROM classes WHERE id = ?', [classB.body.data.id]);
-        await db.query('DELETE FROM academic_years WHERE id = ?', [yearB.body.data.id]);
+            const [[schoolAParent]] = await db.query('SELECT id FROM parents WHERE school_id = ? AND phone = ?', [schoolIdA, '0241111111']);
+            // School A's own sibling-dedup test earlier in this file also used
+            // this phone — confirms it's a genuinely different parent row,
+            // not the same one leaking across tenants.
+            expect(schoolAParent).toBeTruthy();
+            expect(schoolAParent.id).not.toBe(schoolBParent.id);
+
+            await db.query('DELETE FROM parent_student WHERE student_id = ?', [res.body.data.id]);
+            await db.query('DELETE FROM parents WHERE id = ?', [res.body.data.parentId]);
+            await db.query('DELETE FROM students WHERE id = ?', [res.body.data.id]);
+        } finally {
+            await db.query('DELETE FROM classes WHERE id = ?', [classB.body.data.id]);
+            await db.query('DELETE FROM academic_years WHERE id = ?', [yearB.body.data.id]);
+        }
     });
 });

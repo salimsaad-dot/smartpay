@@ -736,6 +736,94 @@ for a full management system.
     Parents page showed exactly one parent with 2 children (not two
     duplicate rows), and confirmed a third student added with no parent
     fields still works exactly as before.
+  - **Bulk student import, 2026-10-07**: a "Bulk Import" toggle on the
+    Students page, mirroring Academia Hub's own bulk-enrollment feature
+    (download template -> upload CSV/Excel -> preview -> import ->
+    per-row results) — independently reimplemented against this app's own
+    component library, not a cross-repo dependency, same as every other
+    port in this build. `lib/csv.js` (quote-aware CSV parsing, an Excel
+    reader with the same two-pass raw/text cell handling Academia Hub's
+    version uses to avoid silently corrupting a real date cell into a
+    lossy short-date string, and an `.xlsx` template generator) and
+    `components/BulkImportPanel.js` are new, generic (column spec + an
+    endpoint passed in), reused by nothing else today but built that way
+    on purpose. `xlsx` is installed from SheetJS's own CDN release, not
+    the npm registry — the npm-published version carries two unpatched
+    high-severity advisories (prototype pollution, ReDoS) with no fix
+    available there; Academia Hub already made this exact call for the
+    same reason, confirmed by inspecting its own `package.json` before
+    installing anything.
+    - Backend: `POST /students/bulk-enroll`, sharing the single Add
+      Student endpoint's core (`enrollOneStudent`, extracted into a
+      function both now call) rather than duplicating the student-create
+      + parent-lookup-or-create + link logic. Each CSV row names its
+      Class and Academic Year as plain text, resolved against this
+      school's own records before being handed to that shared core — a
+      human filling in a spreadsheet has no reason to know an internal
+      id. Academic Year can be left blank, defaulting to whichever year
+      is marked current (every other row in one real import is
+      overwhelmingly likely to share the same year; re-typing it on
+      every line is pure friction). Each row gets its own transaction,
+      not all-or-nothing, same 200-row cap as Academia Hub's own version.
+      8 new integration tests (`tests/studentBulkEnroll.integration.test.js`):
+      empty/oversized batch rejection, a good row succeeding alongside a
+      bad one failing independently, the current-year default, an
+      unknown class/year name failing with a clear message, sibling
+      dedup across rows, partial parent fields rejected, and a duplicate
+      admission number within one batch failing only on its second
+      occurrence.
+    - **A real bug found and fixed during live QA, not by inspection**:
+      the Academic Year column's header text —
+      `"Academic Year (optional, defaults to current)"` — had a literal
+      comma inside it. An unquoted CSV (anything short of a properly
+      quoted export, which this app's own auto-generated `.xlsx`
+      template never produces, but a hand-typed or differently-exported
+      CSV could) silently splits on that comma, shifting every column
+      after it by one — live-reproduced exactly this way: Parent Name
+      and Parent Phone landed swapped (a parent literally named
+      "0241234567" with phone "Mother"), caught by actually reading the
+      Parents page after import, not just checking the success count.
+      Fixed by shortening the header to `"Academic Year"` and moving the
+      "defaults to current" explanation to plain text next to the panel
+      instead — the underlying CSV parser (ported from Academia Hub's
+      already-proven version) was never the problem; a column header
+      containing a comma was always a latent landmine for a
+      comma-*delimited* format regardless of which parser reads it.
+    - Verified live via Puppeteer with both file types: a hand-built CSV
+      (3 successful rows including a sibling-dedup pair, 1 row failing on
+      a deliberately unknown class name, confirmed isolated from the
+      other 3) and a real generated `.xlsx` workbook (2 sibling rows,
+      100% success, confirmed the Students and Parents pages both
+      reflected it correctly with zero extra steps).
+  - **A real, repeating test-suite flakiness traced to its actual root
+    cause and fixed, 2026-10-07**: `npm test` had been intermittently
+    hanging all session (never exiting, no output) specifically when
+    `tests/studentEnrollment.integration.test.js` and
+    `tests/onlinePayments.integration.test.js` ran in the same
+    `--runInBand` process. Root cause, confirmed by reproducing it
+    directly rather than guessed at: `studentEnrollment`'s own
+    cross-tenant test asserted a **global, unscoped** `COUNT(*) FROM
+    parents WHERE phone = ?` — safe in isolation, but false once another
+    file in the same suite run (`studentBulkEnroll`, this same session)
+    reuses the identical fixture phone number, since the count then
+    reflects every school in the shared test database, not just the two
+    this test created. The resulting assertion failure threw mid-test,
+    skipping that test's own manual cleanup of its second school's
+    academic year — which then made that *file's* own `afterAll` throw
+    on a foreign-key constraint trying to delete a school still
+    referenced by it, which skipped `db.end()`, which left the Jest
+    process with an open database handle and nothing to make it exit.
+    Separately, `onlinePayments.integration.test.js` had a pre-existing,
+    unrelated hazard of its own — `DELETE FROM parents WHERE full_name
+    LIKE '%Mensah%'`, global and unscoped the same way, which fails the
+    same way the moment any other test's same-named fixture data is
+    still present. Both fixed: the cross-tenant assertion now checks
+    per-school, not globally; that test's cleanup now runs inside a
+    `try/finally` so an assertion failure can never again skip it;
+    `onlinePayments`' parent cleanup is now scoped by `school_id` (both
+    schools it creates) instead of matching by name. Confirmed fixed by
+    running the full suite twice in direct succession after the fix —
+    137/138 passing, clean exit, no hang, both times.
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -807,3 +895,5 @@ for a full management system.
 | 2026-10-07 | `MNOTIFY_SENDER_ID` is temporarily `"AcademiaHub"` (the already-approved sender ID on the shared mNotify account) instead of `"SmartPay"` (still pending mNotify's own approval), in both local `.env` and Render production. | User's explicit, informed choice after being told the tradeoff: messages read "From: AcademiaHub" in the meantime, a different registered business than the one actually sending — not ideal, but it unblocks real SMS delivery now rather than leaving it dark until approval clears. **Must be switched back to `"SmartPay"` once that approval comes through** — nothing in the code enforces or reminds about this; it's a manual env-var flip in both places. |
 | 2026-10-07 | Parent/guardian collection on Add Student stays optional (can still be left blank and linked later), not required like Academia Hub's `enrollOneStudent`. | User's explicit choice between the two, having asked for the *convenience* of one-step collection, not a hard requirement — forcing it would regress the existing ability to add a student before a parent's phone number is known. |
 | 2026-10-07 | The new inline parent-at-enrollment flow dedups by exact phone-string match within the same school, not a normalized/E.164 comparison. | Matches every other phone-handling path already in this codebase (`parentController.create` also just trims and stores as typed, no normalization). Two siblings' parent typed differently across two separate Add Student submissions could still produce a duplicate parent row — a pre-existing class of imperfection, not a new gap introduced by this feature. |
+| 2026-10-07 | `xlsx` (for bulk-import's Excel support) is installed from `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, not `npm install xlsx`. | The npm-registry version carries two unpatched high-severity advisories (prototype pollution, ReDoS) with "No fix available" per `npm audit` — SheetJS ships patched releases only from their own CDN for licensing reasons, a well-known situation in this ecosystem. Academia Hub's own `package.json` already makes this exact same call; confirmed by inspecting it before installing anything here, rather than accepting the vulnerable default. |
+| 2026-10-07 | Bulk-import column headers must never contain a literal comma, even though the UI also accepts `.xlsx` (which has no such risk). | Found live: `"Academic Year (optional, defaults to current)"` as a header silently broke column alignment in an unquoted CSV, swapping Parent Name and Parent Phone. The auto-generated `.xlsx` template is immune, but a hand-typed or differently-exported CSV isn't — a comma-containing header is a latent landmine for a comma-*delimited* format no matter how well the parser handles quoting. |
