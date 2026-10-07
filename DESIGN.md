@@ -987,13 +987,17 @@ for a full management system.
       captured response in the unit test, same discipline as
       `mnotifyProvider.js`'s identical class of bug a few hours earlier
       in this same session.
-    - **Real send accepted by the API** after fixing an unrelated issue
-      (the generated Arkesel API key had to be explicitly
+    - **Real send confirmed working end-to-end**, after fixing an
+      unrelated issue (the generated Arkesel API key had to be explicitly
       "Updated"/committed in their dashboard before it was valid — an
       earlier attempt correctly failed clean with `"Invalid key"`, not a
-      crash). `success: true` from the real endpoint; actual phone
-      receipt confirmation was still pending at the point this was
-      written — update this line once confirmed, don't assume it.
+      crash). Arkesel's own SMS History initially showed the message as
+      `PENDING APPROVAL` (sender ID `"SmartPay"` is brand-new on this
+      account too, same approval queue already seen with mNotify) — but
+      unlike what that status label suggested, the text was actually
+      received on a real phone within minutes, confirmed by the user
+      directly. `PENDING APPROVAL` evidently doesn't block real delivery
+      on Arkesel the way it was assumed to.
 
 ## Decisions Log
 | Date | Decision | Rationale |
