@@ -53,7 +53,7 @@ async function resolveReminderScope(schoolId, { parentId, studentId, invoiceId }
 }
 
 async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
-    const school = schoolRow || (await pool.query('SELECT name, currency FROM schools WHERE id = ?', [schoolId]))[0][0];
+    const school = schoolRow || (await pool.query('SELECT name, currency, momo_number FROM schools WHERE id = ?', [schoolId]))[0][0];
     return {
         school_name: school.name,
         parent_name: scope.parent.full_name,
@@ -63,6 +63,13 @@ async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
         total_balance: formatMoneyForSms(scope.totalBalance, school.currency),
         payment_link: paymentLinkText,
         due_date: new Date(scope.earliestDueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+        // Empty, not the literal string "null", for the (likely common,
+        // especially right after this feature ships) case where a school
+        // hasn't set one yet — this product's template syntax has no
+        // conditionals, so a template author who includes this variable
+        // is trusting it to be set; an empty string is at least never
+        // actively wrong the way "null" would read in a real SMS.
+        school_momo_number: school.momo_number || '',
     };
 }
 

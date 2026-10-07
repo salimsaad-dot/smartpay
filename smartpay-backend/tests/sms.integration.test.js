@@ -141,6 +141,23 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
         expect(after[0][0].c).toBe(before[0][0].c);
     });
 
+    test('{{school_momo_number}} renders the school\'s MoMo number when set, and renders empty (not the literal "null") when unset', async () => {
+        const noMomo = await request(app).post('/api/sms-templates').set('Cookie', cookieA)
+            .send({ name: 'Momo Variable Test', body: 'Pay {{payment_link}} or MoMo: {{school_momo_number}}.' });
+
+        const previewUnset = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, invoiceId: kofiInvoiceId, templateId: noMomo.body.data.id });
+        expect(previewUnset.body.data.message).toBe('Pay (a secure payment link will be included) or MoMo: .');
+        expect(previewUnset.body.data.message).not.toContain('null');
+
+        await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoNumber: '0241234567' });
+        const previewSet = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, invoiceId: kofiInvoiceId, templateId: noMomo.body.data.id });
+        expect(previewSet.body.data.message).toContain('MoMo: 0241234567');
+
+        await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoNumber: '' });
+    });
+
     test('previewing a parent-level reminder (no studentId/invoiceId) consolidates both children and sums the balance', async () => {
         const res = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
             .send({ parentId: mensahParentId });

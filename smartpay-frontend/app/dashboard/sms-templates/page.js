@@ -20,7 +20,60 @@ import {
   useToast,
 } from "@/components/ui";
 
-const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "payment_link", "due_date"];
+const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "payment_link", "due_date", "school_momo_number"];
+
+// For parents with no smartphone/data, the payment link alone is a dead
+// end — this gives every reminder a second, phone-agnostic way to pay
+// (send directly to the school's own MoMo number via USSD), without
+// needing to guess which parents can or can't use the online link.
+function MomoNumberPanel({ showToast }) {
+  const [momoNumber, setMomoNumber] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    apiRequest("/settings/profile").then((res) => setMomoNumber(res.data.momo_number || ""));
+  }, []);
+
+  async function handleBlur(e) {
+    const value = e.target.value;
+    setError("");
+    setSaving(true);
+    try {
+      await apiRequest("/settings/profile", { method: "PATCH", body: { momoNumber: value } });
+      showToast("Payment number saved.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (momoNumber === null) return <LoadingSkeleton lines={1} />;
+
+  return (
+    <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
+      <h2 className="font-semibold text-[var(--ink)]">Direct Payment Number</h2>
+      <p className="mt-1 text-sm text-[var(--slate-quiet)]">
+        For parents without a smartphone — add this as <code className="rounded bg-[var(--hover)] px-1 py-0.5 text-xs">{"{{school_momo_number}}"}</code> in
+        a template so every reminder also offers a direct MoMo option, not just the online payment link.
+      </p>
+      <div className="mt-3 max-w-xs">
+        <Field label="Mobile Money Number">
+          <input
+            type="tel"
+            defaultValue={momoNumber}
+            onBlur={handleBlur}
+            placeholder="e.g. 024 123 4567"
+            className={inputClass}
+          />
+        </Field>
+      </div>
+      {saving && <p className="mt-2 text-xs text-[var(--slate-quiet)]">Saving...</p>}
+      {error && <p className="mt-2 text-sm text-[var(--danger)]">{error}</p>}
+    </div>
+  );
+}
 
 function TemplateForm({ initial, onSave, onCancel }) {
   const [name, setName] = useState(initial?.name || "");
@@ -222,6 +275,7 @@ export default function SmsTemplatesPage() {
     <DashboardShell>
       <PageHeader title="SMS Templates" description="Used for manual fee reminders. A default template is ready to use from day one." />
 
+      <div className="mt-4"><MomoNumberPanel showToast={showToast} /></div>
       <div className="mt-4"><FridayAutomationPanel templates={templates} showToast={showToast} /></div>
 
       <div className="mt-4">

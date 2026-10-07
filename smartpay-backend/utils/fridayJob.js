@@ -72,7 +72,7 @@ async function acquireJobLock(schoolId, cycleKey) {
 // (the lock wasn't acquired, so nothing was done).
 async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTime = false } = {}) {
     const [[school]] = await pool.query(
-        'SELECT id, name, currency, timezone, friday_reminders_enabled, friday_send_time, friday_template_id, reminder_min_balance, reminder_cooldown_days FROM schools WHERE id = ?',
+        'SELECT id, name, currency, momo_number, timezone, friday_reminders_enabled, friday_send_time, friday_template_id, reminder_min_balance, reminder_cooldown_days FROM schools WHERE id = ?',
         [schoolId]
     );
     if (!school || !school.friday_reminders_enabled) return null;

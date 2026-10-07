@@ -1,6 +1,43 @@
 const pool = require('../db');
 const { logAction } = require('../utils/auditLog');
 
+// Separate from the Friday-reminder settings below (different concern,
+// different merge logic) — currently just the one field. A parent with
+// no smartphone/data can't use the online checkout link at all; giving
+// every reminder SMS the school's own MoMo number as a direct, USSD-
+// reachable alternative (via a {{school_momo_number}} template variable,
+// see utils/reminderCore.js) doesn't depend on guessing which parents
+// own a smartphone — it just works for everyone, the same way, every time.
+exports.getProfile = async (req, res) => {
+    try {
+        const [[school]] = await pool.query('SELECT momo_number FROM schools WHERE id = ?', [req.user.schoolId]);
+        res.status(200).json({ status: 'success', data: school });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while fetching school profile settings.' });
+    }
+};
+
+exports.updateProfile = async (req, res) => {
+    try {
+        const { momoNumber } = req.body;
+        const [[current]] = await pool.query('SELECT momo_number FROM schools WHERE id = ?', [req.user.schoolId]);
+
+        const newMomoNumber = momoNumber === undefined ? current.momo_number : (momoNumber?.trim() || null);
+        await pool.query('UPDATE schools SET momo_number = ? WHERE id = ?', [newMomoNumber, req.user.schoolId]);
+
+        await logAction(req, {
+            action: 'settings.update', entityType: 'school', entityId: req.user.schoolId,
+            oldValues: { momoNumber: current.momo_number }, newValues: { momoNumber: newMomoNumber },
+        });
+
+        res.status(200).json({ status: 'success', message: 'School profile updated.', data: { momoNumber: newMomoNumber } });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while updating school profile settings.' });
+    }
+};
+
 exports.getFridaySettings = async (req, res) => {
     try {
         const [[school]] = await pool.query(

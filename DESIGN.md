@@ -1226,6 +1226,60 @@ for a full management system.
       actually render (HTTP 200, no server-side crash) against a real
       local dev server — short of a full interactive click-through, for
       the same browser-automation-tooling reason as above.
+  - **Direct MoMo payment option for parents without a smartphone,
+    2026-10-07.** Raised by the user from their own test of the real
+    parent journey: the online checkout link requires an email (a real,
+    hard constraint from Paystack's own `/transaction/initialize` API,
+    not a SmartPay choice — confirmed by reading `paystackGateway.js`
+    before proposing anything), and more fundamentally, a parent with no
+    smartphone/data can't open the link at all. Considered and rejected:
+    inferring "has email → has a smartphone" from parent records to
+    decide who gets which flow — a weak, unreliable proxy (a parent can
+    have one without the other). Instead: every reminder can now offer a
+    second, phone-agnostic path to the same outcome, available to every
+    parent uniformly rather than guessed per-parent.
+    - New `schools.momo_number` column + `GET`/`PATCH /settings/profile`
+      (separate from the existing Friday-reminder settings endpoint —
+      different concern, its own partial-update logic). Surfaced as a
+      small "Direct Payment Number" panel on the SMS Templates page,
+      right above Friday Automation, since that's where an admin already
+      goes to manage what reminders say.
+    - New `{{school_momo_number}}` template variable, wired into
+      `reminderCore.js`'s `buildVariables` (and `fridayJob.js`'s own
+      pre-fetched school row, which needed the same column added to its
+      explicit `SELECT` list) — renders as the real number when set, or
+      an **empty string**, not the literal text `"null"`, when a school
+      hasn't set one yet. This product's template syntax has no
+      conditionals (a deliberate, already-documented Phase 7 scope cut),
+      so a template author including this variable is trusting it to be
+      set; the default template was deliberately left unchanged rather
+      than unconditionally appending it, since most schools won't have
+      filled this in immediately after it ships and "MoMo: " trailing
+      into nothing reads worse than the variable simply not being there
+      yet. A school adds it to their own template text once they've set
+      a number.
+    - The actual manual-payment recording this enables once a parent
+      sends money directly — an admin marking it received against the
+      right invoice — isn't new: it's the existing `POST /payments`
+      (method `mobile_money`), now with a dedicated page (see the
+      Payments entry above) rather than only reachable per-invoice.
+    - 10 new tests: 5 for the profile endpoint itself (including that a
+      PATCH with no `momoNumber` field is a true no-op, and that school
+      B's own profile is unaffected by school A's change — this project's
+      standard tenant-isolation discipline applied to a new endpoint, not
+      skipped because it's "just a settings field"), plus a test
+      confirming the rendered variable is the real number when set and
+      genuinely empty (not `"null"`) when not. Full suite: 24/24 suites,
+      223 passed + 1 skipped. Clean frontend build; the SMS Templates
+      page confirmed to render (HTTP 200) against a real local dev
+      server.
+    - **Not yet applied to production**: same `ALTER TABLE` situation as
+      the lockout-column incident earlier this session — this needs to be
+      run against the live Aiven database (`smartpay_db`) *before* the
+      next Render deploy of this commit, not after, or every settings
+      read/write and every reminder preview/send will 500 exactly the
+      way login did. Flagged explicitly this time instead of assuming it
+      would be remembered.
 
 ## Decisions Log
 | Date | Decision | Rationale |
