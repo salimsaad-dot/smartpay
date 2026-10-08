@@ -26,6 +26,7 @@ const ACTION_LABELS = {
   "auth.login_blocked": "Sign-in blocked (account locked)",
   "auth.account_locked": "Account locked (too many failed attempts)",
   "auth.password_changed": "Password changed",
+  "auth.password_reset": "Password reset via email link",
   "auth.sessions_revoked": "Logged out everywhere",
 };
 

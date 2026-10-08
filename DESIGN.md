@@ -1319,6 +1319,73 @@ for a full management system.
       wider than its native resolution via `background-size: cover`; not
       a problem at the 1440px width actually tested, worth knowing if a
       future higher-resolution version becomes available.
+  - **Forgot-password flow, 2026-10-08.** Raised by the user from the
+    login page itself: there was no recovery path at all if an admin
+    forgot their password (not just a wrong guess — actually forgot it).
+    The `change-password` work from the security audit only helps a user
+    who's already logged in and remembers their *current* password; this
+    closes the gap underneath it. Combined with exactly one admin account
+    per school, this was a real "locked out of the whole school, no way
+    back in except someone manually touching the database" risk, not a
+    hypothetical one.
+    - Reused Academia Hub's own already-proven Resend-based forgot/reset
+      flow pattern wholesale rather than designing a new one — same
+      hashed-token-in-DB approach (`password_reset_tokens`: `user_id`,
+      `token_hash` — the raw token is never stored, only its SHA-256 —
+      `expires_at`, `used_at`), same 30-minute TTL, same generic
+      "if an account matches..." response regardless of whether the
+      email is real (standard enumeration-prevention), same
+      `emailDeliveryConfigured` flag so the frontend can honestly tell a
+      user a reset link probably won't arrive when no real Resend sender
+      is configured yet, rather than silently promising an email that
+      never comes. SmartPay's version is simpler than Academia Hub's in
+      one way: email *is* the login identifier here (no separate
+      `login_id`/student-no-email case to special-case), so the form is
+      just one field.
+    - New `utils/emailSender.js`, adapted from Academia Hub's — same
+      Resend wrapper, SmartPay-branded subject/copy.
+    - **Caught, before it could ship broken, the exact mock-target-
+      mismatch bug class this project already hit once with SMS provider
+      testing**: `authController.js` initially destructured
+      `{ sendPasswordResetEmail, isEmailDeliveryConfigured }` out of
+      `emailSender` at require-time, which meant `jest.spyOn(emailSender,
+      'sendPasswordResetEmail')` in the test silently failed to intercept
+      the real call — same root cause as the Friday-job SMS incident
+      (a local destructured reference doesn't see a later patch to the
+      module object's property). Fixed by requiring `emailSender` as a
+      module object and calling `emailSender.sendPasswordResetEmail(...)`
+      directly, matching the exact convention `smsProvider` already uses
+      everywhere else in this codebase for the identical reason.
+    - New pages: `/forgot-password` (email → generic
+      confirmation-or-not-configured message) and `/reset-password`
+      (token from the URL query string → new password, with its own
+      invalid-link and already-done states) — both on the same
+      `AuthSplitLayout` shell as Login/Register, so they also pick up the
+      new hero photo. A "Forgot password?" link added next to the
+      Password label on the login form.
+    - 6 new backend tests, including the full real path: a real token
+      generated, captured via `jest.spyOn` on the email send (not read
+      from an actual inbox), used to really change the password, confirm
+      it kills existing sessions and rejects a replay of the same token,
+      and that an expired token is rejected. Full suite: 25/25 suites,
+      229 passed + 1 skipped.
+    - **Verified visually, not just via a clean build**, same discipline
+      as the hero-photo change: real Puppeteer screenshots of all three
+      states on both pages against the real local backend (not just
+      mocked) — the "Forgot password?" link on Login, the real
+      `emailDeliveryConfigured: false` warning (correct, since no
+      `RESEND_API_KEY` is set locally), and a real invalid-token
+      rejection message on Reset Password.
+    - **Not yet deployed anywhere**: the new `password_reset_tokens`
+      table exists only in the local database — needs the same
+      production-first migration discipline as the last two schema
+      changes before this is deployed. `RESEND_API_KEY`/
+      `RESEND_FROM_EMAIL` also aren't set in Render yet, meaning
+      `emailDeliveryConfigured` will correctly report `false` in
+      production too until a real Resend sender is configured for
+      SmartPay specifically (not yet decided: a new SmartPay-branded
+      sender, or reusing Academia Hub's existing verified domain the way
+      SMS reused mNotify's account under a separate project key).
 
 ## Decisions Log
 | Date | Decision | Rationale |

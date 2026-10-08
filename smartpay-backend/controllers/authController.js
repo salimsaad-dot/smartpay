@@ -1,9 +1,29 @@
 const pool = require('../db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { isValidCode } = require('../utils/schoolCode');
 const { DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY } = require('../utils/smsTemplate');
 const { logAction, logAuthEvent } = require('../utils/auditLog');
+// Required as a module object, never destructured — a test that spies
+// on this module (jest.spyOn(emailSender, 'sendPasswordResetEmail'))
+// only intercepts calls made through the module object itself. This is
+// the exact mock-target-mismatch class of bug this project already hit
+// once with SMS provider testing (see smartpay/DESIGN.md's Decisions
+// Log) — same fix, applied here before it could repeat the same way.
+const emailSender = require('../utils/emailSender');
+
+// Same proven shape as Academia Hub's own forgot/reset-password flow —
+// a single admin per school with no recovery path at all was a real,
+// not hypothetical, risk: the password-change work from the earlier
+// security audit only covers a user who's already logged in and
+// remembers their current password. This closes the "forgot it
+// entirely, now locked out of the whole school" gap underneath it.
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+function hashResetToken(rawToken) {
+    return crypto.createHash('sha256').update(rawToken).digest('hex');
+}
 
 // Same cookie-options shape as Academia Hub, same reasoning: sameSite
 // 'lax' works as long as the frontend proxies /api/* through its own
@@ -168,6 +188,84 @@ exports.login = async (req, res) => {
 exports.logout = (req, res) => {
     res.clearCookie('token', authCookieOptions());
     res.status(200).json({ status: 'success', message: 'Logged out.' });
+};
+
+// Public — runs before any session exists. Always returns the same
+// generic message regardless of whether the email matches a real
+// account (standard enumeration-prevention) — this response can never
+// be used to probe which emails have SmartPay accounts.
+exports.forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ status: 'error', message: 'Please provide your email address.' });
+        }
+
+        const GENERIC_MESSAGE = 'If an account matches that email, a reset link has been sent to it.';
+
+        // Static and identical on every branch below (including the
+        // early return for a non-matching email, which never attempts a
+        // send) so it can never be used to tell a real account from a
+        // fake one by comparing responses.
+        const emailDeliveryConfigured = emailSender.isEmailDeliveryConfigured();
+
+        const [[user]] = await pool.query('SELECT id, email FROM users WHERE email = ?', [email.trim().toLowerCase()]);
+        if (!user) {
+            return res.status(200).json({ status: 'success', message: GENERIC_MESSAGE, emailDeliveryConfigured });
+        }
+
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+        await pool.query(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+            [user.id, hashResetToken(rawToken), expiresAt]
+        );
+
+        const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+        await emailSender.sendPasswordResetEmail(user.email, resetLink);
+
+        res.status(200).json({ status: 'success', message: GENERIC_MESSAGE, emailDeliveryConfigured });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while processing the reset request.' });
+    }
+};
+
+// Public — the token itself is the proof of identity here, same
+// principle as any emailed reset link. Bumps token_version, same as
+// changePassword, so any session the forgotten-password account might
+// still have open elsewhere (e.g. on a device the real owner is
+// currently using) is killed by this reset too.
+exports.resetPasswordWithToken = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+        if (!token || !newPassword) {
+            return res.status(400).json({ status: 'error', message: 'A token and newPassword are both required.' });
+        }
+        if (newPassword.length < 8) {
+            return res.status(400).json({ status: 'error', message: 'New password must be at least 8 characters.' });
+        }
+
+        const [[resetRow]] = await pool.query(
+            'SELECT reset_token_id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?',
+            [hashResetToken(token)]
+        );
+        if (!resetRow || resetRow.used_at || new Date(resetRow.expires_at) < new Date()) {
+            return res.status(400).json({ status: 'error', message: 'This reset link is invalid or has expired. Please request a new one.' });
+        }
+
+        const newHash = await bcrypt.hash(newPassword, 10);
+        await pool.query('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [newHash, resetRow.user_id]);
+        await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE reset_token_id = ?', [resetRow.reset_token_id]);
+
+        const [[user]] = await pool.query('SELECT school_id FROM users WHERE id = ?', [resetRow.user_id]);
+        await logAuthEvent(req, { schoolId: user.school_id, userId: resetRow.user_id, action: 'auth.password_reset' });
+
+        res.status(200).json({ status: 'success', message: 'Password reset. You can now log in with your new password.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while resetting your password.' });
+    }
 };
 
 // Session-restore endpoint — the frontend's AuthContext calls this on

@@ -53,7 +53,12 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-[var(--ink)]">Password</label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-[var(--ink)]">Password</label>
+              <Link href="/forgot-password" className="mb-1.5 text-sm font-medium text-[var(--primary)] hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <div className="relative">
               <input
                 id="password" type={showPassword ? "text" : "password"} required autoComplete="current-password"
