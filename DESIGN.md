@@ -1494,6 +1494,76 @@ for a full management system.
       empty state with correct colors (confirming the Tailwind fix
       actually took effect, not just that it compiled), in the right
       position above the other two panels. Clean frontend build.
+- **AI Financial Summary — SHIPPED 2026-10-08.** User's idea, modeled
+  directly on Academia Hub's own already-proven Financial/School
+  Intelligence pattern: a daily, once-cached AI-written paragraph
+  summarizing the school's financial position, shown automatically when
+  the admin opens the Dashboard — "once per day" correctly implemented as
+  "cached per school per calendar day," not literally tied to the login
+  event (every dashboard load re-fires the request, the daily cache is
+  what keeps that cheap), per the explicit discussion before building
+  this of why Academia Hub's own "auto-generate on every login" version
+  of this exact feature doesn't scale against a shared Gemini quota.
+  - Ported, not reinvented: `@google/genai` SDK, the `GEMINI_TIMEOUT_MS =
+    30000` `withTimeout()` wrapper around every `generateContent()` call
+    (a confirmed-live Academia Hub gotcha — a Gemini 503 hangs the SDK
+    forever instead of rejecting), structured JSON output with a
+    `responseSchema` rather than free-text parsing, and the
+    `interpretFinancialInsight` function's exact system instruction and
+    `{summary, highlights}` response shape — copied directly from
+    Academia Hub's `utils/geminiService.js`, adapted only to say
+    "administrator" instead of "accountant" (SmartPay has one role,
+    `school_admin`, not a separate accountant role).
+  - **New, genuinely new infrastructure for this project** — no
+    Gemini/LLM wiring existed in SmartPay before this. Needs its own
+    `GEMINI_API_KEY`, deliberately separate from Academia Hub's, same
+    reasoning as every other third-party credential this session (SMS,
+    email, Paystack): a shared key means SmartPay's calls count against
+    Academia Hub's own already-tight quota. **Not yet obtained** — the
+    feature is fully code-complete and tested, but has never made a real
+    Gemini call; only the "not configured" (`GEMINI_API_KEY` unset) path
+    has actually executed so far, confirmed correct both in the test
+    suite and via a real screenshot.
+  - Evidence layer (`utils/financialIntelligenceData.js`) adapted to
+    SmartPay's actual schema rather than copied verbatim: no
+    academic_year_id/term dimension (SmartPay's own collection-summary
+    report is already whole-school, not term-scoped, so this follows
+    that same convention), `school_id`-scoped directly. Same two fixed
+    attention thresholds as Academia Hub (`LOW_COLLECTION_RATE_THRESHOLD
+    = 70`, `OVERDUE_BACKLOG_THRESHOLD = 5`) — not school-configurable,
+    the same deliberate choice Academia Hub made for its own version, not
+    revisited without a reason to.
+  - Cache table `financial_insight_cache`: one row per school
+    (`UNIQUE KEY` on `school_id`, no term dimension needed), `generated_at
+    >= CURDATE()` staleness check, `ON DUPLICATE KEY UPDATE` on
+    regeneration — direct port of Academia Hub's own caching shape.
+  - **Caught the exact mock-target-mismatch bug class this session has
+    now hit three times** (SMS provider testing, forgot-password email
+    testing, now this) before it could repeat a fourth time: wrote
+    `geminiService` as a required module object from the start, not a
+    destructured import, so `jest.spyOn(geminiService,
+    'interpretFinancialInsight')` actually intercepts the real call.
+  - 5 new tests: the real "not configured" path (no mock needed — it's
+    genuinely the current state), a successful generation caching
+    correctly (second same-day call doesn't re-call Gemini), backdating
+    `generated_at` by a day forcing real regeneration (the exact test
+    Academia Hub's own DESIGN.md flags as worth replicating), school A's
+    cached summary never leaking to school B (this project's standard
+    tenant-isolation discipline, applied here too, not skipped because
+    it's "just an AI feature"), and a malformed/failed Gemini response
+    being treated as a clean failure that caches nothing. Full suite:
+    26/26 suites, 234 passed + 1 skipped.
+  - Verified visually both real states: registered a fresh school and
+    confirmed the "not configured" card renders correctly end-to-end
+    against the real backend; separately seeded a real cache row directly
+    in the database (exercising the actual cached-read code path, not a
+    mock) and confirmed the "success" rendering — paragraph, highlights,
+    "Updated {time}" — displays correctly too.
+  - **Not yet applied to production**: same `CREATE TABLE`-first
+    discipline as the last three schema changes this session — needs to
+    run against the live Aiven database before the next deploy, and
+    needs a real `GEMINI_API_KEY` in Render before the feature does
+    anything beyond showing "not configured" there too.
 
 ## Future Work
 

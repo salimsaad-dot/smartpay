@@ -5,7 +5,7 @@ import Link from "next/link";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   FileText, Wallet, AlertTriangle, TrendingUp, CheckCircle2, XCircle,
-  Receipt, Bell, ShieldAlert, BarChart3, Info,
+  Receipt, Bell, ShieldAlert, BarChart3, Info, Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import DashboardShell from "@/components/DashboardShell";
@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [arrears, setArrears] = useState(null);
   const [payments, setPayments] = useState(null);
   const [smsReminders, setSmsReminders] = useState(null);
+  const [intelligence, setIntelligence] = useState(null);
   const [period, setPeriod] = useState(null); // { yearName, termName }
   const [error, setError] = useState("");
 
@@ -49,19 +50,23 @@ export default function DashboardPage() {
         // than take anyone's word for it. The full Reports > SMS
         // Activity page still covers any custom date range.
         const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
-        const [collectionRes, arrearsRes, paymentsRes, smsRes, yearsRes, termsRes] = await Promise.all([
+        const [collectionRes, arrearsRes, paymentsRes, smsRes, yearsRes, termsRes, intelligenceRes] = await Promise.all([
           apiRequest("/reports/collection-summary"),
           apiRequest("/arrears"),
           apiRequest("/payments"),
           apiRequest(`/reports/sms-activity?startDate=${startOfMonth}`),
           apiRequest("/academic-years"),
           apiRequest("/terms"),
+          // Cached once per calendar day server-side — safe to fire on
+          // every dashboard load without re-spending AI quota each time.
+          apiRequest("/intelligence/financial-summary").catch(() => ({ data: { ok: false, message: "Couldn't load the AI summary." } })),
         ]);
         if (cancelled) return;
         setCollection(collectionRes.data);
         setArrears(arrearsRes.data);
         setPayments(paymentsRes.data);
         setSmsReminders(smsRes.data);
+        setIntelligence(intelligenceRes.data);
         const currentYear = yearsRes.data.find((y) => y.is_current);
         const currentTerm = termsRes.data.find((t) => t.is_current);
         setPeriod({ yearName: currentYear?.name, termName: currentTerm?.name });
@@ -102,6 +107,43 @@ export default function DashboardPage() {
       </div>
 
       {error && <div className="mt-6 rounded-lg bg-[var(--danger-wash)] p-4 text-sm text-[var(--danger)]" role="alert">{error}</div>}
+
+      {/* AI Financial Summary — regenerated once per calendar day
+          server-side, so loading the dashboard again the same day is
+          free. Not shown at all until the first fetch resolves, rather
+          than a loading skeleton, since this is a nice-to-have summary
+          sitting above numbers that are already shown individually below. */}
+      {intelligence && (
+        <Card2 className="mt-6 p-5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--primary-wash)] text-[var(--primary)]">
+              <Sparkles size={16} />
+            </span>
+            <div>
+              <h2 className="font-semibold text-[var(--ink)]">AI Financial Summary</h2>
+              {intelligence.ok && intelligence.generatedAt && (
+                <p className="text-xs text-[var(--slate-quiet)]">
+                  {intelligence.cached ? "Updated" : "Just updated"} {new Date(intelligence.generatedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="mt-3">
+            {intelligence.ok === false ? (
+              <p className="text-sm text-[var(--slate-quiet)]">{intelligence.message}</p>
+            ) : (
+              <>
+                <p className="text-sm leading-relaxed text-[var(--ink)]">{intelligence.summary}</p>
+                {intelligence.highlights?.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-sm text-[var(--slate)]">
+                    {intelligence.highlights.map((h, i) => <li key={i}>&bull; {h}</li>)}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+        </Card2>
+      )}
 
       {!error && collection && !hasInvoices && (
         <div className="mt-6 rounded-[var(--radius-xl)] border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-sm text-[var(--slate-quiet)]">
