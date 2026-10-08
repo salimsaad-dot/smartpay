@@ -1458,6 +1458,50 @@ for a full management system.
       heading, link, and note; cleaned up the test data afterward. Clean
       frontend build.
 
+## Future Work
+
+1. **Per-school prepaid SMS credit, with a hard cap — not built yet,
+   deliberately deferred.** Today every school shares one SMS
+   wallet/account (Arkesel, with mNotify as a proven working fallback —
+   see the Decisions Log and the Build Progress entries above). There is
+   real per-school *visibility* into usage (the Dashboard's "SMS Usage
+   This Month" card, `reportsController.smsActivity`, both scoped by
+   `sms_reminders.school_id`, which every row already carries) — but
+   nothing *enforces* a fair share. One school could still consume
+   another school's paid-for credit, with nothing to stop it beyond
+   someone noticing after the fact. Deferred because with a handful of
+   schools the user knows personally, usage visibility is enough to
+   settle any dispute; it stops being enough the moment SmartPay has
+   real, unrelated paying schools who don't just trust each other.
+   **Trigger to build this**: a second (or third) school actually joins
+   and pays for the system — not a specific date, a specific event.
+   **What it would take**:
+   - A `sms_credits` balance on `schools` (decimal, like `schools.balance`
+     already pattern-matches for fee amounts), funded by whoever pays
+     SmartPay for that school's SMS use — doesn't have to be the same
+     mechanism as the shared Arkesel top-up.
+   - Deduct from it wherever a send actually succeeds — `smsProvider
+     .sendSms()`'s two real call sites, `reminderController.js`'s
+     `exports.send` and `fridayJob.js`'s per-recipient loop — probably a
+     small shared helper so both stay in sync, matching how `buildVariables`
+     is already shared between the two instead of duplicated.
+   - Block sending (a clean, specific error, not a generic failure) once
+     a school's balance can't cover the next message — needs a real
+     per-message cost figure from whichever provider is active to check
+     against, not just "balance > 0."
+   - A low-balance warning before it hits zero — the existing
+     `reminder_min_balance`/Friday-automation settings pattern on
+     `schools` is the nearest existing precedent for a school-configurable
+     threshold, though that field means something different (a student's
+     fee balance, not SMS credit) and shouldn't be reused for this
+     directly, just modeled similarly.
+   - A top-up flow — out of scope to design here without knowing how
+     SmartPay will actually bill a second school (manual invoice? a
+     payment page? Paystack again, but for SmartPay's own revenue this
+     time, not a school's fees?) — a real product/business decision, not
+     a technical one, and shouldn't be guessed at in code before it's
+     made.
+
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
