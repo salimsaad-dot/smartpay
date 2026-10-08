@@ -1598,6 +1598,58 @@ for a full management system.
       SMS and this one, now correctly skipped locally).
     - **Still needs the same key added to Render** before this works in
       production — not done here, a separate manual env-var step.
+- **Payments / Reminders / SMS Templates structural upgrade — SHIPPED
+  2026-10-08.** User uploaded a reference redesign mockup (4 pages,
+  numbered 9-12, continuing the same spec sequence as earlier-shipped
+  pages) and explicitly chose **synthesize**, not replicate — adopt the
+  structural ideas (what info goes where, what stats matter), not the
+  mockup's own dark theme, into SmartPay's existing light+dark design
+  system. Checked real backend support before adopting anything from the
+  mockup, and deliberately skipped what wasn't real rather than fake it:
+  - **Skipped, not built**: the mockup's "Upcoming: N Scheduled" reminder
+    stat — no scheduled-reminder concept exists anywhere in the data
+    (`sms_reminders.status` is pending/sent/failed/delivered only; sends
+    are synchronous, nothing persists as "queued for later"). A generic
+    "Create Reminder" flow — reminders are always sent in the context of
+    a specific parent/invoice (Arrears/Students/Parents), never from a
+    blank slate; the new "Send Reminders" button links to Arrears, where
+    that genuinely happens, rather than faking a flow that doesn't exist.
+    The mockup's 4 SMS template categories — `sms_templates.type` is a
+    real 2-value enum (`friday_reminder`/`manual_reminder`); built tabs
+    for those 2 real values, not 4 invented ones. Reports page — already
+    structurally equivalent to the mockup (same 6 report types, just
+    tabs instead of clickable cards); left alone rather than doing a
+    purely cosmetic tabs-to-cards conversion with no functional gain, and
+    a "Recent Reports" generation log the mockup shows doesn't exist as a
+    concept at all (reports are generated on-demand, nothing is tracked)
+    — flagged as out of scope for a UI synthesis pass, not silently
+    skipped.
+  - **Payments**: added an Export CSV button (reuses the existing
+    `/reports/payment-history` CSV endpoint rather than building a second
+    CSV code path — same filters, already proven) and Total/Online/Cash
+    & Manual stat cards, computed client-side from `payments.source`
+    (already returned by `GET /payments`, no backend change needed) —
+    same derivation `reportsController.paymentHistory`'s own summary
+    already uses, just respecting this page's own filters instead.
+  - **Reminders**: added real Total/Sent/Delivered/Failed stat cards
+    (same derivation as the Dashboard's own SMS card) and status tabs
+    replacing the old single dropdown filter; renamed from "Reminder
+    History" to "Reminders" to match. Stats are computed from the full
+    unfiltered fetch so they never change when a tab is selected — only
+    the table rows do.
+  - **SMS Templates**: added a search box and a real 2-tab type filter
+    (All / Manual Reminders / Friday Automation).
+  - Verified visually end-to-end against a real registered school with
+    real seeded data (2 real payments via different methods, 4
+    `sms_reminders` rows seeded directly at varied statuses rather than
+    spending real SMS credit just for a screenshot, 2 real SMS
+    templates) — confirmed the Payments stat cards compute correctly,
+    the Reminders stat cards and tab-filtering both work correctly (all
+    4 still show in totals while a selected tab correctly narrows the
+    table), and the SMS Templates tab filter correctly narrows to just
+    the matching template. No backend changes at all — full suite still
+    26/26 suites, 234 passed + 2 skipped. Clean frontend build. Test data
+    cleaned up afterward.
 
 ## Future Work
 

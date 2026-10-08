@@ -14,6 +14,7 @@ import {
   Field,
   LinkButton,
   LoadingSkeleton,
+  MetricCard,
   MobileRecordCard,
   Modal,
   PageHeader,
@@ -23,7 +24,29 @@ import {
   useToast,
 } from "@/components/ui";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const METHOD_LABELS = { cash: "Cash", mobile_money: "Mobile Money", bank_transfer: "Bank Transfer", other: "Other" };
+
+// Reuses the existing /reports/payment-history CSV export rather than
+// building a second CSV code path — same query shape (startDate/endDate/
+// method), already proven, already covers Source and Status columns this
+// page's own table doesn't show.
+function ExportCsvLink({ startDate, endDate, method }) {
+  const params = new URLSearchParams({ format: "csv" });
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
+  if (method) params.set("method", method);
+  return (
+    <a
+      href={`${API_URL}/reports/payment-history?${params.toString()}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex min-h-[44px] items-center rounded-lg border border-[var(--border)] px-3 text-sm font-semibold text-[var(--slate)] hover:bg-[var(--hover)] sm:min-h-0 sm:py-2"
+    >
+      Export CSV
+    </a>
+  );
+}
 
 // Step 1 of Record Payment: pick which outstanding invoice this payment
 // is against. This page isn't launched from inside a specific invoice
@@ -236,10 +259,19 @@ export default function PaymentsPage() {
     );
   }, [payments, search]);
 
-  const totalCollected = useMemo(
-    () => filtered.filter((p) => p.status !== "void").reduce((sum, p) => sum + Number(p.amount), 0),
-    [filtered]
-  );
+  // source ('manual'/'online') is already returned by GET /payments
+  // (SELECT p.* ...) — no backend change needed, same client-side-
+  // breakdown pattern reportsController.paymentHistory's own summary
+  // uses, computed here instead so it respects this page's own filters.
+  const breakdown = useMemo(() => {
+    const active = filtered.filter((p) => p.status !== "void");
+    return {
+      total: active.reduce((sum, p) => sum + Number(p.amount), 0),
+      online: active.filter((p) => p.source === "online").reduce((sum, p) => sum + Number(p.amount), 0),
+      manual: active.filter((p) => p.source !== "online").reduce((sum, p) => sum + Number(p.amount), 0),
+    };
+  }, [filtered]);
+  const totalCollected = breakdown.total;
 
   function handleRecorded() {
     setRecording(false);
@@ -252,7 +284,12 @@ export default function PaymentsPage() {
       <PageHeader
         title="Payments"
         description="Every payment recorded against any invoice, across all classes and terms."
-        action={<Button onClick={() => setRecording(true)}>Record Payment</Button>}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <ExportCsvLink startDate={startDate} endDate={endDate} method={method} />
+            <Button onClick={() => setRecording(true)}>Record Payment</Button>
+          </div>
+        }
       />
 
       <div className="mt-4 flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4">
@@ -285,8 +322,13 @@ export default function PaymentsPage() {
 
       {payments && (
         <>
-          <p className="mt-4 text-sm text-[var(--slate-quiet)]">
-            {filtered.length} payment{filtered.length !== 1 ? "s" : ""} · Total collected: <AmountDisplay amount={totalCollected} currency={currency} />
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <MetricCard label="Total Collected" value={formatMoney(breakdown.total, currency)} tone="success" />
+            <MetricCard label="Online Payments" value={formatMoney(breakdown.online, currency)} />
+            <MetricCard label="Cash & Manual" value={formatMoney(breakdown.manual, currency)} />
+          </div>
+          <p className="mt-3 text-sm text-[var(--slate-quiet)]">
+            {filtered.length} payment{filtered.length !== 1 ? "s" : ""} in this view
           </p>
 
           {/* Phones: one card per payment. */}

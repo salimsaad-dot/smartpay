@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Bell, XCircle } from "lucide-react";
+import { CheckCircle2, Bell, XCircle, Search } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
@@ -311,11 +311,23 @@ function FridayAutomationPanel({ templates, showToast }) {
   );
 }
 
+// Real values only — sms_templates.type is a 2-value enum
+// (friday_reminder/manual_reminder), not the richer category set a
+// reference mockup suggested. Tabs for categories that don't exist in
+// the schema would just be decoration with nothing behind them.
+const TYPE_TABS = [
+  { key: "", label: "All Templates" },
+  { key: "manual_reminder", label: "Manual Reminders" },
+  { key: "friday_reminder", label: "Friday Automation" },
+];
+
 export default function SmsTemplatesPage() {
   const [templates, setTemplates] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [showNewForm, setShowNewForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const { toast, showToast, dismissToast } = useToast();
 
   function load() {
@@ -325,6 +337,15 @@ export default function SmsTemplatesPage() {
       .catch((err) => setLoadError(err.message));
   }
   useEffect(load, []);
+
+  const filtered = useMemo(() => {
+    if (!templates) return [];
+    let rows = templates;
+    if (typeFilter) rows = rows.filter((t) => t.type === typeFilter);
+    const q = search.trim().toLowerCase();
+    if (q) rows = rows.filter((t) => t.name.toLowerCase().includes(q) || t.body.toLowerCase().includes(q));
+    return rows;
+  }, [templates, search, typeFilter]);
 
   async function toggleStatus(t) {
     await apiRequest(`/sms-templates/${t.id}`, { method: "PATCH", body: { name: t.name, body: t.body, status: t.status === "active" ? "inactive" : "active" } });
@@ -351,13 +372,42 @@ export default function SmsTemplatesPage() {
         )}
       </div>
 
+      {templates && templates.length > 0 && (
+        <div className="mt-4">
+          <div className="flex overflow-x-auto border-b border-[var(--border)]">
+            {TYPE_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setTypeFilter(tab.key)}
+                aria-current={typeFilter === tab.key ? "page" : undefined}
+                className={`flex-shrink-0 whitespace-nowrap rounded-t-lg px-3 py-2 text-sm font-medium ${
+                  typeFilter === tab.key ? "border-b-2 border-[var(--primary)] text-[var(--primary)]" : "text-[var(--slate-quiet)] hover:text-[var(--ink)]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative mt-3">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--slate-quiet)]" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search templates..."
+              className={`${inputClass} pl-9`}
+            />
+          </div>
+        </div>
+      )}
+
       {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
       {!templates && !loadError && <div className="mt-6"><LoadingSkeleton lines={3} /></div>}
 
       {templates && (
         <div className="mt-4 space-y-3">
-          {templates.length === 0 && <EmptyState>No templates yet.</EmptyState>}
-          {templates.map((t) => (
+          {filtered.length === 0 && <EmptyState>{templates.length === 0 ? "No templates yet." : "No templates match."}</EmptyState>}
+          {filtered.map((t) => (
             <div key={t.id} className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
               {editingId === t.id ? (
                 <TemplateForm
