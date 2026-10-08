@@ -5,7 +5,12 @@ const { GoogleGenAI } = require('@google/genai');
 // speculative general-purpose AI layer. Same "interpretation layer only"
 // discipline: Gemini never sees a DB handle or raw SQL, only the
 // already-computed evidence object this app itself trusts.
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+// Academia Hub's own default (gemini-3.6-flash) doesn't exist for this
+// key/project — confirmed live via ai.models.list(): SmartPay's new,
+// separate Gemini project only offers up to gemini-3.5-flash. Copying a
+// sibling project's model default without checking it against the new
+// key would have shipped a silent 503 on every single call.
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 
 // Confirmed in Academia Hub (2026-09-21): when Gemini returns a 503
 // ("model currently experiencing high demand" — Google's own documented,

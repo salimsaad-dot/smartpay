@@ -8,6 +8,13 @@ const geminiService = require('../utils/geminiService');
 // project already settled on twice this session (SMS provider, then
 // forgot-password email) after the destructuring version silently
 // defeated the mock both times.
+//
+// Same hasRealProviderKey gating sms.integration.test.js already uses —
+// once a real GEMINI_API_KEY exists (it does, as of 2026-10-08), the
+// "not configured" test's own premise is false, and it would otherwise
+// either make a real billable Gemini call or just fail outright.
+const hasRealGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+
 describe('Financial Intelligence — daily-cached AI summary (real DB, real HTTP)', () => {
     const MARKER = `CI-INTEL-${Date.now()}`;
     let cookieA, cookieB;
@@ -48,9 +55,26 @@ describe('Financial Intelligence — daily-cached AI summary (real DB, real HTTP
         await db.end();
     });
 
-    test('when GEMINI_API_KEY is not configured, the endpoint fails cleanly with ok:false, not a crash', async () => {
-        // This is the actual current state of local/CI env — no mock
-        // needed to exercise this branch for real.
+    // Only meaningful when no real key is configured — with a real key
+    // present, this test's whole premise (the env var isn't set) no
+    // longer holds. The behavior itself (ok:false renders cleanly) is
+    // still covered unconditionally by the next test below, via a mock
+    // rather than relying on the env being unconfigured.
+    (hasRealGeminiKey ? test.skip : test)(
+        'when GEMINI_API_KEY is not configured, the endpoint fails cleanly with ok:false, not a crash',
+        async () => {
+            const res = await request(app).get('/api/intelligence/financial-summary').set('Cookie', cookieA);
+            expect(res.status).toBe(200);
+            expect(res.body.data.ok).toBe(false);
+            expect(res.body.data.message).toMatch(/couldn't get an ai summary/i);
+        }
+    );
+
+    test('a "not configured" result from geminiService still renders as a clean ok:false, regardless of env state', async () => {
+        jest.spyOn(geminiService, 'interpretFinancialInsight').mockResolvedValue({
+            ok: false,
+            reason: 'AI insight is not configured.',
+        });
         const res = await request(app).get('/api/intelligence/financial-summary').set('Cookie', cookieA);
         expect(res.status).toBe(200);
         expect(res.body.data.ok).toBe(false);

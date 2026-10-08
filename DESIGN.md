@@ -1563,9 +1563,41 @@ for a full management system.
     cache` was created directly on the live Aiven database right after
     pushing this commit, before the next Render deploy, confirmed via
     `SHOW TABLES` — same discipline as the last three schema changes this
-    session. Safe to deploy. Still needs a real `GEMINI_API_KEY` in
-    Render before the feature does anything beyond showing
-    "not configured" there too — that's a separate step, not done here.
+    session. Safe to deploy.
+  - **Real `GEMINI_API_KEY` obtained and confirmed working live,
+    2026-10-08.** A dedicated new Google AI Studio project created
+    specifically for SmartPay (separate from Academia Hub's own
+    `academia-hub-production` key, same reasoning as every other
+    third-party credential this session), added to local `.env`.
+    - **Real bug caught immediately**: the hardcoded default model
+      (`gemini-3.6-flash`, copied from Academia Hub's own default) does
+      not exist for this new key/project — every real call failed with a
+      genuine `503 UNAVAILABLE`, initially indistinguishable from the
+      documented "high demand" gotcha this code already guards against,
+      until `ai.models.list()` was checked directly and confirmed
+      `gemini-3.6-flash` simply isn't among the models available to this
+      key (the newest available flash model is `gemini-3.5-flash`).
+      Copying a sibling project's model default without verifying it
+      against the *new* key would have silently shipped a 503 on every
+      single call. Fixed by changing the default to `gemini-3.5-flash`
+      (still overridable via `GEMINI_MODEL`, unchanged).
+    - Confirmed working with a real call after the fix: real evidence in,
+      a real Gemini-written summary out, correctly citing every number
+      given (including the week-over-week `collectedLast7Days` trend,
+      unprompted) and nothing not in the evidence — exactly the
+      discipline the system instruction asks for.
+    - **Test suite gap closed in the same pass**: the "GEMINI_API_KEY not
+      configured" test's premise stopped being true the moment a real
+      key was added locally — same `hasRealProviderKey`-style gating
+      `sms.integration.test.js` already uses, applied here too
+      (`hasRealGeminiKey`, skips that one test when a real key exists).
+      A second, always-on test now covers the same "renders a clean
+      ok:false" behavior via an explicit mock instead, so the behavior
+      itself stays tested regardless of local env state. Full suite:
+      26/26 suites, 234 passed + 2 skipped (both real-key-gated tests,
+      SMS and this one, now correctly skipped locally).
+    - **Still needs the same key added to Render** before this works in
+      production — not done here, a separate manual env-var step.
 
 ## Future Work
 
