@@ -1559,11 +1559,13 @@ for a full management system.
     in the database (exercising the actual cached-read code path, not a
     mock) and confirmed the "success" rendering — paragraph, highlights,
     "Updated {time}" — displays correctly too.
-  - **Not yet applied to production**: same `CREATE TABLE`-first
-    discipline as the last three schema changes this session — needs to
-    run against the live Aiven database before the next deploy, and
-    needs a real `GEMINI_API_KEY` in Render before the feature does
-    anything beyond showing "not configured" there too.
+  - **Production migration applied proactively**: `financial_insight_
+    cache` was created directly on the live Aiven database right after
+    pushing this commit, before the next Render deploy, confirmed via
+    `SHOW TABLES` — same discipline as the last three schema changes this
+    session. Safe to deploy. Still needs a real `GEMINI_API_KEY` in
+    Render before the feature does anything beyond showing
+    "not configured" there too — that's a separate step, not done here.
 
 ## Future Work
 
