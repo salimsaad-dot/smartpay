@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import Link from "next/link";
+import { CheckCircle2, Bell, XCircle } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
@@ -21,6 +23,65 @@ import {
 } from "@/components/ui";
 
 const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "payment_link", "due_date", "school_momo_number"];
+
+// Same "this school's own number, this calendar month" view already on
+// the Dashboard — added here too since a user naturally checks the page
+// where sending actually happens, not just the overview. No new backend
+// endpoint: reportsController.smsActivity already accepts startDate.
+function UsageSummaryPanel() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    apiRequest(`/reports/sms-activity?startDate=${startOfMonth}`)
+      .then((res) => setData(res.data))
+      .catch((err) => setError(err.message));
+  }, []);
+
+  if (error) return null; // non-critical — the page still works without this panel
+  if (!data) return <LoadingSkeleton lines={1} />;
+
+  // `summary.sent` from the backend is actually "sent OR delivered"
+  // combined — same derivation the Dashboard card already uses to split
+  // it back into "still just sent" vs. "confirmed delivered", kept in
+  // sync rather than inventing a different computation here.
+  const delivered = data.reminders.filter((r) => r.status === "delivered").length;
+  const sentOnly = data.summary.sent - delivered;
+
+  // Literal class strings throughout (not built from a template-literal
+  // tone variable) — Tailwind's build-time scanner can't see a
+  // dynamically-interpolated class name like `bg-[var(--${tone}-wash)]`,
+  // so that pattern silently produces unstyled boxes in production even
+  // though it looks fine in dev. Matches the Dashboard card's own
+  // literal JSX for the identical three stats, deliberately kept in sync.
+  return (
+    <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-[var(--ink)]">SMS Usage This Month</h2>
+        <Link href="/dashboard/reports" className="text-xs font-medium text-[var(--primary)] hover:underline">Other periods</Link>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="rounded-lg bg-[var(--success-wash)] p-3 text-center">
+          <CheckCircle2 size={16} className="mx-auto text-[var(--success)]" />
+          <p className="mt-1 text-lg font-bold text-[var(--ink)]">{sentOnly}</p>
+          <p className="text-[11px] text-[var(--slate-quiet)]">Sent</p>
+        </div>
+        <div className="rounded-lg bg-[var(--primary-wash)] p-3 text-center">
+          <Bell size={16} className="mx-auto text-[var(--primary)]" />
+          <p className="mt-1 text-lg font-bold text-[var(--ink)]">{delivered}</p>
+          <p className="text-[11px] text-[var(--slate-quiet)]">Delivered</p>
+        </div>
+        <div className="rounded-lg bg-[var(--danger-wash)] p-3 text-center">
+          <XCircle size={16} className="mx-auto text-[var(--danger)]" />
+          <p className="mt-1 text-lg font-bold text-[var(--ink)]">{data.summary.failed}</p>
+          <p className="text-[11px] text-[var(--slate-quiet)]">Failed</p>
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-[var(--slate-quiet)]">This is your school&apos;s own SMS count for the current calendar month.</p>
+    </div>
+  );
+}
 
 // For parents with no smartphone/data, the payment link alone is a dead
 // end — this gives every reminder a second, phone-agnostic way to pay
@@ -275,6 +336,7 @@ export default function SmsTemplatesPage() {
     <DashboardShell>
       <PageHeader title="SMS Templates" description="Used for manual fee reminders. A default template is ready to use from day one." />
 
+      <div className="mt-4"><UsageSummaryPanel /></div>
       <div className="mt-4"><MomoNumberPanel showToast={showToast} /></div>
       <div className="mt-4"><FridayAutomationPanel templates={templates} showToast={showToast} /></div>
 

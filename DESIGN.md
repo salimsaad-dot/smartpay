@@ -1457,6 +1457,43 @@ for a full management system.
       card renders correctly in its empty (0/0/0) state with the new
       heading, link, and note; cleaned up the test data afterward. Clean
       frontend build.
+  - **Same usage panel added to SMS Templates, 2026-10-08.** User looked
+    for it on the Dashboard first, then specifically on SMS Templates —
+    the page where sending is actually configured — and it genuinely
+    wasn't there. Added the identical "SMS Usage This Month" panel (same
+    three-stat sent/delivered/failed breakdown, same `startDate`-scoped
+    `reportsController.smsActivity` call, same "this is your own count"
+    note) just above the existing MoMo Number and Friday Automation
+    panels. Also made explicit in response to the user's question: this
+    shows a *count of messages sent*, not a *credit balance remaining* —
+    there is no "messages left" figure anywhere in the app yet, because
+    no credit-balance concept exists at all (that's the Future Work item
+    directly above this one).
+    - **A real Tailwind pitfall caught before it shipped broken**: the
+      first draft built each stat's background/icon color by
+      interpolating a tone variable into the class string at runtime
+      (`` `bg-[var(--${tone}-wash)]` ``). Tailwind's build-time class
+      scanner can't see a dynamically-constructed class name — it has to
+      find the complete literal string somewhere in the source — so this
+      would have compiled clean, looked fine in dev (where some setups
+      are more permissive), and silently rendered as unstyled boxes in
+      the actual production build. Rewritten as three literal JSX blocks
+      instead, matching the Dashboard card's own already-correct pattern
+      exactly rather than introducing a second, divergent way of doing
+      the same thing.
+    - Also fixed a correctness bug in the same draft: it used the
+      backend's `summary.sent` (which is deliberately "sent OR delivered
+      combined," per `reportsController.smsActivity`'s own code comment)
+      directly as the "Delivered" count. The Dashboard card already
+      derives true delivered-only by filtering the raw reminder list for
+      `status === 'delivered'` and subtracting that from `summary.sent`
+      to get "sent but not yet delivered" — this panel now does the
+      identical derivation, not an approximation of it.
+    - Verified visually: registered a fresh test school, navigated
+      straight to SMS Templates, confirmed the panel renders in its
+      empty state with correct colors (confirming the Tailwind fix
+      actually took effect, not just that it compiled), in the right
+      position above the other two panels. Clean frontend build.
 
 ## Future Work
 
