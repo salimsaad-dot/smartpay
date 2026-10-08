@@ -1396,15 +1396,24 @@ for a full management system.
       "can this account receive anything at all," and those are
       genuinely different right now: this works for the account owner
       testing it, not yet for a real customer admin's own email.
-    - **Still outstanding**: `RESEND_API_KEY` isn't set in Render yet —
-      production still can't send anything until that env var is added
-      there too. And sandbox-only delivery means this isn't usable by an
-      actual customer yet regardless of env vars: a verified SmartPay
-      domain in Resend is still needed (not yet decided: a new
-      SmartPay-branded domain, or reusing Academia Hub's existing
-      verified one the way SMS reused mNotify's account under a separate
-      project key) before `RESEND_FROM_EMAIL` can be set to anything
-      real and `emailDeliveryConfigured` can honestly report `true`.
+    - **`RESEND_API_KEY` added to Render and confirmed working live,
+      2026-10-08.** Same key added to production; verified by actually
+      triggering `forgot-password` against the real deployed backend
+      (`https://smartpay-tan.vercel.app`, proxied through to Render) —
+      first confirmed the target email had a real matching account in
+      the live Aiven database (the generic response is identical whether
+      or not a send was attempted, so a 200 alone proves nothing), then
+      confirmed the email was actually received, not just that the API
+      call returned success. Test token rows cleaned up from production
+      afterward.
+    - **Still outstanding**: sandbox-only delivery means this isn't
+      usable by an actual customer yet regardless of env vars — a
+      verified SmartPay domain in Resend is still needed (not yet
+      decided: a new SmartPay-branded domain, or reusing Academia Hub's
+      existing verified one the way SMS reused mNotify's account under a
+      separate project key) before `RESEND_FROM_EMAIL` can be set to
+      anything real and `emailDeliveryConfigured` can honestly report
+      `true`.
 
 ## Decisions Log
 | Date | Decision | Rationale |
