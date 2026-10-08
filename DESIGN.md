@@ -1414,6 +1414,18 @@ for a full management system.
       separate project key) before `RESEND_FROM_EMAIL` can be set to
       anything real and `emailDeliveryConfigured` can honestly report
       `true`.
+  - **Register page password fields fixed, 2026-10-08.** Real gap found
+    by the user while actually registering a school: the password field
+    had no show/hide toggle (Login's already had one) and no Confirm
+    Password field at all — a typo in a brand-new school's only admin
+    password, with no recovery path at the time this was found (the
+    forgot-password flow above didn't exist yet either), would have been
+    a real lockout. Added the same Eye/EyeOff toggle Login already uses,
+    plus a Confirm Password field (its own independent toggle) with a
+    client-side match check before submit. Verified visually: typed
+    mismatched passwords, confirmed the toggle reveals/hides each field
+    independently, confirmed submission is blocked with "Passwords don't
+    match." and the form's other fields stay filled in, not cleared.
 
 ## Decisions Log
 | Date | Decision | Rationale |

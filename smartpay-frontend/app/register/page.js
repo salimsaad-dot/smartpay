@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/Logo";
 import { AuthSplitLayout } from "@/components/AuthSplitLayout";
@@ -26,7 +26,10 @@ export default function RegisterSchoolPage() {
   const { registerSchool } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({ schoolName: "", code: "", adminName: "", email: "", password: "" });
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [codeTouched, setCodeTouched] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -37,6 +40,10 @@ export default function RegisterSchoolPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    if (form.password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
     setSaving(true);
     try {
       await registerSchool(form);
@@ -87,7 +94,39 @@ export default function RegisterSchoolPage() {
           </div>
           <div>
             <label htmlFor="password" className={labelClass}>Password</label>
-            <input id="password" type="password" required minLength={8} autoComplete="new-password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className={inputClass} />
+            <div className="relative">
+              <input
+                id="password" type={showPassword ? "text" : "password"} required minLength={8} autoComplete="new-password"
+                value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                className={`${inputClass} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-2.5 top-1/2 flex -translate-y-1/2 items-center text-[var(--slate-quiet)] hover:text-[var(--slate)]"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="confirmPassword" className={labelClass}>Confirm Password</label>
+            <div className="relative">
+              <input
+                id="confirmPassword" type={showConfirmPassword ? "text" : "password"} required minLength={8} autoComplete="new-password"
+                value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className={`${inputClass} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((s) => !s)}
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                className="absolute right-2.5 top-1/2 flex -translate-y-1/2 items-center text-[var(--slate-quiet)] hover:text-[var(--slate)]"
+              >
+                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           <button
             type="submit"
