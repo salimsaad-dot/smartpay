@@ -1376,16 +1376,20 @@ for a full management system.
       `emailDeliveryConfigured: false` warning (correct, since no
       `RESEND_API_KEY` is set locally), and a real invalid-token
       rejection message on Reset Password.
-    - **Not yet deployed anywhere**: the new `password_reset_tokens`
-      table exists only in the local database — needs the same
-      production-first migration discipline as the last two schema
-      changes before this is deployed. `RESEND_API_KEY`/
-      `RESEND_FROM_EMAIL` also aren't set in Render yet, meaning
-      `emailDeliveryConfigured` will correctly report `false` in
-      production too until a real Resend sender is configured for
-      SmartPay specifically (not yet decided: a new SmartPay-branded
-      sender, or reusing Academia Hub's existing verified domain the way
-      SMS reused mNotify's account under a separate project key).
+    - **Production migration applied proactively**, same
+      production-first discipline as the last two schema changes:
+      `password_reset_tokens` was created directly on the live Aiven
+      database (`smartpay_db`) right after pushing this commit, before
+      the next Render deploy, confirmed via `SHOW TABLES`. Safe to
+      deploy whenever.
+    - **Still outstanding**: `RESEND_API_KEY`/`RESEND_FROM_EMAIL` aren't
+      set in Render yet, meaning `emailDeliveryConfigured` will correctly
+      report `false` in production too until a real Resend sender is
+      configured for SmartPay specifically (not yet decided: a new
+      SmartPay-branded sender, or reusing Academia Hub's existing
+      verified domain the way SMS reused mNotify's account under a
+      separate project key) — the flow works end to end, it just can't
+      actually deliver an email anywhere yet.
 
 ## Decisions Log
 | Date | Decision | Rationale |
