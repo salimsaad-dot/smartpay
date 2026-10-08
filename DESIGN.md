@@ -1643,6 +1643,43 @@ for a full management system.
      a technical one, and shouldn't be guessed at in code before it's
      made.
 
+2. **Per-school Paystack settlement (subaccounts/split payments) — not
+   built yet, caught while actually going through Paystack's live
+   compliance flow, 2026-10-08.** Confirmed by reading
+   `utils/paystackGateway.js`: no `subaccount`/`split` logic exists
+   anywhere in the codebase. The bank/MoMo account entered during
+   Paystack's Compliance setup isn't "where a given school's money
+   goes" — it's SmartPay's one single business settlement account, and
+   *every* school's collected fees land there, with no automatic way to
+   separate or redistribute between schools. For the pilot (one school,
+   using their own MoMo number as that single settlement account), this
+   is fine — their own money lands in their own wallet. It stops being
+   fine the moment a second real school's fees start landing in the
+   first school's account too, mixed together with no system-level way
+   to tell whose money is whose.
+   **Trigger to build this**: before a second real school is onboarded
+   with real fee collection — not before, since there's genuinely
+   nothing to split with only one school.
+   **What it would take**:
+   - Paystack Subaccounts (or Split Payments) — each school gets its own
+     subaccount with its own settlement bank/MoMo details, and the
+     `/transaction/initialize` call (`utils/paystackGateway.js`'s
+     `initializePayment`) passes that school's `subaccount` code so
+     Paystack settles directly to the right destination per-transaction,
+     rather than everything pooling into SmartPay's own account.
+   - A place to store each school's subaccount code (a new
+     `schools.paystack_subaccount_code` column, or similar) and an admin
+     flow for a school to provide/verify their own settlement account —
+     this is itself a real onboarding step each new school would need to
+     complete, not just a backend field.
+   - A decision on SmartPay's own revenue model once this exists — if
+     schools settle directly, how does SmartPay get paid (a percentage
+     split on each subaccount transaction, a separate subscription
+     charge, etc.)? Paystack's split-payment API supports a percentage
+     cut automatically, but which model SmartPay actually uses is a
+     business decision belonging with Future Work item 1's top-up flow
+     question, not something to guess at here.
+
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
