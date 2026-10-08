@@ -42,11 +42,18 @@ export default function DashboardPage() {
 
     async function load() {
       try {
+        // Scoped to the current calendar month, not all-time — this
+        // card answers "how much SMS have I used this billing period,"
+        // which matters once multiple schools draw from one shared SMS
+        // wallet and each needs to see their own real number rather
+        // than take anyone's word for it. The full Reports > SMS
+        // Activity page still covers any custom date range.
+        const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
         const [collectionRes, arrearsRes, paymentsRes, smsRes, yearsRes, termsRes] = await Promise.all([
           apiRequest("/reports/collection-summary"),
           apiRequest("/arrears"),
           apiRequest("/payments"),
-          apiRequest("/reports/sms-activity"),
+          apiRequest(`/reports/sms-activity?startDate=${startOfMonth}`),
           apiRequest("/academic-years"),
           apiRequest("/terms"),
         ]);
@@ -198,9 +205,12 @@ export default function DashboardPage() {
           </div>
         </Card2>
 
-        {/* Reminder Activity */}
+        {/* Reminder Activity — this calendar month, scoped per school */}
         <Card2 className="p-5">
-          <h2 className="font-semibold text-[var(--ink)]">Reminder Activity</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-[var(--ink)]">SMS Usage This Month</h2>
+            <Link href="/dashboard/reports" className="text-xs font-medium text-[var(--primary)] hover:underline">Other periods</Link>
+          </div>
           {!smsReminders ? (
             <div className="mt-3 h-24 animate-pulse rounded-lg bg-[var(--hover)]" />
           ) : (
@@ -227,7 +237,7 @@ export default function DashboardPage() {
               )}
               <div className="mt-3 flex items-start gap-2 rounded-lg bg-[var(--hover)] p-2.5 text-xs text-[var(--slate-quiet)]">
                 <Info size={14} className="mt-0.5 flex-shrink-0" />
-                SMS reminders are sent automatically for outstanding fees based on your configured templates.
+                This is your school&apos;s own SMS count for the current calendar month, resetting on the 1st.
               </div>
             </>
           )}

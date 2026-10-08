@@ -1426,6 +1426,37 @@ for a full management system.
     mismatched passwords, confirmed the toggle reveals/hides each field
     independently, confirmed submission is blocked with "Passwords don't
     match." and the form's other fields stay filled in, not cleared.
+  - **Per-school SMS usage visibility, 2026-10-08.** Raised by the user
+    thinking ahead to multiple schools sharing one SMS wallet (Arkesel):
+    with no per-school visibility, "School A is sending more than School
+    B" becomes an unresolvable argument — neither school has their own
+    number to check, only the platform owner's word for it. Checked
+    first rather than assumed: every `sms_reminders` row is already
+    tagged with `school_id` (full per-school attribution already
+    exists), and `reportsController.smsActivity` already accepts an
+    optional `startDate` — so this needed no backend change at all, only
+    surfacing what already existed in a way that actually answers the
+    trust question.
+    - Dashboard's existing "Reminder Activity" card was all-time, not
+      scoped to a billing period — not actually useful for "have I used
+      too much this month." Renamed to "SMS Usage This Month," scoped to
+      the current calendar month via the existing `startDate` param, with
+      a "This is your school's own SMS count..." note making explicit
+      that this number is theirs alone, not a shared/platform-wide
+      figure. A new "Other periods" link to Reports covers any custom
+      date range, unchanged.
+    - This is visibility only, not enforcement — nothing stops a school
+      from using more than "their share" of a shared wallet, it just
+      makes usage checkable rather than disputed. Real per-school prepaid
+      credit with a hard cap (a `schools.sms_credits` balance, deducted
+      per send, blocking at zero) is the next step up, only needed once
+      this is multiple unrelated paying customers rather than a few
+      schools the user knows directly — deliberately not built yet,
+      flagged as the next step when that's true.
+    - Verified visually: registered a fresh test school, confirmed the
+      card renders correctly in its empty (0/0/0) state with the new
+      heading, link, and note; cleaned up the test data afterward. Clean
+      frontend build.
 
 ## Decisions Log
 | Date | Decision | Rationale |
