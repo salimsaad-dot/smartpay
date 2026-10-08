@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatMoney, formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
+import { Avatar } from "@/components/ui2";
 import {
   EmptyState,
   ErrorState,
@@ -12,8 +15,13 @@ import {
   LoadingSkeleton,
   MetricCard,
   PageHeader,
+  StatusBadge,
   inputClass,
+  statusTone,
 } from "@/components/ui";
+
+const METHOD_LABELS = { cash: "Cash", mobile_money: "Mobile Money", bank_transfer: "Bank Transfer", card: "Card", other: "Other" };
+const METHOD_COLORS = ["var(--primary)", "var(--success)", "var(--warning)", "var(--violet)", "var(--slate-quiet)"];
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -70,6 +78,7 @@ function FilterBar({ classes, terms, filters, setFilters, extra }) {
 function CollectionSummaryTab({ classes, terms, currency }) {
   const [filters, setFilters] = useState({ classId: "", termId: "" });
   const [data, setData] = useState(null);
+  const [payments, setPayments] = useState(null);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -80,7 +89,27 @@ function CollectionSummaryTab({ classes, terms, currency }) {
     apiRequest(`/reports/collection-summary?${params.toString()}`)
       .then((res) => setData(res.data))
       .catch((err) => setLoadError(err.message));
+    // Reuses GET /payments (with the classId/termId filters added
+    // specifically for this) rather than a new endpoint — same data the
+    // Payments page already shows, just grouped by method here.
+    apiRequest(`/payments?${params.toString()}&status=success`)
+      .then((res) => setPayments(res.data))
+      .catch(() => setPayments([]));
   }, [filters.classId, filters.termId]);
+
+  const methodBreakdown = useMemo(() => {
+    if (!payments) return [];
+    const totals = {};
+    for (const p of payments) {
+      const key = p.method || "other";
+      totals[key] = (totals[key] || 0) + Number(p.amount);
+    }
+    return Object.entries(totals)
+      .filter(([, amount]) => amount > 0)
+      .map(([method, amount]) => ({ name: METHOD_LABELS[method] || method, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [payments]);
+  const methodTotal = methodBreakdown.reduce((sum, m) => sum + m.amount, 0);
 
   return (
     <div className="space-y-4">
@@ -95,6 +124,37 @@ function CollectionSummaryTab({ classes, terms, currency }) {
           </div>
         )}
       </TabFrame>
+
+      {methodBreakdown.length > 0 && (
+        <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-card)]">
+          <h3 className="font-semibold text-[var(--ink)]">Collection by Payment Method</h3>
+          <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
+            <div className="h-56 w-full sm:w-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={methodBreakdown} dataKey="amount" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                    {methodBreakdown.map((entry, i) => <Cell key={entry.name} fill={METHOD_COLORS[i % METHOD_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v) => formatMoney(v, currency)} contentStyle={{ borderRadius: 8, borderColor: "var(--border)", fontSize: 13 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <ul className="w-full space-y-2 text-sm">
+              {methodBreakdown.map((m, i) => (
+                <li key={m.name} className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-[var(--slate)]">
+                    <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: METHOD_COLORS[i % METHOD_COLORS.length] }} />
+                    {m.name}
+                  </span>
+                  <span className="font-medium text-[var(--ink)]">
+                    {formatMoney(m.amount, currency)} <span className="text-xs text-[var(--slate-quiet)]">({methodTotal > 0 ? ((m.amount / methodTotal) * 100).toFixed(0) : 0}%)</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -113,6 +173,20 @@ function OutstandingFeesTab({ classes, terms, currency }) {
       .catch((err) => setLoadError(err.message));
   }, [filters.classId, filters.termId, filters.minBalance, filters.maxBalance]);
 
+  const stats = useMemo(() => {
+    if (!data) return null;
+    const partial = data.filter((r) => r.status === "partially_paid");
+    const unpaid = data.filter((r) => r.status === "unpaid");
+    return {
+      totalOutstanding: data.reduce((sum, r) => sum + Number(r.balance), 0),
+      studentCount: data.length,
+      partialAmount: partial.reduce((sum, r) => sum + Number(r.balance), 0),
+      partialCount: partial.length,
+      unpaidAmount: unpaid.reduce((sum, r) => sum + Number(r.balance), 0),
+      unpaidCount: unpaid.length,
+    };
+  }, [data]);
+
   return (
     <div className="space-y-4">
       <FilterBar
@@ -125,19 +199,44 @@ function OutstandingFeesTab({ classes, terms, currency }) {
           </>
         }
       />
+
+      {stats && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <MetricCard label="Total Outstanding" value={formatMoney(stats.totalOutstanding, currency)} hint={`${stats.studentCount} invoice${stats.studentCount === 1 ? "" : "s"}`} tone="danger" />
+          <MetricCard label="Partially Paid" value={formatMoney(stats.partialAmount, currency)} hint={`${stats.partialCount} invoice${stats.partialCount === 1 ? "" : "s"}`} tone="warning" />
+          <MetricCard label="Unpaid" value={formatMoney(stats.unpaidAmount, currency)} hint={`${stats.unpaidCount} invoice${stats.unpaidCount === 1 ? "" : "s"}`} />
+        </div>
+      )}
+
+      {/* This stays an exportable report, not an actionable workflow —
+          bulk reminder-sending already lives on Arrears, deliberately
+          not duplicated here (see arrearsController.js's own comment on
+          this exact distinction). Pointed there instead of faking a
+          bulk-actions control that doesn't belong on this tab. */}
+      <p className="text-xs text-[var(--slate-quiet)]">
+        Need to send reminders for these balances? Use <Link href="/dashboard/arrears" className="font-medium text-[var(--primary)] hover:underline">Arrears</Link> — this report is for viewing and exporting.
+      </p>
+
       <TabFrame loadError={loadError} loading={!data}>
         {data && (
           data.length === 0 ? <EmptyState>No outstanding balances.</EmptyState> : (
             <div className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)]">
               <table className="w-full text-left text-sm">
                 <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                  <th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Parent</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Last Payment</th>
+                  <th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Parent</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Last Payment</th>
                 </tr></thead>
                 <tbody>
                   {data.map((r, i) => (
                     <tr key={i} className="border-b border-[var(--border)] last:border-b-0">
-                      <td className="p-3 font-medium">{r.studentName}</td><td className="p-3">{r.parentName || "—"}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={r.studentName} size={28} />
+                          <span className="font-medium text-[var(--ink)]">{r.studentName}</span>
+                        </div>
+                      </td>
+                      <td className="p-3">{r.parentName || "—"}</td>
                       <td className="p-3">{r.className}</td><td className="p-3">{r.termName}</td>
+                      <td className="p-3"><StatusBadge tone={statusTone(r.status)}>{r.status === "partially_paid" ? "Partial" : "Unpaid"}</StatusBadge></td>
                       <td className="p-3 font-semibold text-[var(--danger)]">{formatMoney(r.balance, currency)}</td>
                       <td className="p-3">{r.lastPaymentDate ? formatDate(r.lastPaymentDate) : "Never"}</td>
                     </tr>
@@ -166,6 +265,15 @@ function PaymentHistoryTab({ currency }) {
       .catch((err) => setLoadError(err.message));
   }, [filters.startDate, filters.endDate, filters.method, filters.status]);
 
+  const extraStats = useMemo(() => {
+    if (!data) return null;
+    const successful = data.payments.filter((p) => p.status === "success");
+    return {
+      averageAmount: successful.length > 0 ? data.summary.totalCollected / successful.length : 0,
+      successRate: data.summary.count > 0 ? (successful.length / data.summary.count) * 100 : 0,
+    };
+  }, [data]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
@@ -182,10 +290,12 @@ function PaymentHistoryTab({ currency }) {
       <TabFrame loadError={loadError} loading={!data}>
         {data && (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <MetricCard label="Total Collected" value={formatMoney(data.summary.totalCollected, currency)} tone="success" />
               <MetricCard label="Online" value={formatMoney(data.summary.onlineCollected, currency)} />
               <MetricCard label="Manual" value={formatMoney(data.summary.manualCollected, currency)} />
+              <MetricCard label="Average Amount" value={formatMoney(extraStats.averageAmount, currency)} />
+              <MetricCard label="Success Rate" value={`${extraStats.successRate.toFixed(0)}%`} />
             </div>
             {data.payments.length === 0 ? <EmptyState>No payments yet.</EmptyState> : (
               <div className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)]">
@@ -280,6 +390,11 @@ function SmsActivityTab() {
       .catch((err) => setLoadError(err.message));
   }, [filters.startDate, filters.endDate, filters.status]);
 
+  const successRate = useMemo(() => {
+    if (!data || data.summary.total === 0) return 0;
+    return (data.summary.sent / data.summary.total) * 100;
+  }, [data]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
@@ -290,10 +405,11 @@ function SmsActivityTab() {
       <TabFrame loadError={loadError} loading={!data}>
         {data && (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <MetricCard label="Sent" value={String(data.summary.sent)} tone="success" />
               <MetricCard label="Failed" value={String(data.summary.failed)} tone={data.summary.failed > 0 ? "danger" : "default"} />
               <MetricCard label="Total" value={String(data.summary.total)} />
+              <MetricCard label="Success Rate" value={`${successRate.toFixed(0)}%`} />
             </div>
             {data.reminders.length === 0 ? <EmptyState>No reminders sent yet.</EmptyState> : (
               <div className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)]">

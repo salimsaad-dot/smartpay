@@ -52,7 +52,7 @@ exports.outstandingFees = async (req, res) => {
         const { classId, termId, minBalance, maxBalance, format } = req.query;
         const params = [req.user.schoolId];
         let sql = `
-            SELECT i.invoice_no, i.total, i.paid_amount, i.balance,
+            SELECT i.invoice_no, i.total, i.paid_amount, i.balance, i.status,
                    st.first_name, st.last_name, c.name AS class_name, t.name AS term_name,
                    pr.full_name AS parent_name, pr.phone AS parent_phone,
                    (SELECT MAX(paid_at) FROM payments WHERE invoice_id = i.id AND status = 'success') AS last_payment_date
@@ -80,13 +80,14 @@ exports.outstandingFees = async (req, res) => {
             total: r.total,
             paid: r.paid_amount,
             balance: r.balance,
+            status: r.status,
             lastPaymentDate: r.last_payment_date || '',
         }));
 
         if (format === 'csv') {
             return sendCsv(res, 'outstanding-fees.csv', data, [
                 { key: 'studentName', label: 'Student' }, { key: 'parentName', label: 'Parent/Guardian' }, { key: 'parentPhone', label: 'Phone' },
-                { key: 'className', label: 'Class' }, { key: 'termName', label: 'Term' }, { key: 'invoiceNo', label: 'Invoice No.' },
+                { key: 'className', label: 'Class' }, { key: 'termName', label: 'Term' }, { key: 'status', label: 'Status' }, { key: 'invoiceNo', label: 'Invoice No.' },
                 { key: 'total', label: 'Total' }, { key: 'paid', label: 'Paid' }, { key: 'balance', label: 'Balance' }, { key: 'lastPaymentDate', label: 'Last Payment' },
             ]);
         }

@@ -6,7 +6,7 @@ const VALID_METHODS = ['cash', 'mobile_money', 'bank_transfer', 'other'];
 
 exports.list = async (req, res) => {
     try {
-        const { invoiceId, studentId, method, status, startDate, endDate } = req.query;
+        const { invoiceId, studentId, method, status, startDate, endDate, classId, termId } = req.query;
         const params = [req.user.schoolId];
         let sql = `
             SELECT p.*, s.admission_no, s.first_name, s.last_name, inv.invoice_no
@@ -20,6 +20,12 @@ exports.list = async (req, res) => {
         if (status) { sql += ' AND p.status = ?'; params.push(status); }
         if (startDate) { sql += ' AND DATE(p.created_at) >= ?'; params.push(startDate); }
         if (endDate) { sql += ' AND DATE(p.created_at) <= ?'; params.push(endDate); }
+        // Added for Reports > Collection Summary's payment-method
+        // breakdown, which needs to respect the same class/term filters
+        // the rest of that tab already uses — joins already present
+        // (students, invoices), just two more optional WHERE clauses.
+        if (classId) { sql += ' AND s.class_id = ?'; params.push(classId); }
+        if (termId) { sql += ' AND inv.term_id = ?'; params.push(termId); }
         sql += ' ORDER BY p.paid_at DESC';
 
         const [payments] = await pool.query(sql, params);

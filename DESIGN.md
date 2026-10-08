@@ -1650,6 +1650,59 @@ for a full management system.
     the matching template. No backend changes at all — full suite still
     26/26 suites, 234 passed + 2 skipped. Clean frontend build. Test data
     cleaned up afterward.
+- **Reports page structural upgrade — SHIPPED 2026-10-08.** User uploaded
+  a second reference redesign mockup (4 more pages, numbered 13-16,
+  continuing the same spec sequence) covering Collection Summary,
+  Outstanding Fees, Payment History, and SMS Activity, and again chose
+  **synthesize**, same approach as the Payments/Reminders/SMS Templates
+  pass above. Checked real backend support before adopting anything:
+  - **Skipped, not built**: a "Message Types" breakdown on SMS Activity —
+    `sms_reminders` has no category/type column to break down by (unlike
+    `sms_templates.type`, which is a template property, not a sent-message
+    property). A refunds stat on Payment History — no refunds
+    table/feature exists anywhere in the codebase. The mockup's bulk
+    checkboxes/"Bulk Actions" on Outstanding Fees — this page is
+    deliberately an export/view report, not an actionable workflow
+    (bulk reminder-sending already lives on Arrears); added a small note
+    linking to Arrears instead of faking a bulk-actions control that
+    doesn't belong here, same pattern as the "Send Reminders" button
+    added to the Reminders page in the prior round.
+  - **Collection Summary**: added a "Collection by Payment Method" donut
+    (Recharts `PieChart`) with a colored legend, breaking down
+    `collected` by `payments.method`. Required one small backend addition
+    — `paymentController.list` now accepts optional `classId`/`termId`
+    query params (joins to `students`/`invoices` already existed for the
+    classId/termId filter added earlier for Collection Summary's own
+    filters) — so the breakdown respects the same Class/Term filters as
+    the rest of the tab, not a silently-wider unfiltered number.
+  - **Outstanding Fees**: added Total Outstanding / Partially Paid /
+    Unpaid stat cards (computed client-side from the already-fetched
+    report rows) and a `StatusBadge` + `Avatar` per row. Required adding
+    `status` to `reportsController.outstandingFees`'s SELECT, mapped
+    response, and CSV export — the endpoint returned `balance` but not
+    whether an invoice was unpaid vs. partially paid, which the new stat
+    cards and badge both need.
+  - **Payment History**: added Average Amount and Success Rate stat
+    cards alongside the existing Total/Online/Manual ones, computed
+    client-side from `data.payments` (status per row) and the existing
+    `summary.count`. No backend change — the data was already there.
+  - **SMS Activity**: added a Success Rate stat card (sent ÷ total),
+    computed client-side from the existing summary. No backend change.
+  - Verified visually end-to-end against a freshly registered school
+    with real seeded data (5 students across paid/partially-paid/unpaid
+    invoices, 4 real payments across 3 different methods, 5
+    `sms_reminders` rows seeded directly at varied statuses rather than
+    spending real SMS credit for a screenshot) — confirmed the donut
+    renders correct percentages, Outstanding Fees' 3 stat cards and
+    status badges match the seeded unpaid/partial split exactly, Payment
+    History's Average Amount (GHS 350.00) and Success Rate (100%) are
+    correct for the 4 seeded payments, and SMS Activity's Success Rate
+    (80%) is correct for 4 sent/delivered out of 5. Backend: new
+    `classId`/`termId` payments filter test and the outstanding-fees
+    `status` assertion both added and passing — full suite 26/26 suites,
+    235 passed + 2 skipped. Clean frontend build. No production migration
+    needed (existing-query extensions only, no new columns/tables). Test
+    data cleaned up afterward.
 
 ## Future Work
 

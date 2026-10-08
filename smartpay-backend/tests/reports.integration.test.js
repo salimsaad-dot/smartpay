@@ -101,12 +101,13 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         expect(Number(res.body.data.expected)).toBe(1000);
     });
 
-    test('outstanding fees report excludes the fully-paid invoice', async () => {
+    test('outstanding fees report excludes the fully-paid invoice and includes status', async () => {
         const res = await request(app).get('/api/reports/outstanding-fees').set('Cookie', cookieA);
         expect(res.status).toBe(200);
         expect(res.body.data).toHaveLength(1);
         expect(res.body.data[0].studentName).toBe('Yaw Mensah');
         expect(Number(res.body.data[0].balance)).toBe(300);
+        expect(['unpaid', 'partially_paid']).toContain(res.body.data[0].status);
     });
 
     test('outstanding fees report exports as CSV with a header row', async () => {

@@ -7,6 +7,7 @@ describe('payments — manual payment recording, voiding, and balance recalculat
     let cookieA, cookieB;
     let schoolIdA;
     let invoice1Id, invoice2Id;
+    let classIdA, termIdA;
 
     async function registerSchool(suffix) {
         const res = await request(app)
@@ -33,10 +34,10 @@ describe('payments — manual payment recording, voiding, and balance recalculat
 
         const termRes = await request(app).post('/api/terms').set('Cookie', cookieA)
             .send({ academicYearId: yearIdA, name: 'Term 1', startDate: '2026-09-01', endDate: '2026-12-12' });
-        const termIdA = termRes.body.data.id;
+        termIdA = termRes.body.data.id;
 
         const classRes = await request(app).post('/api/classes').set('Cookie', cookieA).send({ name: 'Basic 1' });
-        const classIdA = classRes.body.data.id;
+        classIdA = classRes.body.data.id;
 
         const s1 = await request(app).post('/api/students').set('Cookie', cookieA)
             .send({ admissionNo: `${MARKER}-S1`, firstName: 'Kofi', lastName: 'Mensah', classId: classIdA, academicYearId: yearIdA });
@@ -201,6 +202,14 @@ describe('payments — manual payment recording, voiding, and balance recalculat
 
         const noneInThePast = await request(app).get('/api/payments?startDate=2000-01-01&endDate=2000-01-02').set('Cookie', cookieA);
         expect(noneInThePast.body.data).toHaveLength(0);
+    });
+
+    test('GET /payments filters by classId/termId (added for Collection Summary\'s payment-method breakdown, which needs to respect the same filters as the rest of that tab)', async () => {
+        const matching = await request(app).get(`/api/payments?classId=${classIdA}&termId=${termIdA}`).set('Cookie', cookieA);
+        expect(matching.body.data.length).toBeGreaterThan(0);
+
+        const noneForWrongClass = await request(app).get(`/api/payments?classId=${classIdA + 999999}`).set('Cookie', cookieA);
+        expect(noneForWrongClass.body.data).toHaveLength(0);
     });
 
     test('a payment against a voided invoice is rejected', async () => {
