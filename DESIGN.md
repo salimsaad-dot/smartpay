@@ -1382,14 +1382,29 @@ for a full management system.
       database (`smartpay_db`) right after pushing this commit, before
       the next Render deploy, confirmed via `SHOW TABLES`. Safe to
       deploy whenever.
-    - **Still outstanding**: `RESEND_API_KEY`/`RESEND_FROM_EMAIL` aren't
-      set in Render yet, meaning `emailDeliveryConfigured` will correctly
-      report `false` in production too until a real Resend sender is
-      configured for SmartPay specifically (not yet decided: a new
-      SmartPay-branded sender, or reusing Academia Hub's existing
-      verified domain the way SMS reused mNotify's account under a
-      separate project key) — the flow works end to end, it just can't
-      actually deliver an email anywhere yet.
+    - **Real Resend sender added and confirmed working, 2026-10-08.** A
+      dedicated "SmartPay" API key created in Resend (separate key from
+      Academia Hub's, same reasoning as SMS's separate mNotify project
+      key), added to local `.env` as `RESEND_API_KEY`.
+      `RESEND_FROM_EMAIL` deliberately left unset for now, so sending
+      goes through Resend's sandbox sender — which only delivers to the
+      Resend account owner's own signup email. Tested live: a real
+      `forgot-password` call against the real local backend, confirmed
+      actually received in a real inbox (not just a clean API response).
+      `emailDeliveryConfigured` correctly still reports `false` in this
+      state — that flag means "a verified domain is configured," not
+      "can this account receive anything at all," and those are
+      genuinely different right now: this works for the account owner
+      testing it, not yet for a real customer admin's own email.
+    - **Still outstanding**: `RESEND_API_KEY` isn't set in Render yet —
+      production still can't send anything until that env var is added
+      there too. And sandbox-only delivery means this isn't usable by an
+      actual customer yet regardless of env vars: a verified SmartPay
+      domain in Resend is still needed (not yet decided: a new
+      SmartPay-branded domain, or reusing Academia Hub's existing
+      verified one the way SMS reused mNotify's account under a separate
+      project key) before `RESEND_FROM_EMAIL` can be set to anything
+      real and `emailDeliveryConfigured` can honestly report `true`.
 
 ## Decisions Log
 | Date | Decision | Rationale |
