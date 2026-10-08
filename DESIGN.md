@@ -1279,6 +1279,46 @@ for a full management system.
       database (`smartpay_db`) right after pushing this commit and
       *before* the next Render deploy, confirmed via `SHOW COLUMNS`. Not
       left to be remembered or discovered via a production 500.
+  - **Login/register hero image, 2026-10-07.** The left panel on Login
+    and Register (`AuthSplitLayout`, shared by both) had no real image —
+    just a plain gradient. User supplied a real photo
+    (`smartpay redesigned/login image.jpg`, schoolchildren in uniform),
+    copied into the frontend as `public/login-hero.jpg` and set as the
+    panel's background via a dark navy gradient scrim
+    (`linear-gradient(135deg, rgba(15,23,42,.82), rgba(15,23,42,.60))`)
+    layered over the photo, with the heading/body/feature text switched
+    to explicit white/white-with-opacity rather than the theme-driven
+    navy/slate variables they used before.
+    - The `Logo`/`LogoMark` components (shared elsewhere — `DashboardShell`
+      sidebar, etc.) read their ink color from `--brand-navy` and
+      `--slate-quiet` CSS variables, which flip between dark and light
+      hex values depending on site theme — on a dark photo scrim, the
+      *light-mode* value of `--brand-navy` (`#0F172A`, near-black) would
+      have made the logo's graduation-cap icon nearly invisible. Fixed by
+      scoping `--brand-navy: #FFFFFF` and `--slate-quiet:
+      rgba(255,255,255,.75)` as inline-style overrides on just this one
+      panel's wrapper `div` — CSS custom properties cascade, so
+      `Logo`/`LogoMark` render correctly here without any change to the
+      shared components themselves (which still need to work normally
+      everywhere else, in both themes). This panel is now always a
+      dark-photo panel regardless of the site's own light/dark toggle,
+      which is the correct behavior for a background photo, not a bug.
+    - **Actually verified visually**, not just via a clean build — this
+      is a purely visual change, so a build passing proves nothing about
+      whether it looks right. Installed Puppeteer + Chromium (not
+      previously present in this exact `node_modules`, though earlier
+      phases of this project clearly used it before, per the many
+      existing QA screenshots in the scratchpad) and took real screenshots
+      of both `/login` and `/register` at 1440×900: text is fully legible
+      over the photo, the icon badges keep their own contrast, and the
+      overall composition reads clean and professional. Also confirmed
+      the panel is unaffected by the site's dark-mode toggle, as intended
+      (the override is a fixed inline style, not theme-reactive).
+    - The source image is 736×736 (66KB) — on a very large/wide desktop
+      screen this could read slightly soft since it's being stretched
+      wider than its native resolution via `background-size: cover`; not
+      a problem at the 1440px width actually tested, worth knowing if a
+      future higher-resolution version becomes available.
 
 ## Decisions Log
 | Date | Decision | Rationale |
