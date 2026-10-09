@@ -1703,6 +1703,91 @@ for a full management system.
     235 passed + 2 skipped. Clean frontend build. No production migration
     needed (existing-query extensions only, no new columns/tables). Test
     data cleaned up afterward.
+- **Fee management Phase 1 — validated fee types: SHIPPED 2026-10-09
+  (local; production migration pending).** First of a 6-phase plan
+  responding to a real headmaster request (relayed via a written
+  requirements doc) to make fee configuration reflect the different
+  charge categories the school actually collects (feeding, transport,
+  uniforms, exam fees, etc.), not just general "school fees." A full
+  audit against the live codebase was done before any code changed —
+  see the doc's own repository-audit section — confirming "separate
+  invoices per fee type" already worked architecturally (one
+  `fee_structure` per type already produces one independent invoice),
+  so the only real gap was that `fee_structures.name`/
+  `fee_structure_items.name` were free text, not a validated category.
+  Scope for this phase was narrowed through direct questions back to the
+  user rather than assumed: fee types are **customizable per school**
+  (not a fixed enum), optional-fee student targeting will be a
+  **reusable per-student flag** (Phase 2, not built yet), frequency will
+  be **display-only** (Phase 3), due dates will be **admin-set at
+  generation time** (Phase 2), and checkout stays **one invoice at a
+  time** (no change, matches the doc's own guardrail against building
+  payment-splitting).
+  - **New `fee_types` table** (school-scoped, `name` + `status`
+    active/inactive, same archive-not-delete convention as `classes` —
+    no rename endpoint, matching that same convention exactly).
+    `fee_structures` gets a new required `fee_type_id` FK; `name` stays
+    as a snapshot of the type's label at creation time (fee types can't
+    be renamed, only deactivated, so this can't drift). The old
+    `UNIQUE(term_id, class_id, name)` constraint became
+    `UNIQUE(term_id, class_id, fee_type_id)` — the actually-correct
+    identity now that type is validated, and what makes "one Feeding
+    structure per class per term" a real enforced rule instead of an
+    accident of free-text matching.
+  - **Every school is auto-seeded with the headmaster's 13-item list**
+    (School Fees, Feeding, School Uniform, Wednesday/Thursday/Friday
+    Wear, Exam Fees/Mock, Textbook/Stationery, Transportation, BECE
+    Registration, Extra Classes, Graduation Fees, T-shirt/Lacoste,
+    transcribed as-is per the user's explicit choice — wording can be
+    fixed later since the table is editable, not a code change) at
+    registration time, same transaction as the existing default SMS
+    template seed in `authController.registerSchool`.
+  - **`scripts/migrate-fee-types.js`** — idempotent, re-runnable:
+    creates the table, seeds every *existing* school (not just new
+    ones), adds `fee_type_id` nullable, backfills it from each
+    structure's current free-text name (matching an existing type by
+    name, or creating one from the structure's own name if nothing
+    matches — preserving historical meaning exactly rather than
+    remapping to the closest default), then only once verified
+    NULL-free: sets NOT NULL, adds the FK, and swaps the unique index.
+    A real ordering bug was caught running this locally: MySQL refused
+    to drop the old unique index because `fk_fs_term` was silently
+    depending on it for its required index coverage on `term_id` — fixed
+    by adding the new index before dropping the old one, not after.
+    Backfill logic itself was verified against simulated legacy data (a
+    structure with a custom name and one matching a default type), not
+    just reasoned about.
+  - **New `/dashboard/fee-types` page** (list + add + activate/
+    deactivate, mirroring `classController`'s exact list/create/
+    updateStatus shape) added to the sidebar's "Fees & payments" group,
+    above Fee Structures. The Fee Structures form's free-text "Structure
+    Name" field became a dropdown sourced from active fee types only.
+  - New tests: fee-type validation (missing/unknown/cross-tenant
+    `feeTypeId` all rejected), the new per-type uniqueness constraint,
+    a same-term/class-different-type structure correctly allowed (the
+    whole point), plus two new tenant-isolation checks for the `fee_types`
+    resource itself in the dedicated cross-tenant audit suite. Every one
+    of the 11 existing test files that create a fee structure needed
+    updating to fetch a real `feeTypeId` first (the create endpoint is a
+    breaking change, deliberately — no backward-compatible free-text
+    fallback was kept, since the whole point is a validated category).
+    All 20 files that register a school (not just the 11) also needed a
+    new `fee_types` cleanup line in `afterAll`, since registration now
+    always seeds rows that block the final `schools` delete on an FK
+    otherwise — caught by running the full suite, not assumed. 26/26
+    suites, 241 passed + 2 skipped (up from 235 — 6 new fee-type tests).
+    Clean frontend build. Live-verified via Puppeteer against a freshly
+    registered school: all 13 default types listed, deactivating
+    T-shirt/Lacoste correctly dropped it from the Fee Structures
+    dropdown (12 remaining, confirmed by reading the actual option list,
+    not just the UI), and a real "Feeding" fee structure was created
+    end-to-end through the real form.
+  - **Not yet done**: the migration has only been run against the local
+    dev database. Per this project's own standing discipline (a past
+    incident shipped code before its migration reached production and
+    broke login), this must run against the live Aiven database before
+    or immediately alongside the next deploy — tracked as the next step,
+    not forgotten.
 
 ## Future Work
 

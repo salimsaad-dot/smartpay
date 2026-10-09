@@ -51,8 +51,10 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [mensahParentId, kofiStudentId]);
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [mensahParentId, yawStudentId]);
 
+        const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
+        const feeTypeIdA = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
         const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
-            academicYearId: yearIdA, termId: termIdA, classId: classIdA, name: 'Term 1 Fees',
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdA,
             items: [{ name: 'Tuition', amount: 400 }, { name: 'ICT', amount: 100 }],
         });
         await request(app).post('/api/invoices/generate').set('Cookie', cookieA).send({ feeStructureId: fsRes.body.data.id });
@@ -77,6 +79,7 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         await db.query('DELETE FROM invoices WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id IN (SELECT id FROM fee_structures WHERE school_id = ?)', [schoolIdA]);
         await db.query('DELETE FROM fee_structures WHERE school_id = ?', [schoolIdA]);
+        await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM parents WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM students WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM classes WHERE school_id = ?', [schoolIdA]);

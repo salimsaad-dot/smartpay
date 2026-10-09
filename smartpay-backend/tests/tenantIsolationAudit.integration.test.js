@@ -57,8 +57,10 @@ describe('Cross-tenant isolation audit — every resource type, real DB, real HT
         await request(app).post(`/api/students/${ids.studentId}/parents`).set('Cookie', cookieA)
             .send({ parentId: ids.parentId, relationship: 'Mother' });
 
+        const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
+        ids.feeTypeId = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
         const fs = await request(app).post('/api/fee-structures').set('Cookie', cookieA)
-            .send({ academicYearId: ids.yearId, termId: ids.termId, classId: ids.classId, name: 'Term 1 Fees', items: [{ name: 'Tuition', amount: 500 }] });
+            .send({ academicYearId: ids.yearId, termId: ids.termId, classId: ids.classId, feeTypeId: ids.feeTypeId, items: [{ name: 'Tuition', amount: 500 }] });
         ids.feeStructureId = fs.body.data.id;
 
         await request(app).post('/api/invoices/generate').set('Cookie', cookieA).send({ feeStructureId: ids.feeStructureId });
@@ -87,6 +89,7 @@ describe('Cross-tenant isolation audit — every resource type, real DB, real HT
         await db.query('DELETE FROM invoices WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id IN (SELECT id FROM fee_structures WHERE school_id = ?)', [schoolIdA]);
         await db.query('DELETE FROM fee_structures WHERE school_id = ?', [schoolIdA]);
+        await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM parents WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM students WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM classes WHERE school_id = ?', [schoolIdA]);
@@ -139,6 +142,14 @@ describe('Cross-tenant isolation audit — every resource type, real DB, real HT
         }],
         ['GET /fee-structures/:id 404s for School A\'s structure', async () => {
             const res = await request(app).get(`/api/fee-structures/${ids.feeStructureId}`).set('Cookie', cookieB);
+            expect(res.status).toBe(404);
+        }],
+        ['GET /fee-types does not include School A\'s fee type', async () => {
+            const res = await request(app).get('/api/fee-types').set('Cookie', cookieB);
+            expect(res.body.data.find((t) => t.id === ids.feeTypeId)).toBeUndefined();
+        }],
+        ['PATCH /fee-types/:id/status 404s for School A\'s fee type', async () => {
+            const res = await request(app).patch(`/api/fee-types/${ids.feeTypeId}/status`).set('Cookie', cookieB).send({ status: 'inactive' });
             expect(res.status).toBe(404);
         }],
         ['GET /invoices does not include School A\'s invoice', async () => {
@@ -222,8 +233,10 @@ describe('Cross-tenant isolation audit — every resource type, real DB, real HT
             expect(res.status).toBe(404);
         }],
         ['POST /fee-structures 404s using School A\'s class/term/year ids', async () => {
+            const feeTypesB = await request(app).get('/api/fee-types').set('Cookie', cookieB);
+            const feeTypeIdB = feeTypesB.body.data.find((t) => t.name === 'School Fees').id;
             const res = await request(app).post('/api/fee-structures').set('Cookie', cookieB)
-                .send({ academicYearId: ids.yearId, termId: ids.termId, classId: ids.classId, name: 'Hijack', items: [{ name: 'x', amount: 1 }] });
+                .send({ academicYearId: ids.yearId, termId: ids.termId, classId: ids.classId, feeTypeId: feeTypeIdB, items: [{ name: 'x', amount: 1 }] });
             expect(res.status).toBe(404);
         }],
         ['POST /students 404s using School A\'s class/year ids (can\'t enroll into another school\'s class)', async () => {

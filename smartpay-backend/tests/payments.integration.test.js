@@ -44,8 +44,10 @@ describe('payments — manual payment recording, voiding, and balance recalculat
         const s2 = await request(app).post('/api/students').set('Cookie', cookieA)
             .send({ admissionNo: `${MARKER}-S2`, firstName: 'Ama', lastName: 'Owusu', classId: classIdA, academicYearId: yearIdA });
 
+        const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
+        const feeTypeIdA = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
         const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
-            academicYearId: yearIdA, termId: termIdA, classId: classIdA, name: 'Term 1 Fees',
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdA,
             items: [{ name: 'Tuition', amount: 400 }, { name: 'ICT', amount: 100 }],
         });
         const feeStructureId = fsRes.body.data.id;
@@ -64,6 +66,7 @@ describe('payments — manual payment recording, voiding, and balance recalculat
         await db.query('DELETE FROM invoices WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id IN (SELECT id FROM fee_structures WHERE school_id = ?)', [schoolIdA]);
         await db.query('DELETE FROM fee_structures WHERE school_id = ?', [schoolIdA]);
+        await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM students WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM classes WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM terms WHERE school_id = ?', [schoolIdA]);

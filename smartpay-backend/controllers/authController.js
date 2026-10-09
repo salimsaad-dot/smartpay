@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { isValidCode } = require('../utils/schoolCode');
 const { DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY } = require('../utils/smsTemplate');
+const { DEFAULT_FEE_TYPES } = require('../utils/feeTypes');
 const { logAction, logAuthEvent } = require('../utils/auditLog');
 // Required as a module object, never destructured — a test that spies
 // on this module (jest.spyOn(emailSender, 'sendPasswordResetEmail'))
@@ -99,6 +100,14 @@ exports.registerSchool = async (req, res) => {
             `INSERT INTO sms_templates (school_id, name, body, type) VALUES (?, ?, ?, 'manual_reminder')`,
             [schoolId, DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY]
         );
+
+        // Seeded so a school can create its first fee structure
+        // immediately without a separate "set up your fee types first"
+        // step — a starting point, not a fixed list (school-scoped and
+        // editable from the Fee Types page afterward).
+        for (const typeName of DEFAULT_FEE_TYPES) {
+            await connection.query('INSERT INTO fee_types (school_id, name) VALUES (?, ?)', [schoolId, typeName]);
+        }
 
         await connection.commit();
 

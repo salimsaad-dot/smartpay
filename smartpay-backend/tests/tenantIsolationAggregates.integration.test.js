@@ -58,8 +58,10 @@ describe('Cross-tenant aggregate-query isolation — do dashboard/list totals ev
             studentIds.push(student.body.data.id);
         }
 
+        const feeTypesRes = await request(app).get('/api/fee-types').set('Cookie', cookie);
+        const feeTypeId = feeTypesRes.body.data.find((t) => t.name === 'School Fees').id;
         const fs = await request(app).post('/api/fee-structures').set('Cookie', cookie)
-            .send({ academicYearId: yearId, termId, classId, name: 'Fees', items: feeItems });
+            .send({ academicYearId: yearId, termId, classId, feeTypeId, items: feeItems });
         const feeStructureId = fs.body.data.id;
 
         await request(app).post('/api/invoices/generate').set('Cookie', cookie).send({ feeStructureId });
@@ -144,6 +146,7 @@ describe('Cross-tenant aggregate-query isolation — do dashboard/list totals ev
             await db.query('DELETE FROM terms WHERE school_id = ?', [schoolId]);
             await db.query('DELETE FROM academic_years WHERE school_id = ?', [schoolId]);
         }
+        await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM audit_logs WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM users WHERE email LIKE ?', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM sms_templates WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);

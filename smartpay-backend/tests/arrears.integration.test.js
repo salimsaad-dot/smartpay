@@ -39,6 +39,9 @@ describe('arrears — outstanding balances, filters, and parent aggregation (rea
         const classRes = await request(app).post('/api/classes').set('Cookie', cookieA).send({ name: 'Basic 1' });
         classIdA = classRes.body.data.id;
 
+        const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
+        const feeTypeIdA = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
+
         // Kofi and Yaw are siblings under Mrs Mensah; Ama is Mr Owusu's.
         const kofi = await request(app).post('/api/students').set('Cookie', cookieA)
             .send({ admissionNo: `${MARKER}-S1`, firstName: 'Kofi', lastName: 'Mensah', classId: classIdA, academicYearId: yearIdA });
@@ -60,7 +63,7 @@ describe('arrears — outstanding balances, filters, and parent aggregation (rea
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [owusuParentId, ama.body.data.id]);
 
         const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
-            academicYearId: yearIdA, termId: termIdA, classId: classIdA, name: 'Term 1 Fees',
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdA,
             items: [{ name: 'Tuition', amount: 400 }, { name: 'ICT', amount: 100 }],
         });
         await request(app).post('/api/invoices/generate').set('Cookie', cookieA).send({ feeStructureId: fsRes.body.data.id });
@@ -85,6 +88,7 @@ describe('arrears — outstanding balances, filters, and parent aggregation (rea
         await db.query('DELETE FROM invoices WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id IN (SELECT id FROM fee_structures WHERE school_id = ?)', [schoolIdA]);
         await db.query('DELETE FROM fee_structures WHERE school_id = ?', [schoolIdA]);
+        await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM parents WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM students WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM classes WHERE school_id = ?', [schoolIdA]);

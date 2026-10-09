@@ -7,6 +7,7 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
     let cookieA, cookieB;
     let schoolIdA;
     let yearIdA, termIdA, classIdA;
+    let feeTypeIdA, feeTypeIdB, feedingTypeIdA;
     let feeStructureId;
     let student1Id, student2Id;
 
@@ -29,6 +30,15 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
         schoolIdA = a.schoolId;
         cookieB = (await registerSchool('b')).cookie;
 
+        // Every school is auto-seeded with the default fee types at
+        // registration (see authController.registerSchool) — pick two by
+        // name rather than relying on list order/position.
+        const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
+        feeTypeIdA = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
+        feedingTypeIdA = feeTypesA.body.data.find((t) => t.name === 'Feeding').id;
+        const feeTypesB = await request(app).get('/api/fee-types').set('Cookie', cookieB);
+        feeTypeIdB = feeTypesB.body.data.find((t) => t.name === 'School Fees').id;
+
         const yearRes = await request(app).post('/api/academic-years').set('Cookie', cookieA)
             .send({ name: '2026/2027', startDate: '2026-09-01', endDate: '2027-07-31' });
         yearIdA = yearRes.body.data.id;
@@ -48,7 +58,7 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
         student2Id = s2.body.data.id;
 
         const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
-            academicYearId: yearIdA, termId: termIdA, classId: classIdA, name: 'Term 1 Fees',
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdA,
             items: [
                 { name: 'Tuition', amount: 500 },
                 { name: 'ICT', amount: 50 },
@@ -63,6 +73,7 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
         await db.query('DELETE FROM invoices WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id IN (SELECT id FROM fee_structures WHERE school_id = ?)', [schoolIdA]);
         await db.query('DELETE FROM fee_structures WHERE school_id = ?', [schoolIdA]);
+        await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`%${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM students WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM classes WHERE school_id = ?', [schoolIdA]);
         await db.query('DELETE FROM terms WHERE school_id = ?', [schoolIdA]);
@@ -74,24 +85,60 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
         await db.end();
     });
 
-    test('fee structure total is correctly computed from its items', async () => {
+    test('fee structure total is correctly computed from its items, and the fee type name is included', async () => {
         const res = await request(app).get(`/api/fee-structures/${feeStructureId}`).set('Cookie', cookieA);
         expect(res.status).toBe(200);
         expect(res.body.data.items).toHaveLength(3);
         expect(Number(res.body.data.totalAmount)).toBe(570);
+        expect(res.body.data.fee_type_name).toBe('School Fees');
+        expect(res.body.data.name).toBe('School Fees');
     });
 
     test('a fee item with a non-positive amount is rejected at creation', async () => {
         const res = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
-            academicYearId: yearIdA, termId: termIdA, classId: classIdA, name: 'Bad Structure',
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feedingTypeIdA,
             items: [{ name: 'Tuition', amount: 0 }],
         });
         expect(res.status).toBe(400);
     });
 
+    test('creating a fee structure without a feeTypeId is rejected', async () => {
+        const res = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA,
+            items: [{ name: 'Tuition', amount: 100 }],
+        });
+        expect(res.status).toBe(400);
+    });
+
+    test('creating a fee structure with an unknown/cross-tenant feeTypeId is rejected', async () => {
+        const res = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdB,
+            items: [{ name: 'Tuition', amount: 100 }],
+        });
+        expect(res.status).toBe(404);
+    });
+
+    test('creating a second fee structure for the same fee type/term/class is rejected (409)', async () => {
+        const res = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdA,
+            items: [{ name: 'Tuition', amount: 100 }],
+        });
+        expect(res.status).toBe(409);
+    });
+
+    test('a different fee type for the same term/class is allowed (separate invoices per fee type is the whole point)', async () => {
+        const res = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feedingTypeIdA,
+            items: [{ name: 'Feeding', amount: 300 }],
+        });
+        expect(res.status).toBe(201);
+        await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id = ?', [res.body.data.id]);
+        await db.query('DELETE FROM fee_structures WHERE id = ?', [res.body.data.id]);
+    });
+
     test("school B cannot create a fee structure against school A's term/class by guessing the IDs", async () => {
         const res = await request(app).post('/api/fee-structures').set('Cookie', cookieB).send({
-            academicYearId: yearIdA, termId: termIdA, classId: classIdA, name: 'Cross Tenant',
+            academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdB,
             items: [{ name: 'Tuition', amount: 100 }],
         });
         expect(res.status).toBe(404);

@@ -20,11 +20,11 @@ import {
   useToast,
 } from "@/components/ui";
 
-function StructureForm({ years, terms, classes, currency, onCreated }) {
+function StructureForm({ years, terms, classes, feeTypes, currency, onCreated }) {
   const [academicYearId, setAcademicYearId] = useState("");
   const [termId, setTermId] = useState("");
   const [classId, setClassId] = useState("");
-  const [name, setName] = useState("");
+  const [feeTypeId, setFeeTypeId] = useState("");
   const [items, setItems] = useState([{ name: "", amount: "" }]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -53,11 +53,11 @@ function StructureForm({ years, terms, classes, currency, onCreated }) {
           academicYearId: Number(academicYearId),
           termId: Number(termId),
           classId: Number(classId),
-          name,
+          feeTypeId: Number(feeTypeId),
           items: items.map((i) => ({ name: i.name, amount: Number(i.amount) })),
         },
       });
-      setAcademicYearId(""); setTermId(""); setClassId(""); setName(""); setItems([{ name: "", amount: "" }]);
+      setAcademicYearId(""); setTermId(""); setClassId(""); setFeeTypeId(""); setItems([{ name: "", amount: "" }]);
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -87,10 +87,18 @@ function StructureForm({ years, terms, classes, currency, onCreated }) {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="Structure Name">
-          <input required placeholder="e.g. Term 1 Fees" value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
+        <Field label="Fee Type">
+          <select required value={feeTypeId} onChange={(e) => setFeeTypeId(e.target.value)} className={inputClass}>
+            <option value="">Select...</option>
+            {feeTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
         </Field>
       </div>
+      {feeTypes.length === 0 && (
+        <p className="mt-2 text-xs text-[var(--warning)]">
+          No active fee types yet — add one on the <a href="/dashboard/fee-types" className="font-medium underline">Fee Types</a> page first.
+        </p>
+      )}
 
       <fieldset className="mt-4">
         <legend className={labelClass}>Fee Items</legend>
@@ -132,6 +140,7 @@ export default function FeeStructuresPage() {
   const [years, setYears] = useState([]);
   const [terms, setTerms] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [feeTypes, setFeeTypes] = useState([]);
   const { toast, showToast, dismissToast } = useToast();
 
   const currency = user?.school.currency;
@@ -144,6 +153,7 @@ export default function FeeStructuresPage() {
     apiRequest("/academic-years").then((res) => setYears(res.data));
     apiRequest("/terms").then((res) => setTerms(res.data));
     apiRequest("/classes").then((res) => setClasses(res.data));
+    apiRequest("/fee-types").then((res) => setFeeTypes(res.data));
   }
   useEffect(load, []);
 
@@ -159,7 +169,7 @@ export default function FeeStructuresPage() {
         description="Define what a student in a class/term is expected to pay. Once invoices are generated from a structure, later edits never change those existing invoices."
       />
 
-      <div className="mt-4"><StructureForm years={years} terms={terms} classes={classes} currency={currency} onCreated={handleCreated} /></div>
+      <div className="mt-4"><StructureForm years={years} terms={terms} classes={classes} feeTypes={feeTypes} currency={currency} onCreated={handleCreated} /></div>
 
       {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
       {!structures && !loadError && <div className="mt-6"><LoadingSkeleton lines={3} /></div>}

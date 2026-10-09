@@ -10,17 +10,30 @@ async function verifyOwnedForeignKeys(schoolId, { academicYearId, termId, classI
     return null;
 }
 
+// The fee type must be active, not just owned by this school — an
+// inactive type is how a school retires one going forward (same
+// archive-not-delete convention as classes), and letting it be picked
+// for a brand-new structure would undo that.
+async function resolveFeeType(schoolId, feeTypeId) {
+    const [[feeType]] = await pool.query(
+        "SELECT id, name FROM fee_types WHERE id = ? AND school_id = ? AND status = 'active'",
+        [feeTypeId, schoolId]
+    );
+    return feeType || null;
+}
+
 exports.list = async (req, res) => {
     try {
         const { termId, classId } = req.query;
         const params = [req.user.schoolId];
         let sql = `
-            SELECT fs.*, c.name AS class_name, t.name AS term_name, ay.name AS academic_year_name,
+            SELECT fs.*, c.name AS class_name, t.name AS term_name, ay.name AS academic_year_name, ft.name AS fee_type_name,
                    COALESCE(SUM(fsi.amount), 0) AS total_amount, COUNT(fsi.id) AS item_count
             FROM fee_structures fs
             JOIN classes c ON c.id = fs.class_id
             JOIN terms t ON t.id = fs.term_id
             JOIN academic_years ay ON ay.id = fs.academic_year_id
+            JOIN fee_types ft ON ft.id = fs.fee_type_id
             LEFT JOIN fee_structure_items fsi ON fsi.fee_structure_id = fs.id
             WHERE fs.school_id = ?`;
         if (termId) { sql += ' AND fs.term_id = ?'; params.push(termId); }
@@ -38,8 +51,10 @@ exports.list = async (req, res) => {
 exports.getById = async (req, res) => {
     try {
         const [[structure]] = await pool.query(
-            `SELECT fs.*, c.name AS class_name, t.name AS term_name, ay.name AS academic_year_name
-             FROM fee_structures fs JOIN classes c ON c.id = fs.class_id JOIN terms t ON t.id = fs.term_id JOIN academic_years ay ON ay.id = fs.academic_year_id
+            `SELECT fs.*, c.name AS class_name, t.name AS term_name, ay.name AS academic_year_name, ft.name AS fee_type_name
+             FROM fee_structures fs
+             JOIN classes c ON c.id = fs.class_id JOIN terms t ON t.id = fs.term_id JOIN academic_years ay ON ay.id = fs.academic_year_id
+             JOIN fee_types ft ON ft.id = fs.fee_type_id
              WHERE fs.id = ? AND fs.school_id = ?`,
             [req.params.id, req.user.schoolId]
         );
@@ -63,9 +78,9 @@ exports.getById = async (req, res) => {
 // a fee structure with zero items is a meaningless, half-finished record,
 // so there's no reason to allow one to exist even momentarily.
 exports.create = async (req, res) => {
-    const { academicYearId, termId, classId, name, items } = req.body;
-    if (!academicYearId || !termId || !classId || !name?.trim() || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ status: 'error', message: 'Academic year, term, class, name, and at least one fee item are required.' });
+    const { academicYearId, termId, classId, feeTypeId, items } = req.body;
+    if (!academicYearId || !termId || !classId || !feeTypeId || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: 'error', message: 'Academic year, term, class, fee type, and at least one fee item are required.' });
     }
     for (const item of items) {
         if (!item.name?.trim() || !(Number(item.amount) > 0)) {
@@ -76,13 +91,20 @@ exports.create = async (req, res) => {
     const fkError = await verifyOwnedForeignKeys(req.user.schoolId, { academicYearId, termId, classId });
     if (fkError) return res.status(404).json({ status: 'error', message: fkError });
 
+    const feeType = await resolveFeeType(req.user.schoolId, feeTypeId);
+    if (!feeType) return res.status(404).json({ status: 'error', message: 'Fee type not found.' });
+
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
+        // name is a snapshot of the fee type's label at creation time
+        // (fee types can't be renamed, only deactivated — same
+        // archive-not-delete convention as classes — but this keeps the
+        // column meaningful on its own without requiring a join).
         const [result] = await connection.query(
-            'INSERT INTO fee_structures (school_id, academic_year_id, term_id, class_id, name) VALUES (?, ?, ?, ?, ?)',
-            [req.user.schoolId, academicYearId, termId, classId, name.trim()]
+            'INSERT INTO fee_structures (school_id, academic_year_id, term_id, class_id, fee_type_id, name) VALUES (?, ?, ?, ?, ?, ?)',
+            [req.user.schoolId, academicYearId, termId, classId, feeTypeId, feeType.name]
         );
         const structureId = result.insertId;
 
@@ -98,7 +120,7 @@ exports.create = async (req, res) => {
     } catch (error) {
         await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ status: 'error', message: 'A fee structure with that name already exists for this term and class.' });
+            return res.status(409).json({ status: 'error', message: 'A fee structure for that fee type already exists for this term and class.' });
         }
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while creating the fee structure.' });
