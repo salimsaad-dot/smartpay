@@ -161,6 +161,26 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
         await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoNumber: '' });
     });
 
+    // fee-management Phase 4: {{outstanding_breakdown}} pulls the real
+    // fee type name through resolveReminderScope's new fee_structures/
+    // fee_types join, not just the invoice total — proven against a
+    // real DB row, not a synthetic one (see tests/reminderCore.test.js
+    // for the formatting/truncation unit coverage).
+    test('{{outstanding_breakdown}} renders the real fee type name and balance for a single invoice', async () => {
+        const res = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, invoiceId: kofiInvoiceId, templateId: defaultTemplateId });
+        expect(res.status).toBe(200);
+        expect(res.body.data.message).toContain('School Fees GHS 500.00');
+    });
+
+    test('{{outstanding_breakdown}} attributes each child\'s own fee items by name when a parent has multiple children in scope', async () => {
+        const res = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, templateId: defaultTemplateId });
+        expect(res.status).toBe(200);
+        expect(res.body.data.message).toContain('Kofi Mensah: School Fees GHS 500.00');
+        expect(res.body.data.message).toContain('Yaw Mensah: School Fees GHS 500.00');
+    });
+
     test('previewing a parent-level reminder (no studentId/invoiceId) consolidates both children and sums the balance', async () => {
         const res = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
             .send({ parentId: mensahParentId });

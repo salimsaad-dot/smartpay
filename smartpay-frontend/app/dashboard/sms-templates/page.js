@@ -22,7 +22,7 @@ import {
   useToast,
 } from "@/components/ui";
 
-const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "payment_link", "due_date", "school_momo_number"];
+const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "outstanding_breakdown", "payment_link", "due_date", "school_momo_number"];
 
 // Same "this school's own number, this calendar month" view already on
 // the Dashboard — added here too since a user naturally checks the page

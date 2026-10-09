@@ -20,11 +20,13 @@ async function resolveReminderScope(schoolId, { parentId, studentId, invoiceId }
     if (!parent) return { error: { status: 404, message: 'Parent/guardian not found.' } };
 
     let sql = `
-        SELECT i.id, i.total, i.balance, i.due_date, st.id AS student_id, st.first_name, st.last_name, t.name AS term_name
+        SELECT i.id, i.total, i.balance, i.due_date, st.id AS student_id, st.first_name, st.last_name, t.name AS term_name, ft.name AS fee_type_name
         FROM invoices i
         JOIN students st ON st.id = i.student_id
         JOIN parent_student ps ON ps.student_id = st.id
         JOIN terms t ON t.id = i.term_id
+        JOIN fee_structures fs ON fs.id = i.fee_structure_id
+        JOIN fee_types ft ON ft.id = fs.fee_type_id
         WHERE ps.parent_id = ? AND i.school_id = ? AND i.balance > 0 AND i.status != 'void'`;
     const params = [parentId, schoolId];
     if (invoiceId) { sql += ' AND i.id = ?'; params.push(invoiceId); }
@@ -52,6 +54,59 @@ async function resolveReminderScope(schoolId, { parentId, studentId, invoiceId }
     };
 }
 
+// A per-variable character budget, not a whole-message one — the rest
+// of the template (school name, parent name, payment link, etc.) is
+// free text a school writes itself, so there's no way to guarantee the
+// full rendered SMS stays within any particular segment count. 200
+// chars leaves realistic room for a typical template to still land
+// within 2 GSM-7 segments (153 chars x2 = 306, since GH₵/₵-free ASCII
+// currency formatting — see formatMoneyForSms — keeps the whole message
+// in the GSM-7 alphabet, not the much stingier 70/67-char UCS-2 limits
+// a true Cedi-sign character would force). GSM 03.38 segment sizes are
+// a network standard, not something either SMS provider this codebase
+// supports (Arkesel, mNotify) can change.
+const MAX_BREAKDOWN_CHARS = 200;
+
+// "School Fees GHS 300.00; Feeding GHS 300.00" for a single child,
+// or "Kofi: School Fees GHS 300.00, Feeding GHS 300.00; Ama: Transportation
+// GHS 150.00" once more than one child is in scope — preserving which
+// item belongs to which child (per the doc's own §11 resolution: "the
+// breakdown should preserve child attribution"), without repeating a
+// name on every single item. Truncates on whole entries only — an
+// amount is never partially shown — falling back to "+N more" plus a
+// pointer to the payment link, which already shows every child's full
+// itemized invoice list (see publicPaymentController.getCheckout).
+function buildOutstandingBreakdown(invoices, currency) {
+    const byStudent = new Map();
+    for (const inv of invoices) {
+        if (!byStudent.has(inv.student_id)) {
+            byStudent.set(inv.student_id, { name: `${inv.first_name} ${inv.last_name}`, items: [] });
+        }
+        byStudent.get(inv.student_id).items.push(`${inv.fee_type_name} ${formatMoneyForSms(inv.balance, currency)}`);
+    }
+    const multiChild = byStudent.size > 1;
+
+    const entries = multiChild
+        ? Array.from(byStudent.values()).map((s) => `${s.name}: ${s.items.join(', ')}`)
+        : Array.from(byStudent.values())[0].items;
+
+    let result = '';
+    let included = 0;
+    for (const entry of entries) {
+        const candidate = result ? `${result}; ${entry}` : entry;
+        // Always include at least one real entry, even if it alone
+        // exceeds the budget — a single true line beats an empty string.
+        if (candidate.length > MAX_BREAKDOWN_CHARS && included > 0) break;
+        result = candidate;
+        included += 1;
+    }
+    const omitted = entries.length - included;
+    if (omitted > 0) {
+        result += ` +${omitted} more (see link for full detail)`;
+    }
+    return result;
+}
+
 async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
     const school = schoolRow || (await pool.query('SELECT name, currency, momo_number FROM schools WHERE id = ?', [schoolId]))[0][0];
     return {
@@ -61,6 +116,7 @@ async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
         student_count: scope.studentCount,
         term_name: scope.termName,
         total_balance: formatMoneyForSms(scope.totalBalance, school.currency),
+        outstanding_breakdown: buildOutstandingBreakdown(scope.invoices, school.currency),
         payment_link: paymentLinkText,
         due_date: new Date(scope.earliestDueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
         // Empty, not the literal string "null", for the (likely common,
@@ -97,4 +153,4 @@ async function getTemplate(schoolId, { templateId, preferType } = {}) {
     return fallback || null;
 }
 
-module.exports = { resolveReminderScope, buildVariables, getTemplate };
+module.exports = { resolveReminderScope, buildVariables, getTemplate, buildOutstandingBreakdown, MAX_BREAKDOWN_CHARS };

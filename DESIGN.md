@@ -1889,8 +1889,90 @@ for a full management system.
     table, every other type still reading Termly), then changed
     "Feeding" to Annual via the inline per-row select and confirmed both
     the table cell and the "Frequency set to: Annual." toast.
-  - **Production migration pending** — `scripts/migrate-fee-frequency.js`
-    has only run locally so far.
+  - **Production migrated and deployed 2026-10-09.** Verified: all 28
+    existing fee types defaulted to `termly`. Confirmed live by polling
+    the new `PATCH /fee-types/:id/frequency` route until it returned
+    `401` (unauthenticated, not a crash) instead of `404`.
+- **Fee management Phase 4 — itemized SMS breakdown: SHIPPED 2026-10-09
+  (local; production pending).** Fourth of the 6-phase plan — the one
+  with the most direct headmaster-facing impact, since it's what
+  actually changes the text of the SMS a parent receives. Closes a gap
+  that was already self-documented in the code before this phase
+  started: `utils/smsTemplate.js` had an explicit comment calling out
+  that `{{student_name}}`/`{{total_balance}}` render as joined lists/
+  sums "rather than the spec's richer per-child breakdown format," and
+  DESIGN.md's own Decisions Log flagged it as a deliberate Phase 7 scope
+  cut. This phase is that deferred work, now that Phases 1-3 give it
+  something real to break down (a fee type per invoice, not just a
+  lump total).
+  - **`resolveReminderScope`** (shared by manual reminders and the
+    Friday automation job — one resolver, so a preview and an automated
+    send can never disagree) now joins `fee_structures`/`fee_types` into
+    its existing invoice query, so every invoice in scope carries its
+    real fee type name, not just an amount.
+  - **New `{{outstanding_breakdown}}` variable**, built by
+    `buildOutstandingBreakdown()` in `utils/reminderCore.js`: a single
+    child renders `"School Fees GHS 300.00; Feeding GHS 300.00"` (items
+    joined with `; `, matching the requirements doc's own illustrative
+    example almost exactly); more than one child renders
+    `"Kofi Mensah: School Fees GHS 300.00, Feeding GHS 200.00; Ama
+    Mensah: Transportation GHS 150.00"` — each child's items grouped
+    and named once, not repeated per item (keeps the message shorter,
+    and per the doc's §11 resolution, "the breakdown should preserve
+    child attribution").
+  - **SMS length researched, not guessed**: GSM 03.38 is a network
+    standard independent of either provider this codebase supports
+    (Arkesel, mNotify) — 160 chars for a single GSM-7 segment, 153/segment
+    once concatenated (70/67 for UCS-2, which a literal "₵" character
+    would force; `formatMoneyForSms` already uses the plain-ASCII
+    currency code "GHS", not the Cedi sign, so this was already a
+    non-issue). Set a 200-character budget on the breakdown variable
+    specifically (not the whole message, which is school-authored free
+    text this code can't bound) — generous enough that a typical 1-2
+    child reminder fits in full, conservative enough to leave room for
+    the rest of a normal template within 2 segments.
+  - **Truncation never splits an amount.** Entries (whole fee-type-plus-
+    amount for a single child, or whole per-child groups once multiple
+    children are in scope) are added one at a time; the budget is only
+    ever exceeded by stopping before the next entry, never by cutting
+    one mid-string. At least one real entry is always shown even if it
+    alone exceeds the budget. Whatever gets cut is summarized as
+    `"+N more (see link for full detail)"` — the public payment page
+    (`publicPaymentController.getCheckout`) already shows every child's
+    complete itemized invoice list, so the link genuinely does carry the
+    missing detail, this isn't a dead-end fallback.
+  - **Default template updated for new schools only.** `DEFAULT_TEMPLATE_BODY`
+    now includes `{{outstanding_breakdown}}` by default — unlike the
+    earlier `{{school_momo_number}}` addition (left out of the default
+    on purpose, since that field is often unset), the breakdown is
+    always populated from real invoice data, so there's no "renders
+    empty" risk to design around. This only affects schools registering
+    from now on; an already-registered school's own template row is its
+    content and is never silently rewritten — the variable is simply
+    now available on the SMS Templates page for them to add themselves.
+  - 7 new pure unit tests (`tests/reminderCore.test.js`, no DB) covering
+    single-child formatting, multi-child attribution, truncation never
+    splitting an amount, the character budget being honored, and the
+    single-entry-exceeds-budget edge case. 2 new integration assertions
+    in `sms.integration.test.js` proving the real DB join produces the
+    right fee type name and that real multi-child data gets correctly
+    attributed. Full suite: 29/29 suites, 266 passed + 2 skipped (up
+    from 259). Clean frontend build (only the SMS Templates page's
+    documented variable list changed).
+  - Live-verified via Puppeteer against a real multi-fee-type scenario
+    combining Phases 1, 2 and 4 in one check: Kofi marked eligible for
+    a `selected_students` Feeding fee type, his sister Ama not — the
+    real rendered reminder read *"Kofi Mensah: Feeding GHS 300.00,
+    School Fees GHS 500.00; Ama Mensah: School Fees GHS 500.00. Total:
+    GHS 1,300.00"* — correct amounts, correct per-child attribution,
+    correct exclusion of the fee type Ama was never made eligible for,
+    and a correct total, all produced by the real UI (Arrears page's
+    grouped-by-parent "Send Reminder" preview), not a mocked response.
+  - **Production migration pending**: none needed. This phase changed no
+    schema — `fee_structures`/`fee_types` already existed from Phase 1.
+    Only code (the join, the new variable, the default template text)
+    needs to reach production via the normal push + deploy, no migration
+    script to run first this time.
 
 ## Future Work
 
