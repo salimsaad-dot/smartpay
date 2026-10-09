@@ -1968,11 +1968,19 @@ for a full management system.
     correct exclusion of the fee type Ama was never made eligible for,
     and a correct total, all produced by the real UI (Arrears page's
     grouped-by-parent "Send Reminder" preview), not a mocked response.
-  - **Production migration pending**: none needed. This phase changed no
-    schema — `fee_structures`/`fee_types` already existed from Phase 1.
-    Only code (the join, the new variable, the default template text)
-    needs to reach production via the normal push + deploy, no migration
-    script to run first this time.
+  - **Deployed and verified live 2026-10-09.** No schema change needed
+    (`fee_structures`/`fee_types` already existed from Phase 1) — pushed
+    straight to production, confirmed the backend stayed healthy
+    post-deploy (3 consecutive `/api/health` checks), then went further
+    than a route-existence check (there's no new route this phase to
+    poll for): registered a real throwaway school directly against
+    production, generated one real invoice, and called the real
+    `/reminders/preview` endpoint — the live response read `"School
+    Fees GHS 400.00"`, proving the new `fee_structures`/`fee_types` join
+    and `{{outstanding_breakdown}}` variable are genuinely live, not
+    just deployed. Throwaway school deleted immediately after; confirmed
+    only the 2 real schools (Eagle Vision Basic School, Watered Garden)
+    remain in production.
 
 ## Future Work
 
