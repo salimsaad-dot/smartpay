@@ -100,6 +100,18 @@ describe('payments — manual payment recording, voiding, and balance recalculat
         expect(res.body.data.invoice.balance).toBe(0);
     });
 
+    // Required scenario from the fee-management requirements doc (§9):
+    // "Payment on one fee invoice → Unrelated invoice balances remain
+    // unchanged." invoice1Id has now been paid off in full by the two
+    // tests above; invoice2Id (a different student's, different invoice,
+    // same fee structure) must still show its original, untouched balance.
+    test("fully paying off one invoice never touches a different invoice's balance", async () => {
+        const untouched = await request(app).get(`/api/invoices/${invoice2Id}`).set('Cookie', cookieA);
+        expect(Number(untouched.body.data.balance)).toBe(500);
+        expect(Number(untouched.body.data.paid_amount)).toBe(0);
+        expect(untouched.body.data.status).toBe('unpaid');
+    });
+
     test('a payment exceeding the current outstanding balance is rejected (no overpayment)', async () => {
         const res = await request(app).post('/api/payments').set('Cookie', cookieA)
             .send({ invoiceId: invoice2Id, amount: 1000, method: 'cash' });

@@ -2042,6 +2042,86 @@ for a full management system.
     throwaway production invoice. Both throwaway schools from this
     phase's verification deleted immediately after; confirmed only the
     2 real schools remain.
+- **Fee management Phase 6 — regression pass: SHIPPED 2026-10-09.**
+  Final phase of the 6-phase plan. Went through the requirements doc's
+  own §9 "Required Test Scenarios" table line by line against actual
+  test coverage, rather than assuming Phases 1-5's own test suites added
+  along the way already added up to full coverage of that table.
+  - **Scenarios confirmed already solidly covered**, no new test needed:
+    predefined-type creation, invalid/unknown feeTypeId rejection,
+    class-wide vs selected-student billing, duplicate-generation
+    idempotency, void-excluded-from-arrears, Friday reminder
+    balance-awareness, missing/invalid-phone rejection, SMS
+    provider-failure handling (`arkeselProvider.test.js`/
+    `mnotifyProvider.test.js`), failed/unverified online payments never
+    counted as collected (webhook amount-mismatch and `charge.failed`
+    tests), and school isolation (the dedicated tenant-isolation audit
+    suite, already extended with 2 fee-type checks in Phase 1).
+  - **4 real gaps found and closed with new tests**:
+    1. *"Payment on one fee invoice → unrelated invoice balances remain
+       unchanged"* had no explicit test — added to
+       `payments.integration.test.js`.
+    2. *"Void invoice → excluded from reminder breakdowns"* — arrears
+       exclusion was tested, the reminder half wasn't. Added to
+       `sms.integration.test.js`.
+    3. *"Mixed academic periods → labels periods accurately"* — while
+       writing this test, found that the Phase 4 default template no
+       longer references `{{term_name}}` at all (it leads with
+       `{{outstanding_breakdown}}` instead), so the test needed a custom
+       template to actually exercise `scope.termName`'s multi-term
+       joining logic. Not a regression — the variable itself still works
+       correctly when a school chooses to use it — but a real detail a
+       less careful test would have gotten wrong (asserting against the
+       default template would have failed for the wrong reason).
+    4. *"Manual reminder → uses the same breakdown logic as Friday
+       automation"* was previously true only by construction (shared
+       `resolveReminderScope`/`buildVariables` code). Added a test to
+       `fridayJob.integration.test.js` that captures a real Friday-sent
+       message and a real manual preview for the same parent and asserts
+       the itemized breakdown portion is byte-identical (only the
+       payment link differs, as expected).
+  - **A real test-design bug caught and fixed along the way**: the first
+    draft of tests 2-3 above used `class_wide` fee types for a
+    single-student scenario, which silently billed *both* siblings in
+    the fixture (Feeding/a second School Fees structure are class-wide
+    by default) — not just the one student the test cared about. This
+    produced a cascading failure (an orphaned sibling invoice blocked
+    the test's own cleanup via an FK constraint, then broke an unrelated
+    later test's hardcoded total). Fixed by scoping both to
+    `selected_students` with only the intended student eligible —
+    directly exercising Phase 2's own targeting feature to keep a test's
+    side effects contained to what it's actually testing.
+  - Full suite: 29/29 suites, 270 passed + 2 skipped (up from 267).
+  - **Final combined live walkthrough** — one real scenario exercising
+    all 5 feature phases together through the actual product, not five
+    separate demos: registered a school (13 fee types auto-seeded,
+    Phase 1); set Extra Classes to selected-students with only one of
+    two siblings eligible (Phase 2); the generation preview correctly
+    showed 2 students for the class-wide School Fees structure and 1 for
+    the selected-students Extra Classes structure before anything was
+    created (Phase 2); set Extra Classes' frequency to "as needed"
+    (Phase 3); generated both; recorded a partial payment on one
+    sibling's School Fees invoice and paid the other sibling's off in
+    full; confirmed Collection Summary reconciled exactly (Expected
+    1,750 = Collected 1,100 + Outstanding 650); confirmed a real
+    reminder preview correctly excluded the fully-paid sibling entirely
+    and itemized the other's two remaining fee types with the correct
+    amounts and total ("Extra Classes GHS 150.00; School Fees GHS
+    500.00. Total: GHS 650.00" — Phase 4); confirmed the real public
+    checkout page showed the same correct, labeled breakdown with no
+    admin session (Phase 5). Every number matched what the scenario's
+    own math predicted, with no manual correction needed.
+  - This phase changed no product code, only tests — nothing to deploy
+    or migrate.
+
+The fee-management requirements document's 6-phase plan is now complete
+end-to-end: validated fee types, selected-student billing with
+pre-generation review, display-only frequency, itemized SMS breakdowns,
+fee-type visibility everywhere an invoice appears (including the public
+checkout page), and a regression pass closing 4 real test-coverage gaps
+the doc's own required-scenarios table called for. Every phase was
+migrated to and verified against the live production database before
+being considered done, not just locally.
 
 ## Future Work
 

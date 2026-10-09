@@ -167,6 +167,19 @@ describe('Friday automation job — cycle locks, filtering, and cron trigger (re
         const mensahReminder = reminders.find((r) => r.parent_id === parentIdA);
         expect(mensahReminder.status).toBe('sent');
         expect(mensahReminder.payment_link_id).not.toBeNull();
+
+        // Required scenario from the fee-management requirements doc
+        // (§9): "Manual reminder → Uses the same breakdown logic as
+        // Friday automation." Proven directly, not just by shared code
+        // path: the real Friday-sent message and a real manual preview
+        // for the same parent/scope must carry the identical itemized
+        // breakdown — only the payment link differs (Friday's is a real
+        // generated link; preview's is the placeholder text).
+        const manualPreview = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: parentIdA });
+        const breakdownFromFriday = mensahReminder.message.split('. Total:')[0];
+        const breakdownFromManual = manualPreview.body.data.message.split('. Total:')[0];
+        expect(breakdownFromFriday).toBe(breakdownFromManual);
     });
 
     test('running the same cycle again is idempotent — already-completed cycle does nothing, no duplicate reminders', async () => {

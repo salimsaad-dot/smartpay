@@ -18,6 +18,7 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
     let kofiStudentId, yawStudentId;
     let kofiInvoiceId, yawInvoiceId;
     let defaultTemplateId;
+    let yearIdA, termIdA, classIdA, feeTypeIdA;
 
     async function registerSchool(suffix) {
         const res = await request(app)
@@ -40,12 +41,12 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
 
         const yearRes = await request(app).post('/api/academic-years').set('Cookie', cookieA)
             .send({ name: '2026/2027', startDate: '2026-09-01', endDate: '2027-07-31' });
-        const yearIdA = yearRes.body.data.id;
+        yearIdA = yearRes.body.data.id;
         const termRes = await request(app).post('/api/terms').set('Cookie', cookieA)
             .send({ academicYearId: yearIdA, name: 'Term 1', startDate: '2026-09-01', endDate: '2026-12-12' });
-        const termIdA = termRes.body.data.id;
+        termIdA = termRes.body.data.id;
         const classRes = await request(app).post('/api/classes').set('Cookie', cookieA).send({ name: 'Basic 1' });
-        const classIdA = classRes.body.data.id;
+        classIdA = classRes.body.data.id;
 
         const kofi = await request(app).post('/api/students').set('Cookie', cookieA)
             .send({ admissionNo: `${MARKER}-S1`, firstName: 'Kofi', lastName: 'Mensah', classId: classIdA, academicYearId: yearIdA });
@@ -65,7 +66,7 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [mensahParentId, yawStudentId]);
 
         const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
-        const feeTypeIdA = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
+        feeTypeIdA = feeTypesA.body.data.find((t) => t.name === 'School Fees').id;
         const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
             academicYearId: yearIdA, termId: termIdA, classId: classIdA, feeTypeId: feeTypeIdA,
             items: [{ name: 'Tuition', amount: 400 }, { name: 'ICT', amount: 100 }],
@@ -179,6 +180,97 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
         expect(res.status).toBe(200);
         expect(res.body.data.message).toContain('Kofi Mensah: School Fees GHS 500.00');
         expect(res.body.data.message).toContain('Yaw Mensah: School Fees GHS 500.00');
+    });
+
+    // Required scenario from the fee-management requirements doc (§9):
+    // "Void invoice → Excluded from arrears and reminder breakdowns."
+    // Arrears exclusion was already covered; this is the reminder half.
+    // Scoped to Kofi only (selected_students) so Yaw is never billed —
+    // leaving him out of this structure entirely, not just unchecked.
+    test('a voided invoice never appears in {{outstanding_breakdown}}, even though it has a positive balance column', async () => {
+        const feeTypesA = await request(app).get('/api/fee-types').set('Cookie', cookieA);
+        const feedingTypeId = feeTypesA.body.data.find((t) => t.name === 'Feeding').id;
+        await request(app).patch(`/api/fee-types/${feedingTypeId}/applicability`).set('Cookie', cookieA).send({ applicability: 'selected_students' });
+        await request(app).put(`/api/fee-types/${feedingTypeId}/eligibility`).set('Cookie', cookieA).send({ studentIds: [kofiStudentId] });
+
+        const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
+            academicYearId: yearIdA, termId: termIdA,
+            classId: classIdA, feeTypeId: feedingTypeId, items: [{ name: 'Feeding', amount: 250 }],
+        });
+        await request(app).post('/api/invoices/generate').set('Cookie', cookieA).send({ feeStructureId: fsRes.body.data.id, dueDate: '2026-12-12' });
+        const invoices = await request(app).get('/api/invoices').set('Cookie', cookieA);
+        const feedingInvoices = invoices.body.data.filter((i) => i.fee_structure_id === fsRes.body.data.id);
+        expect(feedingInvoices).toHaveLength(1); // only Kofi — Yaw was never eligible, never billed
+        const feedingInvoice = feedingInvoices[0];
+
+        // Void it directly (no API endpoint voids an invoice; payments'
+        // own void action only reverses a payment, same direct-DB pattern
+        // tests/arrears.integration.test.js already uses).
+        await db.query("UPDATE invoices SET status = 'void' WHERE id = ?", [feedingInvoice.id]);
+
+        const res = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, studentId: kofiStudentId, templateId: defaultTemplateId });
+        expect(res.status).toBe(200);
+        expect(res.body.data.message).not.toContain('Feeding');
+        expect(res.body.data.message).toContain('School Fees GHS 500.00');
+
+        await db.query('DELETE FROM invoice_items WHERE invoice_id = ?', [feedingInvoice.id]);
+        await db.query('DELETE FROM invoices WHERE id = ?', [feedingInvoice.id]);
+        await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id = ?', [fsRes.body.data.id]);
+        await db.query('DELETE FROM fee_structures WHERE id = ?', [fsRes.body.data.id]);
+        await db.query('DELETE FROM student_fee_eligibility WHERE fee_type_id = ?', [feedingTypeId]);
+        await request(app).patch(`/api/fee-types/${feedingTypeId}/applicability`).set('Cookie', cookieA).send({ applicability: 'class_wide' });
+    });
+
+    // Required scenario (§9): "Mixed academic periods → Message labels
+    // periods accurately and does not falsely assign all items to one
+    // term." Kofi gets a second invoice in a genuinely different term,
+    // scoped to Kofi only (selected_students) so Yaw is never billed —
+    // keeping this test's effect isolated to the one student it's about.
+    test('a parent with outstanding invoices spanning two different terms sees both terms named, not just one', async () => {
+        const term2Res = await request(app).post('/api/terms').set('Cookie', cookieA)
+            .send({ academicYearId: yearIdA, name: 'Term 2', startDate: '2027-01-05', endDate: '2027-04-10' });
+        const term2Id = term2Res.body.data.id;
+
+        const graduationTypeId = (await request(app).get('/api/fee-types').set('Cookie', cookieA)).body.data.find((t) => t.name === 'Graduation Fees').id;
+        await request(app).patch(`/api/fee-types/${graduationTypeId}/applicability`).set('Cookie', cookieA).send({ applicability: 'selected_students' });
+        await request(app).put(`/api/fee-types/${graduationTypeId}/eligibility`).set('Cookie', cookieA).send({ studentIds: [kofiStudentId] });
+
+        const fsRes = await request(app).post('/api/fee-structures').set('Cookie', cookieA).send({
+            academicYearId: yearIdA, termId: term2Id, classId: classIdA, feeTypeId: graduationTypeId,
+            items: [{ name: 'Graduation', amount: 450 }],
+        });
+        await request(app).post('/api/invoices/generate').set('Cookie', cookieA).send({ feeStructureId: fsRes.body.data.id, dueDate: '2027-04-10' });
+
+        // The default template (since Phase 4) leads with
+        // {{outstanding_breakdown}}, not {{term_name}} — a school that
+        // wants period info in the message adds {{term_name}} itself, so
+        // that's what this test exercises directly, against a custom
+        // template, to prove scope.termName doesn't silently collapse a
+        // 2-term scope down to just one term's name.
+        const periodTemplate = await request(app).post('/api/sms-templates').set('Cookie', cookieA)
+            .send({ name: 'Period Test Template', body: 'Periods: {{term_name}}. {{outstanding_breakdown}}. Total: {{total_balance}}. {{payment_link}}' });
+
+        const res = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, studentId: kofiStudentId, templateId: periodTemplate.body.data.id });
+        expect(res.status).toBe(200);
+        expect(res.body.data.message).toContain('Term 1');
+        expect(res.body.data.message).toContain('Term 2');
+        expect(res.body.data.message).toContain('School Fees GHS 500.00');
+        expect(res.body.data.message).toContain('Graduation Fees GHS 450.00');
+        // Both term's invoices must be reflected in the total, not
+        // silently dropped or double-counted.
+        expect(res.body.data.message).toContain('GHS 950.00');
+
+        const invoices = await request(app).get('/api/invoices').set('Cookie', cookieA);
+        const term2Invoice = invoices.body.data.find((i) => i.fee_structure_id === fsRes.body.data.id);
+        await db.query('DELETE FROM invoice_items WHERE invoice_id = ?', [term2Invoice.id]);
+        await db.query('DELETE FROM invoices WHERE id = ?', [term2Invoice.id]);
+        await db.query('DELETE FROM fee_structure_items WHERE fee_structure_id = ?', [fsRes.body.data.id]);
+        await db.query('DELETE FROM fee_structures WHERE id = ?', [fsRes.body.data.id]);
+        await db.query('DELETE FROM student_fee_eligibility WHERE fee_type_id = ?', [graduationTypeId]);
+        await request(app).patch(`/api/fee-types/${graduationTypeId}/applicability`).set('Cookie', cookieA).send({ applicability: 'class_wide' });
+        await db.query('DELETE FROM terms WHERE id = ?', [term2Id]);
     });
 
     test('previewing a parent-level reminder (no studentId/invoiceId) consolidates both children and sums the balance', async () => {
