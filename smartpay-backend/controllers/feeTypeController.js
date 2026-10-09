@@ -26,20 +26,24 @@ exports.list = async (req, res) => {
 };
 
 const VALID_APPLICABILITY = ['class_wide', 'selected_students'];
+const VALID_FREQUENCY = ['termly', 'annual', 'one_time', 'as_needed'];
 
 exports.create = async (req, res) => {
     try {
-        const { name, applicability } = req.body;
+        const { name, applicability, frequency } = req.body;
         if (!name?.trim()) {
             return res.status(400).json({ status: 'error', message: 'Fee type name is required.' });
         }
         if (applicability && !VALID_APPLICABILITY.includes(applicability)) {
             return res.status(400).json({ status: 'error', message: "applicability must be 'class_wide' or 'selected_students'." });
         }
+        if (frequency && !VALID_FREQUENCY.includes(frequency)) {
+            return res.status(400).json({ status: 'error', message: "frequency must be one of: termly, annual, one_time, as_needed." });
+        }
 
         const [result] = await pool.query(
-            'INSERT INTO fee_types (school_id, name, applicability) VALUES (?, ?, ?)',
-            [req.user.schoolId, name.trim(), applicability || 'class_wide']
+            'INSERT INTO fee_types (school_id, name, applicability, frequency) VALUES (?, ?, ?, ?)',
+            [req.user.schoolId, name.trim(), applicability || 'class_wide', frequency || 'termly']
         );
         res.status(201).json({ status: 'success', message: 'Fee type created.', data: { id: result.insertId } });
     } catch (error) {
@@ -74,6 +78,36 @@ exports.updateApplicability = async (req, res) => {
         });
 
         res.status(200).json({ status: 'success', message: 'Fee type applicability updated.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while updating the fee type.' });
+    }
+};
+
+// Display-only — purely for the admin's own clarity on the Fee Types
+// page (termly/annual/one-time/as-needed). Not enforced: duplicate-
+// billing protection is still entirely the per-structure
+// UNIQUE(term_id, class_id, fee_type_id) constraint from Phase 1,
+// unchanged by this field.
+exports.updateFrequency = async (req, res) => {
+    try {
+        const { frequency } = req.body;
+        if (!VALID_FREQUENCY.includes(frequency)) {
+            return res.status(400).json({ status: 'error', message: 'frequency must be one of: termly, annual, one_time, as_needed.' });
+        }
+
+        const [[current]] = await pool.query('SELECT frequency FROM fee_types WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+        if (!current) {
+            return res.status(404).json({ status: 'error', message: 'Fee type not found.' });
+        }
+
+        await pool.query('UPDATE fee_types SET frequency = ? WHERE id = ? AND school_id = ?', [frequency, req.params.id, req.user.schoolId]);
+        await logAction(req, {
+            action: 'fee_type.frequency_update', entityType: 'fee_type', entityId: Number(req.params.id),
+            oldValues: current, newValues: { frequency },
+        });
+
+        res.status(200).json({ status: 'success', message: 'Fee type frequency updated.' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while updating the fee type.' });

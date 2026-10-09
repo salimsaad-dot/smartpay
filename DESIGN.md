@@ -1850,9 +1850,47 @@ for a full management system.
     product bug); after setting the due date and generating, exactly 2
     invoices existed (Ama Owusu, Kofi Mensah, GHS 150.00 each, due Dec
     12 2026) and the excluded third student never got one.
-  - **Not yet done**: migration (`scripts/migrate-fee-eligibility.js`)
-    has only run against the local dev database — production migration
-    and deploy are the next step, same discipline as Phase 1.
+  - **Production migrated and deployed 2026-10-09.** Verified directly
+    against `smartpay_db`: all 28 existing fee types (both real schools)
+    defaulted to `class_wide` with the new column, matching current
+    behavior exactly. Pushed, confirmed live by polling
+    `/api/invoices/generation-preview` until it returned `401` instead
+    of `404`.
+- **Fee management Phase 3 — display-only frequency label: SHIPPED
+  2026-10-09 (local; production pending).** Third of the 6-phase plan,
+  deliberately the smallest. Per the user's explicit choice: frequency
+  (termly/annual/one-time/as-needed) is purely informational — no new
+  duplicate-billing enforcement. The Phase 1 per-structure
+  `UNIQUE(term_id, class_id, fee_type_id)` constraint already does that
+  job; this field exists only so an admin reading the Fee Types page can
+  see the billing rhythm at a glance.
+  - **`fee_types.frequency`** (`termly` default / `annual` / `one_time`
+    / `as_needed`), settable at creation and changeable after via
+    `PATCH /fee-types/:id/frequency` — same narrow, single-purpose
+    endpoint shape as `updateApplicability` and `updateStatus`, kept as
+    three separate mutations rather than one do-everything PATCH.
+  - **Fee Types page**: a frequency dropdown on the create form, plus an
+    inline `<select>` per row in both the desktop table and mobile cards
+    that saves on change — no separate "edit" action needed for a field
+    this lightweight.
+  - Deliberately **not** touched: Fee Structures, Invoices, Arrears, or
+    Reports. The doc's own scope for this phase was the label itself;
+    surfacing it elsewhere wasn't asked for and would be exactly the
+    kind of scope creep Phase 0's "do not invent unconfirmed school
+    policies" guardrail warns against adding unprompted.
+  - 7 new backend tests (`feeFrequency.integration.test.js`): default
+    termly on every seeded type, create-with-frequency, invalid value
+    rejected on both create and update, update actually persists,
+    frequency changes never touch applicability/status (independent
+    fields), cross-tenant isolation. Full suite: 28/28 suites, 257
+    passed + 2 skipped (up from 252). Clean frontend build.
+  - Live-verified via Puppeteer: created "Graduation Gown Fee" with
+    One-time frequency through the real add form (confirmed in the
+    table, every other type still reading Termly), then changed
+    "Feeding" to Annual via the inline per-row select and confirmed both
+    the table cell and the "Frequency set to: Annual." toast.
+  - **Production migration pending** — `scripts/migrate-fee-frequency.js`
+    has only run locally so far.
 
 ## Future Work
 

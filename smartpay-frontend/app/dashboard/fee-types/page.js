@@ -20,10 +20,12 @@ import {
 } from "@/components/ui";
 
 const APPLICABILITY_LABELS = { class_wide: "All students in class", selected_students: "Selected students only" };
+const FREQUENCY_LABELS = { termly: "Termly", annual: "Annual", one_time: "One-time", as_needed: "As needed" };
 
 function AddFeeTypeForm({ onCreated }) {
   const [name, setName] = useState("");
   const [applicability, setApplicability] = useState("class_wide");
+  const [frequency, setFrequency] = useState("termly");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -32,9 +34,10 @@ function AddFeeTypeForm({ onCreated }) {
     setError("");
     setSaving(true);
     try {
-      await apiRequest("/fee-types", { method: "POST", body: { name, applicability } });
+      await apiRequest("/fee-types", { method: "POST", body: { name, applicability, frequency } });
       setName("");
       setApplicability("class_wide");
+      setFrequency("termly");
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -52,6 +55,11 @@ function AddFeeTypeForm({ onCreated }) {
         <select value={applicability} onChange={(e) => setApplicability(e.target.value)} className={inputClass}>
           <option value="class_wide">All students in class</option>
           <option value="selected_students">Selected students only</option>
+        </select>
+      </Field>
+      <Field label="Frequency" className="w-full sm:w-auto">
+        <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className={inputClass}>
+          {Object.entries(FREQUENCY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </Field>
       <Button type="submit" disabled={saving}>{saving ? "Adding..." : "Add Fee Type"}</Button>
@@ -174,6 +182,16 @@ export default function FeeTypesPage() {
     }
   }
 
+  async function changeFrequency(feeType, frequency) {
+    try {
+      await apiRequest(`/fee-types/${feeType.id}/frequency`, { method: "PATCH", body: { frequency } });
+      load();
+      showToast(`Frequency set to: ${FREQUENCY_LABELS[frequency]}.`);
+    } catch (err) {
+      showToast(err.message, "danger");
+    }
+  }
+
   return (
     <DashboardShell>
       <PageHeader
@@ -197,11 +215,18 @@ export default function FeeTypesPage() {
                   <p className="truncate font-medium text-[var(--ink)]">{t.name}</p>
                   <StatusBadge tone={t.status === "active" ? "success" : "neutral"}>{t.status === "active" ? "Active" : "Inactive"}</StatusBadge>
                 </div>
-                <p className="mt-1 text-xs text-[var(--slate-quiet)]">{APPLICABILITY_LABELS[t.applicability]}</p>
-                <div className="mt-2 flex flex-wrap gap-3">
+                <p className="mt-1 text-xs text-[var(--slate-quiet)]">{APPLICABILITY_LABELS[t.applicability]} · {FREQUENCY_LABELS[t.frequency]}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
                   <LinkButton onClick={() => toggleStatus(t)}>{t.status === "active" ? "Deactivate" : "Reactivate"}</LinkButton>
                   <LinkButton onClick={() => toggleApplicability(t)}>Switch to {t.applicability === "class_wide" ? "selected students" : "all students"}</LinkButton>
                   {t.applicability === "selected_students" && <LinkButton onClick={() => setEligibilityFor(t)}>Manage Students</LinkButton>}
+                  <select
+                    value={t.frequency} onChange={(e) => changeFrequency(t, e.target.value)}
+                    aria-label={`Frequency for ${t.name}`}
+                    className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--slate)]"
+                  >
+                    {Object.entries(FREQUENCY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
                 </div>
               </MobileRecordCard>
             ))}
@@ -212,7 +237,7 @@ export default function FeeTypesPage() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                  <th className="p-3 font-medium">Name</th><th className="p-3 font-medium">Applies To</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium"></th>
+                  <th className="p-3 font-medium">Name</th><th className="p-3 font-medium">Applies To</th><th className="p-3 font-medium">Frequency</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -220,6 +245,15 @@ export default function FeeTypesPage() {
                   <tr key={t.id} className="border-b border-[var(--border)] last:border-b-0">
                     <td className="p-3 font-medium">{t.name}</td>
                     <td className="p-3 text-[var(--slate)]">{APPLICABILITY_LABELS[t.applicability]}</td>
+                    <td className="p-3">
+                      <select
+                        value={t.frequency} onChange={(e) => changeFrequency(t, e.target.value)}
+                        aria-label={`Frequency for ${t.name}`}
+                        className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--slate)]"
+                      >
+                        {Object.entries(FREQUENCY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </td>
                     <td className="p-3"><StatusBadge tone={t.status === "active" ? "success" : "neutral"}>{t.status === "active" ? "Active" : "Inactive"}</StatusBadge></td>
                     <td className="p-3 text-right">
                       <div className="flex flex-wrap justify-end gap-3">
@@ -231,7 +265,7 @@ export default function FeeTypesPage() {
                   </tr>
                 ))}
                 {feeTypes.length === 0 && (
-                  <tr><td colSpan={4} className="p-4 text-center text-[var(--slate-quiet)]">No fee types yet.</td></tr>
+                  <tr><td colSpan={5} className="p-4 text-center text-[var(--slate-quiet)]">No fee types yet.</td></tr>
                 )}
               </tbody>
             </table>
