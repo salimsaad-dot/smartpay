@@ -12,13 +12,20 @@ function renderTemplate(body, variables) {
 }
 
 const DEFAULT_TEMPLATE_NAME = 'Default Reminder';
-// Itemized by default (fee-management Phase 4) — only affects schools
-// registering from now on; an existing school's already-created
-// template row is its own content and is never silently rewritten (the
-// new {{outstanding_breakdown}} variable is simply available for them
-// to add on the SMS Templates page, same as any other variable).
+// Itemized by default (fee-management Phase 4), and includes MoMo
+// number (added after real pilot usage surfaced a serious gap: a
+// payment link alone is useless to a parent without a smartphone, and
+// the original default template never mentioned the school's MoMo
+// number even when the school had one configured). Renders a dangling
+// "or MoMo" with nothing after it for a school that hasn't set one —
+// a real but minor cosmetic cost, accepted because a payment-blocking
+// gap for feature-phone parents is far worse than an odd trailing
+// phrase. Only affects schools registering from now on; an existing
+// school's already-created template row is its own content and is
+// never silently rewritten — the new variable is simply available for
+// them to add on the SMS Templates page, same as any other variable.
 const DEFAULT_TEMPLATE_BODY =
-    '{{school_name}}: Dear {{parent_name}}, outstanding for {{student_name}}: {{outstanding_breakdown}}. Total: {{total_balance}}. Pay securely: {{payment_link}}';
+    '{{school_name}}: {{student_name}} owes {{outstanding_breakdown}}. Total {{total_balance}}. Pay: {{payment_link}} or MoMo {{school_momo_number}}';
 
 function formatMoneyForSms(amount, currencyCode) {
     return `${currencyCode} ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

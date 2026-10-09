@@ -139,15 +139,22 @@ async function getTemplate(schoolId, { templateId, preferType } = {}) {
         const [[t]] = await pool.query("SELECT * FROM sms_templates WHERE id = ? AND school_id = ? AND status = 'active'", [templateId, schoolId]);
         return t || null;
     }
+    // id ASC as a secondary sort, not just created_at — this column has
+    // only 1-second resolution (no fractional-seconds precision in the
+    // schema), so two templates created within the same second give
+    // MySQL no deterministic order on created_at alone, and "the oldest
+    // active template" would silently pick an arbitrary one among ties.
+    // Caught live: a fast local test run creating two templates back to
+    // back exposed exactly this non-determinism.
     if (preferType) {
         const [[preferred]] = await pool.query(
-            `SELECT * FROM sms_templates WHERE school_id = ? AND type = ? AND status = 'active' ORDER BY created_at ASC LIMIT 1`,
+            `SELECT * FROM sms_templates WHERE school_id = ? AND type = ? AND status = 'active' ORDER BY created_at ASC, id ASC LIMIT 1`,
             [schoolId, preferType]
         );
         if (preferred) return preferred;
     }
     const [[fallback]] = await pool.query(
-        `SELECT * FROM sms_templates WHERE school_id = ? AND status = 'active' ORDER BY created_at ASC LIMIT 1`,
+        `SELECT * FROM sms_templates WHERE school_id = ? AND status = 'active' ORDER BY created_at ASC, id ASC LIMIT 1`,
         [schoolId]
     );
     return fallback || null;

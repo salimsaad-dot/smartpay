@@ -2123,6 +2123,78 @@ the doc's own required-scenarios table called for. Every phase was
 migrated to and verified against the live production database before
 being considered done, not just locally.
 
+- **Real pilot usage (2026-10-09, hours after Phase 6 shipped) surfaced
+  3 genuine issues the phased test coverage hadn't caught, all fixed
+  same day.** The user tested the live system against a real student
+  ("saad salim") at the real pilot school (Eagle Vision Basic School),
+  generating two separate invoices (Exam Fees/Mock and Graduation Fees)
+  and sending real reminders.
+  1. **"Send Reminder" from one invoice row only ever mentioned that one
+     invoice** — clicking it from the Graduation Fees row produced a
+     message with no indication Exam Fees was also outstanding. Not a
+     bug in the strict sense (`invoiceId`-scoped reminders were the
+     original, deliberate design — see the Decisions Log), but a real
+     usability gap once Phase 4 made itemized breakdowns the point: an
+     admin reasonably expects "send this student's parent a reminder" to
+     mean *everything* that student owes. **Fixed**: the Arrears page's
+     per-row "Send Reminder" action now passes `studentId` instead of
+     `invoiceId` (`resolveReminderScope` already supported this mode —
+     only the frontend's choice of which id to send needed to change).
+     The parent-grouped view's own "Send Reminder" (covering every
+     sibling) was and remains the separate, explicit option for that
+     wider scope.
+  2. **The MoMo number never appeared in the SMS, even though the school
+     had one configured** — a parent without a smartphone had no way to
+     pay. Root cause: neither the pre-Phase-4 default template (Eagle
+     Vision's own, never auto-updated — by design) nor the Phase-4
+     itemized default template ever actually included
+     `{{school_momo_number}}` in their body text; the variable existed
+     and rendered correctly whenever used, it just was never placed in
+     either default. **Fixed**: `DEFAULT_TEMPLATE_BODY` now includes
+     `or MoMo {{school_momo_number}}` (renders a dangling "or MoMo" with
+     nothing after it for a school with none set — an accepted minor
+     cosmetic cost, since a payment-blocking gap for feature-phone
+     parents is far worse). Eagle Vision's own existing template content
+     was updated directly on production to match, since it's a content
+     fix the school would reasonably want, not a schema/behavior change.
+  3. **A real "invalid payment link" error on a genuinely valid,
+     unexpired, correctly-hashed link.** Investigated thoroughly before
+     concluding anything: confirmed the token hash matched, the link was
+     `active` and far from expired, and calling the real production API
+     directly with the exact token from the database returned a correct
+     200 with the right data — so the backend and database were never
+     wrong. The message carrying that link was 198 characters (2 GSM-7
+     segments), and the user confirmed the failure was reproducible from
+     the same original SMS, not a one-off retry fluke — consistent with
+     the URL having arrived corrupted across a 2-segment concatenation
+     boundary somewhere in the delivery chain (provider/carrier), not
+     fixable from the application side. **Mitigated** (not "fixed" —
+     this risk can't be eliminated from the app layer) by tightening
+     Eagle Vision's template to fit in one segment even with the MoMo
+     number included (156 chars for this real case).
+  - **A 4th, unrelated bug was found while fixing the above**: writing a
+    test for the itemized-vs-manual equivalence check (Phase 6) exposed
+    that `getTemplate()`'s fallback query (`ORDER BY created_at ASC`)
+    had no secondary tiebreaker. `sms_templates.created_at` has only
+    1-second resolution, so two templates created within the same
+    second — entirely plausible, and reproduced by a fast local test
+    run — gave MySQL no deterministic way to pick "the oldest," silently
+    returning an arbitrary one among ties. **Fixed**: both of
+    `getTemplate`'s fallback queries now sort `ORDER BY created_at ASC,
+    id ASC`. This was a real latent bug independent of the pilot
+    incident, just surfaced by the same debugging session.
+  - 29/29 suites, 270 passed + 2 skipped (unchanged — this was fixes to
+    existing behavior and tests, not new scenario coverage). Clean
+    frontend build. Live-verified via Puppeteer reproducing the exact
+    real scenario (same student/parent names, same two fee types, same
+    MoMo number): clicking "Send Reminder" from the Graduation Fees row
+    produced *"saad salim owes Exam Fees / Mock GHS 50.00; Graduation
+    Fees GHS 300.00. Total GHS 350.00. Pay: ... or MoMo 0577428684"* —
+    all three issues confirmed fixed together in one real flow.
+  - Deployed same day; no schema change, pure code + one piece of
+    school-specific content (Eagle Vision's template body) updated
+    directly on production.
+
 ## Future Work
 
 1. **Per-school prepaid SMS credit, with a hard cap — not built yet,

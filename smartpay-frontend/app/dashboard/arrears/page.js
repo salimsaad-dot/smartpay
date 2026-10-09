@@ -59,23 +59,30 @@ function PaymentLinkCell({ parentId }) {
   );
 }
 
-function SendReminderModal({ parentId, invoiceId, label, onClose }) {
+function SendReminderModal({ parentId, studentId, label, onClose }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
 
+  // Scoped to the student, not the one invoice the admin clicked from —
+  // a parent clicking "Send Reminder" from any of a student's rows
+  // expects the message to cover everything that student owes (real
+  // confusion caught live: clicking from a Graduation Fees row sent a
+  // reminder mentioning only Graduation Fees, with no indication the
+  // same student also had an outstanding Feeding invoice). Siblings
+  // still require the separate parent-grouped "Send Reminder" action.
   useEffect(() => {
-    apiRequest("/reminders/preview", { method: "POST", body: { parentId, invoiceId } })
+    apiRequest("/reminders/preview", { method: "POST", body: { parentId, studentId } })
       .then((res) => setPreview(res.data))
       .catch((err) => setError(err.message));
-  }, [parentId, invoiceId]);
+  }, [parentId, studentId]);
 
   async function handleSend() {
     setSending(true);
     setError("");
     try {
-      await apiRequest("/reminders/send", { method: "POST", body: { parentId, invoiceId } });
+      await apiRequest("/reminders/send", { method: "POST", body: { parentId, studentId } });
       setResult("success");
     } catch (err) {
       setError(err.message);
@@ -172,7 +179,7 @@ export default function ArrearsPage() {
         <PaymentLinkCell parentId={inv.parent_id} />
         {inv.parent_id && (
           <LinkButton
-            onClick={() => setReminderTarget({ parentId: inv.parent_id, invoiceId: inv.id, label: `${inv.first_name} ${inv.last_name} · ${inv.term_name}` })}
+            onClick={() => setReminderTarget({ parentId: inv.parent_id, studentId: inv.student_id, label: `${inv.first_name} ${inv.last_name} — all outstanding fees` })}
           >
             Send Reminder
           </LinkButton>
@@ -187,7 +194,7 @@ export default function ArrearsPage() {
         <PaymentLinkCell parentId={g.parentId} />
         {g.parentId && (
           <LinkButton
-            onClick={() => setReminderTarget({ parentId: g.parentId, invoiceId: null, label: `${g.parentName} · ${Array.from(g.children).join(", ")}` })}
+            onClick={() => setReminderTarget({ parentId: g.parentId, studentId: null, label: `${g.parentName} · ${Array.from(g.children).join(", ")}` })}
           >
             Send Reminder
           </LinkButton>
@@ -366,7 +373,7 @@ export default function ArrearsPage() {
       {reminderTarget && (
         <SendReminderModal
           parentId={reminderTarget.parentId}
-          invoiceId={reminderTarget.invoiceId}
+          studentId={reminderTarget.studentId}
           label={reminderTarget.label}
           onClose={() => setReminderTarget(null)}
         />

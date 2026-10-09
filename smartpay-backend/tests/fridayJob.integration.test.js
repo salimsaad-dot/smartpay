@@ -177,8 +177,13 @@ describe('Friday automation job — cycle locks, filtering, and cron trigger (re
         // generated link; preview's is the placeholder text).
         const manualPreview = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
             .send({ parentId: parentIdA });
-        const breakdownFromFriday = mensahReminder.message.split('. Total:')[0];
-        const breakdownFromManual = manualPreview.body.data.message.split('. Total:')[0];
+        // Split on "Pay:" rather than hardcoding exact wording around
+        // "Total" — only the payment link (and whatever follows it)
+        // should ever differ between a real Friday send and a manual
+        // preview; everything before it (breakdown + total) must match
+        // exactly regardless of the template's surrounding phrasing.
+        const breakdownFromFriday = mensahReminder.message.split('Pay:')[0];
+        const breakdownFromManual = manualPreview.body.data.message.split('Pay:')[0];
         expect(breakdownFromFriday).toBe(breakdownFromManual);
     });
 
