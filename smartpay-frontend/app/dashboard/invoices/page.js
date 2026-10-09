@@ -26,11 +26,33 @@ import {
 const STATUS_LABELS = { unpaid: "Unpaid", partially_paid: "Partially Paid", paid: "Paid", void: "Void" };
 const METHOD_LABELS = { cash: "Cash", mobile_money: "Mobile Money", bank_transfer: "Bank Transfer", other: "Other" };
 
-function GenerateInvoicesPanel({ structures, onGenerated }) {
+function GenerateInvoicesPanel({ structures, currency, onGenerated }) {
   const [feeStructureId, setFeeStructureId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Re-fetched every time the chosen structure changes — the admin
+  // reviews exactly who's about to be billed and for how much BEFORE
+  // the "Generate Invoices" button is even enabled, per the doc's own
+  // "pre-generation review" requirement. A stale preview is worse than
+  // no preview, so this never trusts an earlier fetch once the selection
+  // changes.
+  useEffect(() => {
+    setPreview(null);
+    setPreviewError("");
+    setResult(null);
+    if (!feeStructureId) return;
+    setPreviewLoading(true);
+    apiRequest(`/invoices/generation-preview?feeStructureId=${feeStructureId}`)
+      .then((res) => setPreview(res.data))
+      .catch((err) => setPreviewError(err.message))
+      .finally(() => setPreviewLoading(false));
+  }, [feeStructureId]);
 
   async function handleGenerate(e) {
     e.preventDefault();
@@ -38,8 +60,11 @@ function GenerateInvoicesPanel({ structures, onGenerated }) {
     setResult(null);
     setSaving(true);
     try {
-      const res = await apiRequest("/invoices/generate", { method: "POST", body: { feeStructureId: Number(feeStructureId) } });
+      const res = await apiRequest("/invoices/generate", { method: "POST", body: { feeStructureId: Number(feeStructureId), dueDate } });
       setResult(res.data);
+      setPreview(null);
+      setFeeStructureId("");
+      setDueDate("");
       onGenerated();
     } catch (err) {
       setError(err.message);
@@ -56,7 +81,29 @@ function GenerateInvoicesPanel({ structures, onGenerated }) {
           {structures.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.class_name} · {s.term_name}</option>)}
         </select>
       </Field>
-      <Button type="submit" disabled={saving}>{saving ? "Generating..." : "Generate Invoices"}</Button>
+      <Field label="Due Date" className="w-full sm:w-auto">
+        <input required type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
+      </Field>
+      <Button type="submit" disabled={saving || previewLoading || !preview || preview.studentCount === 0}>
+        {saving ? "Generating..." : "Generate Invoices"}
+      </Button>
+
+      {previewLoading && <p className="w-full text-sm text-[var(--slate-quiet)]">Loading preview...</p>}
+      {previewError && <p className="w-full text-sm text-[var(--danger)]">{previewError}</p>}
+      {preview && (
+        <div className="w-full rounded-lg border border-[var(--border)] bg-[var(--hover)] p-3 text-sm text-[var(--slate)]">
+          {preview.studentCount === 0 ? (
+            <p>No eligible students for this fee structure — nothing would be billed.</p>
+          ) : (
+            <p>
+              This will bill <strong>{preview.studentCount}</strong> student{preview.studentCount === 1 ? "" : "s"}
+              {" "}(<strong>{preview.newInvoiceCount}</strong> new, {preview.alreadyInvoicedCount} already billed),
+              {" "}totaling <strong>{formatMoney(preview.totalAmount, currency)}</strong> per student.
+            </p>
+          )}
+        </div>
+      )}
+
       {result && (
         <p className="w-full text-sm text-[var(--slate)]">
           Created {result.created} new invoice(s){result.skipped > 0 ? `, skipped ${result.skipped} (already billed)` : ""} out of {result.totalEligibleStudents} eligible student(s).
@@ -259,7 +306,7 @@ export default function InvoicesPage() {
         description="Generate one invoice per active student from a fee structure. Running it again only bills students who don't already have one."
       />
 
-      <div className="mt-4"><GenerateInvoicesPanel structures={structures} onGenerated={load} /></div>
+      <div className="mt-4"><GenerateInvoicesPanel structures={structures} currency={currency} onGenerated={load} /></div>
 
       {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
       {!invoices && !loadError && <div className="mt-6"><LoadingSkeleton lines={3} /></div>}

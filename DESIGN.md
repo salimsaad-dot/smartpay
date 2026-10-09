@@ -1782,12 +1782,77 @@ for a full management system.
     dropdown (12 remaining, confirmed by reading the actual option list,
     not just the UI), and a real "Feeding" fee structure was created
     end-to-end through the real form.
-  - **Not yet done**: the migration has only been run against the local
-    dev database. Per this project's own standing discipline (a past
-    incident shipped code before its migration reached production and
-    broke login), this must run against the live Aiven database before
-    or immediately alongside the next deploy — tracked as the next step,
-    not forgotten.
+  - **Production migrated and deployed 2026-10-09.** Run against the
+    real Aiven `smartpay_db` (not `defaultdb` — the Aiven dashboard's own
+    credentials page lists `defaultdb` as the service default, but the
+    actual application database, confirmed by checking `SHOW DATABASES`
+    and finding real school rows, is `smartpay_db`; worth remembering,
+    since the credentials screen doesn't make this obvious). Verified
+    directly against production before pushing: Eagle Vision Basic
+    School's 2 pre-existing fee structures ("Term 1 Fees" ×2, "Term 1")
+    correctly backfilled to their own newly-created fee types, both
+    schools seeded with the 13 defaults. Pushed, Render redeployed, and
+    `/api/fee-types` was polled until it returned `401` (was `404`
+    pre-deploy) to confirm the new route was actually live, not just
+    that the push succeeded.
+- **Fee management Phase 2 — selected-student billing, generation
+  review, due dates: SHIPPED 2026-10-09 (local; production pending).**
+  Second of the 6-phase plan. Scope fixed by the same direct-question
+  process as Phase 1: eligibility is a **reusable per-student flag**
+  (set once, persists across terms — not re-picked at every
+  generation), applicability lives **on the fee type**, not per
+  structure (a type like Transportation is conceptually always
+  "selective," not something that toggles per term), and due dates are
+  **admin-set at generation time**, enforced client-side only (the API
+  itself stays backward-compatible, still defaulting to the term's end
+  date when omitted, since nothing about this needed to be a breaking
+  API change — only the UI needed to stop silently relying on that
+  default).
+  - **`fee_types.applicability`** (`class_wide` default / `selected_students`)
+    and a new **`student_fee_eligibility`** table (student × fee type,
+    presence = eligible). `invoiceController.js` gained a shared
+    `resolveEligibleStudents()` helper — used by both the new
+    generation-preview endpoint and actual generation, so a preview can
+    never show one set of students while generation bills a different
+    one (same "one shared resolver" discipline Phase 7's reminder system
+    already established for manual vs. Friday-automated sends).
+  - **`GET /invoices/generation-preview`** — the doc's own
+    "pre-generation review" requirement: target students, new vs.
+    already-billed counts, and per-student total, computed without
+    creating anything. The Invoices page now fetches this automatically
+    the moment a fee structure is selected, and the "Generate Invoices"
+    button stays disabled until a non-empty preview has loaded — an
+    admin physically cannot submit a blind generation anymore.
+  - **Fee Types page**: applicability is chosen at creation and
+    switchable after the fact; a `selected_students` type gets a
+    "Manage Students" action opening a searchable checkbox list (all
+    active students, pre-checked with the current eligible set) that
+    replaces the whole set on save — simplest correct semantics for a
+    "here's the full list" UI action, not incremental add/remove calls.
+  - **Invoices page**: due date is now a required field with no
+    pre-filled value, sitting next to the fee-structure picker.
+  - 9 new backend tests (`feeEligibility.integration.test.js`): default
+    applicability, eligibility list/update/replace-not-additive, preview
+    accuracy (count/total/names), actual generation correctly excluding
+    the non-eligible student, a `class_wide` structure proven unaffected
+    (still bills everyone), cross-tenant isolation on all 3 new
+    endpoints, invalid-applicability rejection. Full suite: 27/27 suites,
+    252 passed + 2 skipped (up from 243). Clean frontend build.
+  - Live-verified via Puppeteer against a freshly registered school (3
+    real students, one fee type set to selected-students, 2 of 3 marked
+    eligible through the real checkbox modal): the generation-preview
+    banner correctly read "This will bill 2 students (2 new, 0 already
+    billed), totaling GHS 150.00 per student" before anything was
+    created; submitting without a due date was correctly blocked by the
+    browser's own required-field validation (caught a real test-script
+    bug — `.type()` doesn't work on `<input type="date">` — fixed by
+    setting `.value` directly and dispatching input/change events, not a
+    product bug); after setting the due date and generating, exactly 2
+    invoices existed (Ama Owusu, Kofi Mensah, GHS 150.00 each, due Dec
+    12 2026) and the excluded third student never got one.
+  - **Not yet done**: migration (`scripts/migrate-fee-eligibility.js`)
+    has only run against the local dev database — production migration
+    and deploy are the next step, same discipline as Phase 1.
 
 ## Future Work
 
