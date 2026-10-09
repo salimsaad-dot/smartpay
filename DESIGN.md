@@ -2028,6 +2028,20 @@ for a full management system.
   - **No schema change** — reuses the `fee_structures`/`fee_types`
     relationship Phase 1 already built. Pure code; normal push + deploy,
     no migration script needed.
+  - **Deployed and verified live 2026-10-09.** This deploy took
+    noticeably longer to roll out than the previous four — the first
+    production content check genuinely came back `undefined` (the old
+    build was still serving, not a code bug: raw `SHOW COLUMNS`/row
+    checks confirmed the underlying data was correct, only the API
+    response was stale). Rather than guess it was fine, polled the real
+    `/api/arrears` response every 15s until `fee_type_name` actually
+    appeared (~2 more minutes), then re-ran the full check: both the
+    admin Arrears endpoint and, critically, the real public
+    `/api/public/checkout/:token` endpoint (no session, exactly what a
+    parent's browser calls) correctly returned `"Feeding"` for a real
+    throwaway production invoice. Both throwaway schools from this
+    phase's verification deleted immediately after; confirmed only the
+    2 real schools remain.
 
 ## Future Work
 
