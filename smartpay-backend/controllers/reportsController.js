@@ -53,13 +53,15 @@ exports.outstandingFees = async (req, res) => {
         const params = [req.user.schoolId];
         let sql = `
             SELECT i.invoice_no, i.total, i.paid_amount, i.balance, i.status,
-                   st.first_name, st.last_name, c.name AS class_name, t.name AS term_name,
+                   st.first_name, st.last_name, c.name AS class_name, t.name AS term_name, ft.name AS fee_type_name,
                    pr.full_name AS parent_name, pr.phone AS parent_phone,
                    (SELECT MAX(paid_at) FROM payments WHERE invoice_id = i.id AND status = 'success') AS last_payment_date
             FROM invoices i
             JOIN students st ON st.id = i.student_id
             JOIN classes c ON c.id = st.class_id
             JOIN terms t ON t.id = i.term_id
+            JOIN fee_structures fs ON fs.id = i.fee_structure_id
+            JOIN fee_types ft ON ft.id = fs.fee_type_id
             LEFT JOIN parent_student ps ON ps.student_id = st.id AND ps.is_primary = 1
             LEFT JOIN parents pr ON pr.id = ps.parent_id
             WHERE i.school_id = ? AND i.balance > 0 AND i.status != 'void'`;
@@ -76,6 +78,7 @@ exports.outstandingFees = async (req, res) => {
             parentPhone: r.parent_phone || '',
             className: r.class_name,
             termName: r.term_name,
+            feeTypeName: r.fee_type_name,
             invoiceNo: r.invoice_no,
             total: r.total,
             paid: r.paid_amount,
@@ -87,7 +90,7 @@ exports.outstandingFees = async (req, res) => {
         if (format === 'csv') {
             return sendCsv(res, 'outstanding-fees.csv', data, [
                 { key: 'studentName', label: 'Student' }, { key: 'parentName', label: 'Parent/Guardian' }, { key: 'parentPhone', label: 'Phone' },
-                { key: 'className', label: 'Class' }, { key: 'termName', label: 'Term' }, { key: 'status', label: 'Status' }, { key: 'invoiceNo', label: 'Invoice No.' },
+                { key: 'className', label: 'Class' }, { key: 'termName', label: 'Term' }, { key: 'feeTypeName', label: 'Fee Type' }, { key: 'status', label: 'Status' }, { key: 'invoiceNo', label: 'Invoice No.' },
                 { key: 'total', label: 'Total' }, { key: 'paid', label: 'Paid' }, { key: 'balance', label: 'Balance' }, { key: 'lastPaymentDate', label: 'Last Payment' },
             ]);
         }
@@ -106,10 +109,12 @@ exports.paymentHistory = async (req, res) => {
         const { startDate, endDate, studentId, parentId, method, status, format } = req.query;
         const params = [req.user.schoolId];
         let sql = `
-            SELECT p.*, st.first_name, st.last_name, inv.invoice_no
+            SELECT p.*, st.first_name, st.last_name, inv.invoice_no, ft.name AS fee_type_name
             FROM payments p
             JOIN students st ON st.id = p.student_id
             JOIN invoices inv ON inv.id = p.invoice_id
+            JOIN fee_structures fs ON fs.id = inv.fee_structure_id
+            JOIN fee_types ft ON ft.id = fs.fee_type_id
             WHERE p.school_id = ?`;
         if (startDate) { sql += ' AND DATE(p.created_at) >= ?'; params.push(startDate); }
         if (endDate) { sql += ' AND DATE(p.created_at) <= ?'; params.push(endDate); }
@@ -135,6 +140,7 @@ exports.paymentHistory = async (req, res) => {
             date: r.paid_at || r.created_at,
             studentName: `${r.first_name} ${r.last_name}`,
             invoiceNo: r.invoice_no,
+            feeTypeName: r.fee_type_name,
             amount: r.amount,
             method: r.method || '',
             source: r.source,
@@ -144,7 +150,7 @@ exports.paymentHistory = async (req, res) => {
 
         if (format === 'csv') {
             return sendCsv(res, 'payment-history.csv', data, [
-                { key: 'date', label: 'Date' }, { key: 'studentName', label: 'Student' }, { key: 'invoiceNo', label: 'Invoice No.' },
+                { key: 'date', label: 'Date' }, { key: 'studentName', label: 'Student' }, { key: 'invoiceNo', label: 'Invoice No.' }, { key: 'feeTypeName', label: 'Fee Type' },
                 { key: 'amount', label: 'Amount' }, { key: 'method', label: 'Method' }, { key: 'source', label: 'Source' },
                 { key: 'status', label: 'Status' }, { key: 'reference', label: 'Reference' },
             ]);
@@ -162,11 +168,13 @@ exports.invoiceReport = async (req, res) => {
         const params = [req.user.schoolId];
         let sql = `
             SELECT inv.invoice_no, inv.total, inv.paid_amount, inv.balance, inv.status, inv.due_date,
-                   s.first_name, s.last_name, c.name AS class_name, t.name AS term_name
+                   s.first_name, s.last_name, c.name AS class_name, t.name AS term_name, ft.name AS fee_type_name
             FROM invoices inv
             JOIN students s ON s.id = inv.student_id
             JOIN classes c ON c.id = s.class_id
             JOIN terms t ON t.id = inv.term_id
+            JOIN fee_structures fs ON fs.id = inv.fee_structure_id
+            JOIN fee_types ft ON ft.id = fs.fee_type_id
             WHERE inv.school_id = ?`;
         if (termId) { sql += ' AND inv.term_id = ?'; params.push(termId); }
         if (classId) { sql += ' AND s.class_id = ?'; params.push(classId); }
@@ -179,6 +187,7 @@ exports.invoiceReport = async (req, res) => {
             studentName: `${r.first_name} ${r.last_name}`,
             className: r.class_name,
             termName: r.term_name,
+            feeTypeName: r.fee_type_name,
             total: r.total,
             paid: r.paid_amount,
             balance: r.balance,
@@ -189,7 +198,7 @@ exports.invoiceReport = async (req, res) => {
         if (format === 'csv') {
             return sendCsv(res, 'invoice-report.csv', data, [
                 { key: 'invoiceNo', label: 'Invoice No.' }, { key: 'studentName', label: 'Student' }, { key: 'className', label: 'Class' },
-                { key: 'termName', label: 'Term' }, { key: 'total', label: 'Total' }, { key: 'paid', label: 'Paid' },
+                { key: 'termName', label: 'Term' }, { key: 'feeTypeName', label: 'Fee Type' }, { key: 'total', label: 'Total' }, { key: 'paid', label: 'Paid' },
                 { key: 'balance', label: 'Balance' }, { key: 'status', label: 'Status' }, { key: 'dueDate', label: 'Due Date' },
             ]);
         }
@@ -253,8 +262,11 @@ exports.studentStatement = async (req, res) => {
         }
 
         const [invoices] = await pool.query(
-            `SELECT inv.id, inv.invoice_no, inv.total, inv.paid_amount, inv.balance, inv.status, inv.due_date, t.name AS term_name
-             FROM invoices inv JOIN terms t ON t.id = inv.term_id
+            `SELECT inv.id, inv.invoice_no, inv.total, inv.paid_amount, inv.balance, inv.status, inv.due_date, t.name AS term_name, ft.name AS fee_type_name
+             FROM invoices inv
+             JOIN terms t ON t.id = inv.term_id
+             JOIN fee_structures fs ON fs.id = inv.fee_structure_id
+             JOIN fee_types ft ON ft.id = fs.fee_type_id
              WHERE inv.student_id = ? AND inv.school_id = ? ORDER BY inv.issue_date ASC`,
             [req.params.studentId, req.user.schoolId]
         );
@@ -289,11 +301,13 @@ exports.parentStatement = async (req, res) => {
 
         const [invoices] = await pool.query(
             `SELECT inv.id, inv.invoice_no, inv.total, inv.paid_amount, inv.balance, inv.status, inv.due_date,
-                    t.name AS term_name, st.id AS student_id, st.first_name, st.last_name
+                    t.name AS term_name, ft.name AS fee_type_name, st.id AS student_id, st.first_name, st.last_name
              FROM invoices inv
              JOIN students st ON st.id = inv.student_id
              JOIN parent_student ps ON ps.student_id = st.id
              JOIN terms t ON t.id = inv.term_id
+             JOIN fee_structures fs ON fs.id = inv.fee_structure_id
+             JOIN fee_types ft ON ft.id = fs.fee_type_id
              WHERE ps.parent_id = ? AND inv.school_id = ? ORDER BY st.first_name ASC, inv.issue_date ASC`,
             [req.params.parentId, req.user.schoolId]
         );

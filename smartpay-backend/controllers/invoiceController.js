@@ -175,10 +175,12 @@ exports.list = async (req, res) => {
         const { studentId, termId, classId, status } = req.query;
         const params = [req.user.schoolId];
         let sql = `
-            SELECT inv.*, s.admission_no, s.first_name, s.last_name, c.name AS class_name
+            SELECT inv.*, s.admission_no, s.first_name, s.last_name, c.name AS class_name, ft.name AS fee_type_name
             FROM invoices inv
             JOIN students s ON s.id = inv.student_id
             JOIN classes c ON c.id = s.class_id
+            JOIN fee_structures fs ON fs.id = inv.fee_structure_id
+            JOIN fee_types ft ON ft.id = fs.fee_type_id
             WHERE inv.school_id = ?`;
         if (studentId) { sql += ' AND inv.student_id = ?'; params.push(studentId); }
         if (termId) { sql += ' AND inv.term_id = ?'; params.push(termId); }
@@ -197,8 +199,10 @@ exports.list = async (req, res) => {
 exports.getById = async (req, res) => {
     try {
         const [[invoice]] = await pool.query(
-            `SELECT inv.*, s.admission_no, s.first_name, s.last_name, c.name AS class_name, t.name AS term_name
-             FROM invoices inv JOIN students s ON s.id = inv.student_id JOIN classes c ON c.id = s.class_id JOIN terms t ON t.id = inv.term_id
+            `SELECT inv.*, s.admission_no, s.first_name, s.last_name, c.name AS class_name, t.name AS term_name, ft.name AS fee_type_name
+             FROM invoices inv
+             JOIN students s ON s.id = inv.student_id JOIN classes c ON c.id = s.class_id JOIN terms t ON t.id = inv.term_id
+             JOIN fee_structures fs ON fs.id = inv.fee_structure_id JOIN fee_types ft ON ft.id = fs.fee_type_id
              WHERE inv.id = ? AND inv.school_id = ?`,
             [req.params.id, req.user.schoolId]
         );

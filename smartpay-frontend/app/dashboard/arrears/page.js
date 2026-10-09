@@ -265,6 +265,7 @@ export default function ArrearsPage() {
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div><dt className="text-[var(--slate-quiet)]">Parent/Guardian</dt><dd className="truncate font-medium text-[var(--ink)]">{inv.parent_name || "—"}</dd></div>
+                  <div><dt className="text-[var(--slate-quiet)]">Fee Type</dt><dd className="truncate font-medium text-[var(--ink)]">{inv.fee_type_name}</dd></div>
                   <div><dt className="text-[var(--slate-quiet)]">Last payment</dt><dd className="font-medium text-[var(--ink)]">{inv.last_payment_date ? formatDate(inv.last_payment_date) : "Never"}</dd></div>
                   <div><dt className="text-[var(--slate-quiet)]">Total</dt><dd><AmountDisplay amount={inv.total} currency={currency} /></dd></div>
                   <div><dt className="text-[var(--slate-quiet)]">Paid</dt><dd><AmountDisplay amount={inv.paid_amount} currency={currency} /></dd></div>
@@ -278,7 +279,7 @@ export default function ArrearsPage() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                  <th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Parent/Guardian</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th>
+                  <th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Parent/Guardian</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Fee Type</th>
                   <th className="p-3 font-medium">Total</th><th className="p-3 font-medium">Paid</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Last Payment</th><th className="p-3 font-medium"></th>
                 </tr>
               </thead>
@@ -289,6 +290,7 @@ export default function ArrearsPage() {
                     <td className="p-3">{inv.parent_name || <span className="text-[var(--slate-quiet)]">—</span>}</td>
                     <td className="p-3">{inv.class_name}</td>
                     <td className="p-3">{inv.term_name}</td>
+                    <td className="p-3">{inv.fee_type_name}</td>
                     <td className="p-3"><AmountDisplay amount={inv.total} currency={currency} /></td>
                     <td className="p-3"><AmountDisplay amount={inv.paid_amount} currency={currency} /></td>
                     <td className="p-3"><AmountDisplay amount={inv.balance} currency={currency} tone="danger" size="lg" /></td>
@@ -297,7 +299,7 @@ export default function ArrearsPage() {
                   </tr>
                 ))}
                 {data.invoices.length === 0 && (
-                  <tr><td colSpan={9} className="p-4 text-center text-[var(--slate-quiet)]">No outstanding balances — nothing in arrears.</td></tr>
+                  <tr><td colSpan={10} className="p-4 text-center text-[var(--slate-quiet)]">No outstanding balances — nothing in arrears.</td></tr>
                 )}
               </tbody>
             </table>

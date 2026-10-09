@@ -322,7 +322,7 @@ export default function InvoicesPage() {
                   <div className="min-w-0">
                     <p className="font-mono text-xs text-[var(--slate-quiet)]">{inv.invoice_no}</p>
                     <p className="truncate font-medium text-[var(--ink)]">{inv.first_name} {inv.last_name}</p>
-                    <p className="truncate text-xs text-[var(--slate-quiet)]">{inv.class_name} · Due {formatDate(inv.due_date)}</p>
+                    <p className="truncate text-xs text-[var(--slate-quiet)]">{inv.fee_type_name} · {inv.class_name} · Due {formatDate(inv.due_date)}</p>
                   </div>
                   <StatusBadge tone={statusTone(inv.status)}>{STATUS_LABELS[inv.status]}</StatusBadge>
                 </div>
@@ -345,7 +345,7 @@ export default function InvoicesPage() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                  <th className="p-3 font-medium">Invoice No.</th><th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Class</th>
+                  <th className="p-3 font-medium">Invoice No.</th><th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Fee Type</th><th className="p-3 font-medium">Class</th>
                   <th className="p-3 font-medium">Due</th><th className="p-3 font-medium">Total</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Status</th>
                 </tr>
               </thead>
@@ -355,6 +355,7 @@ export default function InvoicesPage() {
                     <tr className="border-b border-[var(--border)] last:border-b-0">
                       <td className="p-3 font-mono text-xs">{inv.invoice_no}</td>
                       <td className="p-3 font-medium">{inv.first_name} {inv.last_name}</td>
+                      <td className="p-3">{inv.fee_type_name}</td>
                       <td className="p-3">{inv.class_name}</td>
                       <td className="p-3">{formatDate(inv.due_date)}</td>
                       <td className="p-3"><AmountDisplay amount={inv.total} currency={currency} /></td>
@@ -368,14 +369,14 @@ export default function InvoicesPage() {
                     </tr>
                     {expandedId === inv.id && (
                       <tr className="border-b border-[var(--border)] bg-[var(--hover)]">
-                        <td colSpan={7} className="p-3">
+                        <td colSpan={8} className="p-3">
                           <PaymentsPanel invoice={inv} currency={currency} onChanged={load} onToast={showToast} />
                         </td>
                       </tr>
                     )}
                   </Fragment>
                 ))}
-                {invoices.length === 0 && <tr><td colSpan={7} className="p-4 text-center text-[var(--slate-quiet)]">No invoices generated yet.</td></tr>}
+                {invoices.length === 0 && <tr><td colSpan={8} className="p-4 text-center text-[var(--slate-quiet)]">No invoices generated yet.</td></tr>}
               </tbody>
             </table>
           </div>

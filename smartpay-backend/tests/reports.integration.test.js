@@ -111,6 +111,7 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         expect(res.body.data[0].studentName).toBe('Yaw Mensah');
         expect(Number(res.body.data[0].balance)).toBe(300);
         expect(['unpaid', 'partially_paid']).toContain(res.body.data[0].status);
+        expect(res.body.data[0].feeTypeName).toBe('School Fees');
     });
 
     test('outstanding fees report exports as CSV with a header row', async () => {
@@ -128,6 +129,7 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         expect(Number(res.body.data.summary.totalCollected)).toBe(700);
         expect(Number(res.body.data.summary.manualCollected)).toBe(700);
         expect(Number(res.body.data.summary.onlineCollected)).toBe(0);
+        expect(res.body.data.payments.every((p) => p.feeTypeName === 'School Fees')).toBe(true);
     });
 
     test('payment history filters by parent (joined through parent_student, since payments has no parent_id column)', async () => {
@@ -148,6 +150,7 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         expect(res.body.data).toHaveLength(2);
         const kofiRow = res.body.data.find((i) => i.studentName === 'Kofi Mensah');
         expect(kofiRow.status).toBe('paid');
+        expect(kofiRow.feeTypeName).toBe('School Fees');
     });
 
     test('sms activity report returns an empty but well-formed summary when nothing has been sent', async () => {
@@ -163,6 +166,7 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         expect(res.body.data.invoices).toHaveLength(1);
         expect(res.body.data.payments).toHaveLength(1);
         expect(Number(res.body.data.totalOutstanding)).toBe(300);
+        expect(res.body.data.invoices[0].fee_type_name).toBe('School Fees');
     });
 
     test('parent statement consolidates both of a parent\'s children', async () => {
@@ -172,6 +176,7 @@ describe('reports — collections, outstanding, payments, invoices, SMS activity
         expect(res.body.data.payments).toHaveLength(2);
         expect(Number(res.body.data.totalBilled)).toBe(1000);
         expect(Number(res.body.data.totalOutstanding)).toBe(300);
+        expect(res.body.data.invoices.every((i) => i.fee_type_name === 'School Fees')).toBe(true);
     });
 
     test("school B cannot access school A's reports or statements", async () => {

@@ -223,7 +223,7 @@ function OutstandingFeesTab({ classes, terms, currency }) {
             <div className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)]">
               <table className="w-full text-left text-sm">
                 <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                  <th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Parent</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Last Payment</th>
+                  <th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Parent</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Fee Type</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Last Payment</th>
                 </tr></thead>
                 <tbody>
                   {data.map((r, i) => (
@@ -236,6 +236,7 @@ function OutstandingFeesTab({ classes, terms, currency }) {
                       </td>
                       <td className="p-3">{r.parentName || "—"}</td>
                       <td className="p-3">{r.className}</td><td className="p-3">{r.termName}</td>
+                      <td className="p-3">{r.feeTypeName}</td>
                       <td className="p-3"><StatusBadge tone={statusTone(r.status)}>{r.status === "partially_paid" ? "Partial" : "Unpaid"}</StatusBadge></td>
                       <td className="p-3 font-semibold text-[var(--danger)]">{formatMoney(r.balance, currency)}</td>
                       <td className="p-3">{r.lastPaymentDate ? formatDate(r.lastPaymentDate) : "Never"}</td>
@@ -301,12 +302,13 @@ function PaymentHistoryTab({ currency }) {
               <div className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)]">
                 <table className="w-full text-left text-sm">
                   <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                    <th className="p-3 font-medium">Date</th><th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Invoice</th><th className="p-3 font-medium">Amount</th><th className="p-3 font-medium">Method</th><th className="p-3 font-medium">Source</th><th className="p-3 font-medium">Status</th>
+                    <th className="p-3 font-medium">Date</th><th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Invoice</th><th className="p-3 font-medium">Fee Type</th><th className="p-3 font-medium">Amount</th><th className="p-3 font-medium">Method</th><th className="p-3 font-medium">Source</th><th className="p-3 font-medium">Status</th>
                   </tr></thead>
                   <tbody>
                     {data.payments.map((p, i) => (
                       <tr key={i} className="border-b border-[var(--border)] last:border-b-0">
                         <td className="p-3">{formatDate(p.date)}</td><td className="p-3">{p.studentName}</td><td className="p-3 font-mono text-xs">{p.invoiceNo}</td>
+                        <td className="p-3">{p.feeTypeName}</td>
                         <td className="p-3">{formatMoney(p.amount, currency)}</td><td className="p-3">{p.method || "—"}</td><td className="p-3">{p.source}</td><td className="p-3">{p.status}</td>
                       </tr>
                     ))}
@@ -357,13 +359,13 @@ function InvoiceReportTab({ classes, terms, currency }) {
             <div className="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)]">
               <table className="w-full text-left text-sm">
                 <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                  <th className="p-3 font-medium">Invoice No.</th><th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Total</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Status</th>
+                  <th className="p-3 font-medium">Invoice No.</th><th className="p-3 font-medium">Student</th><th className="p-3 font-medium">Class</th><th className="p-3 font-medium">Term</th><th className="p-3 font-medium">Fee Type</th><th className="p-3 font-medium">Total</th><th className="p-3 font-medium">Balance</th><th className="p-3 font-medium">Status</th>
                 </tr></thead>
                 <tbody>
                   {data.map((inv, i) => (
                     <tr key={i} className="border-b border-[var(--border)] last:border-b-0">
                       <td className="p-3 font-mono text-xs">{inv.invoiceNo}</td><td className="p-3">{inv.studentName}</td><td className="p-3">{inv.className}</td>
-                      <td className="p-3">{inv.termName}</td><td className="p-3">{formatMoney(inv.total, currency)}</td><td className="p-3">{formatMoney(inv.balance, currency)}</td><td className="p-3">{inv.status}</td>
+                      <td className="p-3">{inv.termName}</td><td className="p-3">{inv.feeTypeName}</td><td className="p-3">{formatMoney(inv.total, currency)}</td><td className="p-3">{formatMoney(inv.balance, currency)}</td><td className="p-3">{inv.status}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -504,14 +506,14 @@ function StatementsTab({ currency }) {
           <div className="mt-2 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead><tr className="border-b border-[var(--border)] text-xs text-[var(--slate-quiet)]">
-                <th className="p-2 font-medium">Invoice No.</th>{!statement.student && <th className="p-2 font-medium">Student</th>}<th className="p-2 font-medium">Term</th><th className="p-2 font-medium">Total</th><th className="p-2 font-medium">Balance</th><th className="p-2 font-medium">Status</th>
+                <th className="p-2 font-medium">Invoice No.</th>{!statement.student && <th className="p-2 font-medium">Student</th>}<th className="p-2 font-medium">Term</th><th className="p-2 font-medium">Fee Type</th><th className="p-2 font-medium">Total</th><th className="p-2 font-medium">Balance</th><th className="p-2 font-medium">Status</th>
               </tr></thead>
               <tbody>
                 {statement.invoices.map((inv) => (
                   <tr key={inv.id} className="border-b border-[var(--border)] last:border-b-0">
                     <td className="p-2 font-mono text-xs">{inv.invoice_no}</td>
                     {!statement.student && <td className="p-2">{inv.first_name} {inv.last_name}</td>}
-                    <td className="p-2">{inv.term_name}</td><td className="p-2">{formatMoney(inv.total, currency)}</td><td className="p-2">{formatMoney(inv.balance, currency)}</td><td className="p-2">{inv.status}</td>
+                    <td className="p-2">{inv.term_name}</td><td className="p-2">{inv.fee_type_name}</td><td className="p-2">{formatMoney(inv.total, currency)}</td><td className="p-2">{formatMoney(inv.balance, currency)}</td><td className="p-2">{inv.status}</td>
                   </tr>
                 ))}
               </tbody>

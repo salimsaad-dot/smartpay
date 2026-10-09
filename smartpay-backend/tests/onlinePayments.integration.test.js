@@ -146,6 +146,9 @@ describe('online payments — secure payment links, public checkout, and Paystac
         expect(res.body.data.children[0].name).toBe('Kofi Mensah');
         expect(res.body.data.children[0].invoices).toHaveLength(1);
         expect(Number(res.body.data.children[0].invoices[0].balance)).toBe(500);
+        // fee-management Phase 5: the public checkout page must make it
+        // clear what each invoice is for, not just an invoice number.
+        expect(res.body.data.children[0].invoices[0].feeTypeName).toBe('School Fees');
     });
 
     test('an invalid/garbage token returns 404, not a crash', async () => {

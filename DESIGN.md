@@ -1981,6 +1981,53 @@ for a full management system.
     just deployed. Throwaway school deleted immediately after; confirmed
     only the 2 real schools (Eagle Vision Basic School, Watered Garden)
     remain in production.
+- **Fee management Phase 5 — surface fee type on Arrears/Invoices/
+  Reports/public checkout: SHIPPED 2026-10-09 (local; production
+  pending).** Fifth of the 6-phase plan. The original Phase 0 audit
+  found that none of `arrearsController`, `reportsController`,
+  `invoiceController`, or — most importantly — the public parent-facing
+  checkout page joined `fee_structures`/`fee_types` at all; every one of
+  these surfaces identified an outstanding balance only by invoice
+  number, never by what it was actually for. This phase closes that
+  gap everywhere it existed, not just where it was most visible.
+  - **Backend**: a `JOIN fee_structures ... JOIN fee_types` added to 8
+    query sites — `arrearsController.list`, `invoiceController.list`/
+    `getById`, `publicPaymentController.getCheckout`, and
+    `reportsController`'s `outstandingFees`/`paymentHistory`/
+    `invoiceReport`/`studentStatement`/`parentStatement`. Deliberately
+    **not** touched: `collectionSummary` (aggregate-only, no per-row
+    data to label) and `smsActivity` (not invoice-related). Every CSV
+    export gained a matching "Fee Type" column alongside the JSON
+    response field.
+  - **The public checkout page (`/pay/[token]`) was the real priority**
+    here, not just one more surface — it's the one place a parent
+    actually decides which balance to pay, and until this phase it
+    showed two outstanding invoices as indistinguishable "Term 1"
+    buttons with no way to tell a School Fees balance from a
+    Transportation balance apart. Fee type is now the bold headline on
+    each invoice button (term/invoice-no/due-date moved to the
+    subline), and the payment confirmation step now reads "Paying for:
+    {fee type}" before the parent commits.
+  - **Admin surfaces**: Arrears, Invoices, and all four relevant Reports
+    tabs (Outstanding Fees, Payment History, Invoice Report, Statements)
+    gained a Fee Type column.
+  - 8 new/extended test assertions across `arrears.integration.test.js`,
+    `reports.integration.test.js` (5 functions), `onlinePayments
+    .integration.test.js` (the public checkout — the one that matters
+    most), and `feeEngine.integration.test.js` (invoice list/detail) —
+    each reusing its file's existing fixture rather than building new
+    ones, asserting the real fee type name comes through the new joins
+    correctly. Full suite: 29/29 suites, 267 passed + 2 skipped. Clean
+    frontend build.
+  - Live-verified via Puppeteer with a student billed under two
+    different fee types at once (School Fees GHS 600, Transportation
+    GHS 200) — confirmed all four surfaces (Arrears, Invoices, Reports,
+    and critically the real public checkout page loaded with no admin
+    session, exactly as a parent would see it) correctly distinguish
+    and label both balances.
+  - **No schema change** — reuses the `fee_structures`/`fee_types`
+    relationship Phase 1 already built. Pure code; normal push + deploy,
+    no migration script needed.
 
 ## Future Work
 

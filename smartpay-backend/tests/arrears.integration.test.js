@@ -129,6 +129,14 @@ describe('arrears — outstanding balances, filters, and parent aggregation (rea
         expect(yawRow.last_payment_date).not.toBeNull();
     });
 
+    // fee-management Phase 5: Arrears shows what an outstanding invoice
+    // is actually for, not just an invoice number.
+    test('each row includes the real fee type name (not just an invoice number)', async () => {
+        const res = await request(app).get('/api/arrears').set('Cookie', cookieA);
+        const kofiRow = res.body.data.invoices.find((i) => i.id === kofiInvoiceId);
+        expect(kofiRow.fee_type_name).toBe('School Fees');
+    });
+
     test('filtering by parent returns only that parent\'s children — both siblings for a shared parent', async () => {
         const res = await request(app).get(`/api/arrears?parentId=${mensahParentId}`).set('Cookie', cookieA);
         const invoiceIds = res.body.data.invoices.map((i) => i.id);

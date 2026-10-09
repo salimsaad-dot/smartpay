@@ -86,8 +86,8 @@ export default function PublicCheckoutPage({ params }) {
                       }`}
                     >
                       <span>
-                        <span className="block font-medium text-[var(--ink)]">{inv.termName}</span>
-                        <span className="block text-xs text-[var(--slate-quiet)]">{inv.invoiceNo} · Due {formatDate(inv.dueDate)}</span>
+                        <span className="block font-medium text-[var(--ink)]">{inv.feeTypeName}</span>
+                        <span className="block text-xs text-[var(--slate-quiet)]">{inv.termName} · {inv.invoiceNo} · Due {formatDate(inv.dueDate)}</span>
                       </span>
                       <span className="font-semibold text-[var(--ink)]">{formatMoney(inv.balance, data.currency)}</span>
                     </button>
@@ -113,7 +113,7 @@ export default function PublicCheckoutPage({ params }) {
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-base focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
               />
-              <p className="mt-1 text-xs text-[var(--slate-quiet)]">Outstanding balance: {formatMoney(selectedInvoice.balance, data.currency)}. You may pay part of this amount.</p>
+              <p className="mt-1 text-xs text-[var(--slate-quiet)]">Paying for: {selectedInvoice.feeTypeName}. Outstanding balance: {formatMoney(selectedInvoice.balance, data.currency)}. You may pay part of this amount.</p>
             </div>
             <div>
               <label htmlFor="pay-email" className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">Email (for your payment receipt)</label>

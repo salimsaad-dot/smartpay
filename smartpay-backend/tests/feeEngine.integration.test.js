@@ -157,11 +157,15 @@ describe('fee engine — fee structures and invoice generation (real DB, real HT
             expect(Number(inv.balance)).toBe(570);
             expect(Number(inv.paid_amount)).toBe(0);
             expect(inv.status).toBe('unpaid');
+            // fee-management Phase 5: the invoice list must say what each
+            // invoice is actually for, not just carry an invoice number.
+            expect(inv.fee_type_name).toBe('School Fees');
         }
 
         const detail = await request(app).get(`/api/invoices/${list.body.data[0].id}`).set('Cookie', cookieA);
         expect(detail.body.data.items).toHaveLength(3);
         expect(detail.body.data.items.map((i) => i.name).sort()).toEqual(['ICT', 'PTA', 'Tuition']);
+        expect(detail.body.data.fee_type_name).toBe('School Fees');
     });
 
     test('re-running generation on the same fee structure skips students who already have an invoice (idempotent, not duplicate-billing)', async () => {

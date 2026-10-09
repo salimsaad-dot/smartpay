@@ -36,13 +36,15 @@ exports.getCheckout = async (req, res) => {
         if (error) return res.status(error.status).json({ status: 'error', message: error.message });
 
         const [invoices] = await pool.query(
-            `SELECT i.id, i.invoice_no, i.total, i.balance, i.due_date, t.name AS term_name,
+            `SELECT i.id, i.invoice_no, i.total, i.balance, i.due_date, t.name AS term_name, ft.name AS fee_type_name,
                     st.id AS student_id, st.first_name, st.last_name, c.name AS class_name
              FROM invoices i
              JOIN students st ON st.id = i.student_id
              JOIN parent_student ps ON ps.student_id = st.id
              JOIN terms t ON t.id = i.term_id
              JOIN classes c ON c.id = st.class_id
+             JOIN fee_structures fs ON fs.id = i.fee_structure_id
+             JOIN fee_types ft ON ft.id = fs.fee_type_id
              WHERE ps.parent_id = ? AND i.school_id = ? AND i.balance > 0 AND i.status != 'void'
              ORDER BY st.first_name ASC, i.due_date ASC`,
             [link.parent_id, link.school_id]
@@ -56,7 +58,7 @@ exports.getCheckout = async (req, res) => {
                 children[inv.student_id] = { studentId: inv.student_id, name: `${inv.first_name} ${inv.last_name}`, className: inv.class_name, invoices: [] };
             }
             children[inv.student_id].invoices.push({
-                id: inv.id, invoiceNo: inv.invoice_no, termName: inv.term_name,
+                id: inv.id, invoiceNo: inv.invoice_no, termName: inv.term_name, feeTypeName: inv.fee_type_name,
                 total: inv.total, balance: inv.balance, dueDate: inv.due_date,
             });
         }

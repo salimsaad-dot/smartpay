@@ -17,12 +17,15 @@ exports.list = async (req, res) => {
                    st.id AS student_id, st.first_name, st.last_name,
                    c.id AS class_id, c.name AS class_name,
                    t.id AS term_id, t.name AS term_name,
+                   ft.name AS fee_type_name,
                    pr.id AS parent_id, pr.full_name AS parent_name, pr.phone AS parent_phone,
                    (SELECT MAX(paid_at) FROM payments WHERE invoice_id = i.id AND status = 'success') AS last_payment_date
             FROM invoices i
             JOIN students st ON st.id = i.student_id
             JOIN classes c ON c.id = st.class_id
             JOIN terms t ON t.id = i.term_id
+            JOIN fee_structures fs ON fs.id = i.fee_structure_id
+            JOIN fee_types ft ON ft.id = fs.fee_type_id
             LEFT JOIN parent_student ps ON ps.student_id = st.id AND ps.is_primary = 1
             LEFT JOIN parents pr ON pr.id = ps.parent_id
             WHERE i.school_id = ? AND i.balance > 0 AND i.status != 'void'`;
