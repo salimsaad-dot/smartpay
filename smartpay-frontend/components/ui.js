@@ -5,9 +5,14 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 
-// Shared form styling, so every input on every page looks and focuses the same.
+// Shared form styling, so every input on every page looks and focuses the
+// same. text-base (16px) on mobile, text-sm (14px) from sm: up — iOS/Android
+// auto-zoom the whole page on focusing any input under 16px, which is
+// exactly what was happening: every form field on every page used this one
+// class, so the entire dashboard zoomed in on any tap into a field on a
+// small screen. 16px avoids the trigger; sm: keeps the tighter desktop look.
 export const inputClass =
-  "w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
+  "w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-base text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] sm:text-sm";
 export const labelClass = "mb-1 block text-xs font-medium text-[var(--slate-quiet)]";
 
 // Wires a label to its one form control via htmlFor/id automatically —

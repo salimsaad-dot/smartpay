@@ -211,7 +211,7 @@ export default function DashboardShell({ children }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3 sm:px-6">
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3 sm:px-6">
           <button
             onClick={() => setMobileNavOpen(true)}
             aria-label="Open navigation menu"

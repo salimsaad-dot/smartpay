@@ -141,7 +141,7 @@ export default function ClassesPage() {
           <input
             type="search" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search classes..."
-            className="w-full rounded-lg border border-[var(--border)] py-2.5 pl-9 pr-3 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+            className="w-full rounded-lg border border-[var(--border)] py-2.5 pl-9 pr-3 text-base focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] sm:text-sm"
           />
         </div>
         <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)} className={`${inputClass} w-auto`}>

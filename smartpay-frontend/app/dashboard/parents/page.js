@@ -59,6 +59,45 @@ function AddParentModal({ onClose, onCreated }) {
   );
 }
 
+function EditParentModal({ parent, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    fullName: parent.full_name, phone: parent.phone, email: parent.email || "", address: parent.address || "",
+  });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    try {
+      await apiRequest(`/parents/${parent.id}`, { method: "PATCH", body: form });
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Edit Parent" description="Update this parent/guardian's contact details." onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Field label="Full Name"><input required value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Phone"><input required value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Email (optional)"><input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Address (optional)"><input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} className={inputClass} /></Field>
+        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button2 variant="secondary" type="button" onClick={onClose}>Cancel</Button2>
+          <Button2 type="submit" disabled={saving}>{saving ? "Saving..." : "Save"}</Button2>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function ChildrenModal({ parent, onClose }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
@@ -124,7 +163,7 @@ function PaymentLinkModal({ parent, onClose }) {
   );
 }
 
-function RowActions({ parent, onView, onPaymentLink, onToggleStatus }) {
+function RowActions({ parent, onView, onEdit, onPaymentLink, onToggleStatus }) {
   const [open, setOpen] = useState(false);
   const inactive = parent.status === "inactive";
   return (
@@ -137,6 +176,7 @@ function RowActions({ parent, onView, onPaymentLink, onToggleStatus }) {
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]">
             <button onClick={() => { setOpen(false); onView(parent); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">View children</button>
+            <button onClick={() => { setOpen(false); onEdit(parent); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">Edit details</button>
             <button onClick={() => { setOpen(false); onPaymentLink(parent); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">Payment link</button>
             <button onClick={() => { setOpen(false); onToggleStatus(parent, inactive ? "active" : "inactive"); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">{inactive ? "Reactivate" : "Mark inactive"}</button>
           </div>
@@ -158,6 +198,7 @@ export default function ParentsPage() {
   const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingParent, setViewingParent] = useState(null);
+  const [editingParent, setEditingParent] = useState(null);
   const [linkingParent, setLinkingParent] = useState(null);
   const { toast, showToast, dismissToast } = useToast();
 
@@ -231,7 +272,7 @@ export default function ParentsPage() {
           <input
             type="search" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search parents by name, phone or email..."
-            className="w-full rounded-lg border border-[var(--border)] py-2.5 pl-9 pr-3 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+            className="w-full rounded-lg border border-[var(--border)] py-2.5 pl-9 pr-3 text-base focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] sm:text-sm"
           />
         </div>
         <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className={`${inputClass} w-auto`}>
@@ -267,7 +308,7 @@ export default function ParentsPage() {
                 </dl>
                 <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
                   <LinkButton onClick={() => setViewingParent(p)}>View children</LinkButton>
-                  <RowActions parent={p} onView={setViewingParent} onPaymentLink={setLinkingParent} onToggleStatus={toggleStatus} />
+                  <RowActions parent={p} onView={setViewingParent} onEdit={setEditingParent} onPaymentLink={setLinkingParent} onToggleStatus={toggleStatus} />
                 </div>
               </MobileRecordCard>
             ))}
@@ -295,7 +336,7 @@ export default function ParentsPage() {
                     <td className="p-3">{p.children_count}</td>
                     <td className={`p-3 font-medium ${Number(p.outstanding_balance) > 0 ? "text-[var(--danger)]" : "text-[var(--ink)]"}`}>{formatMoney(p.outstanding_balance, currency)}</td>
                     <td className="p-3"><Badge2 tone={p.status === "active" ? "success" : "neutral"}>{p.status === "active" ? "Active" : "Inactive"}</Badge2></td>
-                    <td className="p-3 text-right"><RowActions parent={p} onView={setViewingParent} onPaymentLink={setLinkingParent} onToggleStatus={toggleStatus} /></td>
+                    <td className="p-3 text-right"><RowActions parent={p} onView={setViewingParent} onEdit={setEditingParent} onPaymentLink={setLinkingParent} onToggleStatus={toggleStatus} /></td>
                   </tr>
                 ))}
                 {pageItems.length === 0 && <tr><td colSpan={7} className="p-4 text-center text-[var(--slate-quiet)]">No parents match these filters.</td></tr>}
@@ -331,6 +372,13 @@ export default function ParentsPage() {
 
       {showAddModal && <AddParentModal onClose={() => setShowAddModal(false)} onCreated={() => { load(); showToast("Parent/guardian added."); }} />}
       {viewingParent && <ChildrenModal parent={viewingParent} onClose={() => setViewingParent(null)} />}
+      {editingParent && (
+        <EditParentModal
+          parent={editingParent}
+          onClose={() => setEditingParent(null)}
+          onSaved={() => { load(); showToast("Parent details updated."); }}
+        />
+      )}
       {linkingParent && <PaymentLinkModal parent={linkingParent} onClose={() => setLinkingParent(null)} />}
       <Toast {...toast} onDismiss={dismissToast} />
     </DashboardShell>

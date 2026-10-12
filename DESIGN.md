@@ -2195,6 +2195,69 @@ being considered done, not just locally.
     school-specific content (Eagle Vision's template body) updated
     directly on production.
 
+- **2026-10-12 — Fee Types usability pass, from a real-pilot-admin punch
+  list of 8 items (user confirmed understanding all 8 before work
+  began).** Two items (new-student invoice inheritance, re-running
+  invoice generation for an already-invoiced class) needed no code change
+  — both were already correct, tested behavior (idempotent
+  `UNIQUE(student_id, fee_structure_id)` generation; a new student is
+  never auto-billed for a structure created before they existed, an admin
+  must regenerate) and were simply confirmed back to the user. The
+  remaining 6 shipped:
+  1. **"Term 1" vs. "Term 1 Fees" confusion** — traced to real,
+     identifiable Phase-1-migration-backfill artifacts (two distinct
+     legacy fee types, each with real fee structures/invoices against
+     it), not a bug. Resolved by building a genuine **rename** capability
+     (`PATCH /fee-types/:id/name`) rather than merging or deleting either
+     — safe because `fee_structures.name` is a point-in-time snapshot, so
+     renaming a fee type never retroactively changes a structure already
+     created from it (re-confirmed with a dedicated test before building
+     on it).
+  2. **`weekly` added as a valid fee-type frequency** (for recurring
+     charges like feeding), widening both the `fee_types.frequency` ENUM
+     (migrated locally, confirmed idempotent) and the backend's
+     `VALID_FREQUENCY` validation list.
+  3. **A true hard-**`DELETE /fee-types/:id`** was added**, gated on zero
+     `fee_structures` ever referencing that type (`409` otherwise, with a
+     message naming the count and suggesting deactivation instead) —
+     deliberately a narrow carve-out to the project's standing
+     archive-not-delete convention, only because a fee type with no
+     structures has no financial history to protect.
+  4. **The Fee Types page was rebuilt around a three-dot row menu**
+     (Rename, switch applicability, Manage Students, Activate/Deactivate,
+     Delete) on both the mobile-card and desktop-table views, replacing a
+     flat row of always-visible action links — directly answering the
+     user's own "some sort of three dots... to activate, deactivate, or
+     delete."
+  5. **Mobile auto-zoom-on-focus fixed project-wide**: root-caused to
+     `inputClass`/`SearchBar`'s shared `text-sm` (14px, under iOS's 16px
+     zoom threshold) plus several standalone inline-styled inputs,
+     switched to a responsive `text-base ... sm:text-sm` pattern (16px on
+     phones, unchanged on desktop). A Puppeteer sweep of all 15 dashboard
+     pages at a real mobile viewport caught 2 more instances (the Fee
+     Types frequency selects) the initial targeted search had missed.
+  6. **The dashboard header is now `sticky top-0`**, so the mobile nav
+     trigger stays reachable without scrolling to the top of a long page.
+  - **Parent contact editing** — `PATCH /parents/:id` already existed and
+    worked correctly (confirmed by reading it, not assumed); only the
+    frontend had no edit UI at all. Added an "Edit details" entry to the
+    Parents page's existing row-actions menu, opening a modal pre-filled
+    with the parent's current name/phone/email/address.
+  - 29/29 backend suites, 281 passed + 2 skipped — no regressions from
+    the weekly/rename/delete changes. Clean frontend build. Live-verified
+    via Puppeteer end-to-end: created a fee type with `weekly` frequency,
+    opened its three-dot menu, renamed it, deleted it (succeeded, since
+    unused); created a parent, opened their row menu, edited and
+    confirmed an updated phone number rendered. Re-verified at a real
+    mobile viewport (390×844) on both pages: no horizontal overflow, no
+    sub-16px text/select fields, and the three-dot menu opens without
+    overflowing. (The 409-blocked-delete path — a fee type already
+    referenced by a real fee structure — was exercised by the backend's
+    own integration tests, not re-driven through the UI this round.)
+  - All throwaway schools created during verification (15 total, across
+    several debugging passes) were deleted from the local database
+    afterward; nothing touched production this round.
+
 ## Future Work
 
 1. **Per-school prepaid SMS credit, with a hard cap — not built yet,
@@ -2354,4 +2417,7 @@ being considered done, not just locally.
 | 2026-10-07 | Tests that mock an SMS provider must mock `utils/smsProvider` (the switch), never a specific adapter module directly. | Found live: `fridayJob.integration.test.js`'s existing mock (there specifically to prevent real, billable sends during tests) silently stopped intercepting the moment `fridayJob.js`'s own import changed to go through the switch — a real, unmocked call reached the real Arkesel API during a routine test run before this was caught. A second, related gap in `sms.integration.test.js` (gated on one adapter's env var by name, not on whichever provider is actually active) was tightened the same way even though it hadn't yet caused a real failure, since the next provider added would have hit the identical mismatch. |
 | 2026-10-07 | Password complexity stays at "length ≥ 8 only" — deliberately, not revisited as part of the council security audit. | Flagged by the audit as a finding to weigh, not assumed either way. Decision: this matches the product's own stated premise (a simpler alternative to the complicated system it replaces), and there's no incident or specific threat motivating more friction at signup right now. Documented here so a future audit doesn't re-flag it as an open gap — if revisited, the trigger should be a real incident or a customer/compliance requirement, not audit tidiness. |
 | 2026-10-07 | File-upload validation is explicitly out of scope — confirmed absent, not a gap. | The same council audit confirmed via grep that no file-upload feature exists anywhere in this codebase. There is nothing to validate. Documented so this doesn't get listed as a missing control in a future pass; revisit only if a file-upload feature is actually added. |
+| 2026-10-12 | A fee type can be hard-deleted (`DELETE /fee-types/:id`), but only when zero `fee_structures` reference it — otherwise a `409` names the count and points to deactivation instead. | A narrow, deliberate carve-out to the project's standing archive-not-delete convention: a fee type with no structures has no financial history to protect, so there's nothing a hard delete could corrupt or orphan. Checked via `COUNT(*) FROM fee_structures WHERE fee_type_id = ?` rather than a pre-check-then-delete, since the count itself is the authorization. |
+| 2026-10-12 | Fee types can now be renamed (`PATCH /fee-types/:id/name`), reversing this project's original Phase-1 decision to omit rename "to keep structure.name an immutable snapshot." | Re-examining that original reasoning found it didn't actually conflict with rename: `fee_structures.name` is already a point-in-time snapshot taken at creation, never a live join, so renaming the fee type it was created from can't retroactively change it. Re-confirmed with a dedicated test (rename after creating a structure, assert the structure's stored name is unchanged while its live `fee_type_name` join reflects the rename) before building on top of that invariant. |
+| 2026-10-12 | Mobile iOS/Android auto-zoom-on-focus is fixed via a responsive `text-base ... sm:text-sm` Tailwind pattern on every text input, not by disabling zoom with a `maximum-scale=1` viewport meta tag. | The viewport-meta approach fixes the symptom by disabling a real accessibility feature (pinch-zoom) for every user, including ones who need it for reasons unrelated to this bug. Keeping text at the browser's native 16px zoom threshold on phones (while staying at the existing smaller size on desktop via the `sm:` breakpoint) fixes the actual cause without taking anything away from the user. |
 | 2026-10-09 | Switched `SMS_PROVIDER` back from `arkesel` to `mnotify` in production. | Two real, independent reasons from the user's own live usage: (1) ~200+ already-paid mNotify credits sitting unused in the wallet vs. ~5 remaining on Arkesel — a sunk-cost/budget reason, not a technical one. (2) A real delivery-speed comparison, same message type, same conditions: mNotify delivered in ~30 seconds, Arkesel took ~45 minutes. A 45-minute delay is a serious reliability problem for a fee-reminder product (a parent clicking a link 45 minutes after the admin meant to nudge them is a materially worse experience than the product's own premise promises). Arkesel stays available as the documented fallback (see the 2026-10-07 entries above) if mNotify's account issue recurs, but is no longer the default live path. No code change — purely the existing `SMS_PROVIDER` env var on Render. |

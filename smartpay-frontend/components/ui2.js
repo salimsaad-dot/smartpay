@@ -122,7 +122,7 @@ export function SearchBar({ placeholder = "Search...", value, onChange, classNam
         value={value}
         onChange={onChange}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-[var(--border)] bg-[var(--hover)] py-2.5 pl-9 pr-3 text-sm focus:border-[var(--primary)] focus:bg-[var(--card)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+        className="w-full rounded-lg border border-[var(--border)] bg-[var(--hover)] py-2.5 pl-9 pr-3 text-base focus:border-[var(--primary)] focus:bg-[var(--card)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] sm:text-sm"
       />
     </div>
   );

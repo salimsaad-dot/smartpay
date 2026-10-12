@@ -40,7 +40,7 @@ CREATE TABLE `audit_logs` (
   KEY `fk_al_user` (`user_id`),
   CONSTRAINT `fk_al_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_al_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4685 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4687 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `classes`;
 CREATE TABLE `classes` (
@@ -103,13 +103,13 @@ CREATE TABLE `fee_types` (
   `name` varchar(100) NOT NULL,
   `status` enum('active','inactive') NOT NULL DEFAULT 'active',
   `applicability` enum('class_wide','selected_students') NOT NULL DEFAULT 'class_wide',
-  `frequency` enum('termly','annual','one_time','as_needed') NOT NULL DEFAULT 'termly',
+  `frequency` enum('weekly','termly','annual','one_time','as_needed') NOT NULL DEFAULT 'termly',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_school_type_name` (`school_id`,`name`),
   CONSTRAINT `fk_feetype_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5674 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5700 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `financial_insight_cache`;
 CREATE TABLE `financial_insight_cache` (
@@ -120,7 +120,7 @@ CREATE TABLE `financial_insight_cache` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_school` (`school_id`),
   CONSTRAINT `fk_financial_insight_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `invoice_items`;
 CREATE TABLE `invoice_items` (
@@ -338,7 +338,7 @@ CREATE TABLE `schools` (
   UNIQUE KEY `unique_code` (`code`),
   KEY `fk_school_friday_template` (`friday_template_id`),
   CONSTRAINT `fk_school_friday_template` FOREIGN KEY (`friday_template_id`) REFERENCES `sms_templates` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2637 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2639 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `sms_reminders`;
 CREATE TABLE `sms_reminders` (
@@ -389,7 +389,7 @@ CREATE TABLE `sms_templates` (
   UNIQUE KEY `unique_school_template_name` (`school_id`,`name`),
   KEY `idx_school` (`school_id`),
   CONSTRAINT `fk_st_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2621 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2623 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `student_fee_eligibility`;
 CREATE TABLE `student_fee_eligibility` (
@@ -469,6 +469,6 @@ CREATE TABLE `users` (
   UNIQUE KEY `unique_email` (`email`),
   KEY `school_id` (`school_id`),
   CONSTRAINT `users_ibfk_1` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2629 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2631 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS=1;

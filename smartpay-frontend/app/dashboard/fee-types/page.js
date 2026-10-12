@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import DashboardShell from "@/components/DashboardShell";
 import {
@@ -8,7 +9,6 @@ import {
   EmptyState,
   ErrorState,
   Field,
-  LinkButton,
   LoadingSkeleton,
   MobileRecordCard,
   Modal,
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui";
 
 const APPLICABILITY_LABELS = { class_wide: "All students in class", selected_students: "Selected students only" };
-const FREQUENCY_LABELS = { termly: "Termly", annual: "Annual", one_time: "One-time", as_needed: "As needed" };
+const FREQUENCY_LABELS = { weekly: "Weekly", termly: "Termly", annual: "Annual", one_time: "One-time", as_needed: "As needed" };
 
 function AddFeeTypeForm({ onCreated }) {
   const [name, setName] = useState("");
@@ -146,10 +146,131 @@ function EligibilityModal({ feeType, onClose, onSaved }) {
   );
 }
 
+function RenameModal({ feeType, onClose, onRenamed }) {
+  const [name, setName] = useState(feeType.name);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    try {
+      await apiRequest(`/fee-types/${feeType.id}/name`, { method: "PATCH", body: { name } });
+      onRenamed();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Rename Fee Type" description="Renaming only affects this type going forward — any fee structure already created from it keeps its own original label." onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Field label="Name"><input required autoFocus value={name} onChange={(e) => setName(e.target.value)} className={inputClass} /></Field>
+        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteModal({ feeType, onClose, onDeleted }) {
+  const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setError("");
+    setDeleting(true);
+    try {
+      await apiRequest(`/fee-types/${feeType.id}`, { method: "DELETE" });
+      onDeleted();
+      onClose();
+    } catch (err) {
+      // The backend's 409 message already explains why (structures
+      // exist) and suggests deactivating instead — shown as-is rather
+      // than a generic failure, since it's the actionable answer.
+      setError(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <Modal title="Delete Fee Type" description={`This permanently removes "${feeType.name}". This can't be undone.`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-[var(--slate)]">
+          Only possible if no fee structure has ever been created from this type. If it's been used, deactivating it instead keeps its history intact.
+        </p>
+        {error && <p className="rounded-lg bg-[var(--danger-wash)] p-3 text-sm text-[var(--danger)]">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="button" onClick={handleDelete} disabled={deleting} className="!bg-[var(--danger)] hover:!bg-[var(--danger)]">
+            {deleting ? "Deleting..." : "Delete"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function RowActions({ feeType, onRename, onDelete, onToggleStatus, onToggleApplicability, onManageStudents }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function item(label, onClick, danger = false) {
+    return (
+      <button
+        onClick={() => { setOpen(false); onClick(); }}
+        className={`flex min-h-[40px] w-full items-center px-3 text-left text-sm hover:bg-[var(--hover)] ${danger ? "text-[var(--danger)]" : "text-[var(--slate)]"}`}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative inline-block text-left" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`Actions for ${feeType.name}`}
+        className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--slate-quiet)] hover:bg-[var(--hover)]"
+      >
+        <MoreHorizontal size={18} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]">
+          {item("Rename", onRename)}
+          {item(`Switch to ${feeType.applicability === "class_wide" ? "selected students" : "all students"}`, onToggleApplicability)}
+          {feeType.applicability === "selected_students" && item("Manage Students", onManageStudents)}
+          {item(feeType.status === "active" ? "Deactivate" : "Reactivate", onToggleStatus)}
+          <div className="my-1 border-t border-[var(--border)]" />
+          {item("Delete", onDelete, true)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FeeTypesPage() {
   const [feeTypes, setFeeTypes] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [eligibilityFor, setEligibilityFor] = useState(null);
+  const [renameFor, setRenameFor] = useState(null);
+  const [deleteFor, setDeleteFor] = useState(null);
   const { toast, showToast, dismissToast } = useToast();
 
   function load() {
@@ -192,6 +313,19 @@ export default function FeeTypesPage() {
     }
   }
 
+  function rowActionsFor(t) {
+    return (
+      <RowActions
+        feeType={t}
+        onRename={() => setRenameFor(t)}
+        onDelete={() => setDeleteFor(t)}
+        onToggleStatus={() => toggleStatus(t)}
+        onToggleApplicability={() => toggleApplicability(t)}
+        onManageStudents={() => setEligibilityFor(t)}
+      />
+    );
+  }
+
   return (
     <DashboardShell>
       <PageHeader
@@ -213,17 +347,17 @@ export default function FeeTypesPage() {
               <MobileRecordCard key={t.id}>
                 <div className="flex items-start justify-between gap-3">
                   <p className="truncate font-medium text-[var(--ink)]">{t.name}</p>
-                  <StatusBadge tone={t.status === "active" ? "success" : "neutral"}>{t.status === "active" ? "Active" : "Inactive"}</StatusBadge>
+                  <div className="flex flex-shrink-0 items-center gap-1">
+                    <StatusBadge tone={t.status === "active" ? "success" : "neutral"}>{t.status === "active" ? "Active" : "Inactive"}</StatusBadge>
+                    {rowActionsFor(t)}
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-[var(--slate-quiet)]">{APPLICABILITY_LABELS[t.applicability]} · {FREQUENCY_LABELS[t.frequency]}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <LinkButton onClick={() => toggleStatus(t)}>{t.status === "active" ? "Deactivate" : "Reactivate"}</LinkButton>
-                  <LinkButton onClick={() => toggleApplicability(t)}>Switch to {t.applicability === "class_wide" ? "selected students" : "all students"}</LinkButton>
-                  {t.applicability === "selected_students" && <LinkButton onClick={() => setEligibilityFor(t)}>Manage Students</LinkButton>}
+                <p className="mt-1 text-xs text-[var(--slate-quiet)]">{APPLICABILITY_LABELS[t.applicability]}</p>
+                <div className="mt-2">
                   <select
                     value={t.frequency} onChange={(e) => changeFrequency(t, e.target.value)}
                     aria-label={`Frequency for ${t.name}`}
-                    className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--slate)]"
+                    className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-base text-[var(--slate)] sm:text-xs"
                   >
                     {Object.entries(FREQUENCY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
@@ -249,19 +383,13 @@ export default function FeeTypesPage() {
                       <select
                         value={t.frequency} onChange={(e) => changeFrequency(t, e.target.value)}
                         aria-label={`Frequency for ${t.name}`}
-                        className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs text-[var(--slate)]"
+                        className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-base text-[var(--slate)] sm:text-xs"
                       >
                         {Object.entries(FREQUENCY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                       </select>
                     </td>
                     <td className="p-3"><StatusBadge tone={t.status === "active" ? "success" : "neutral"}>{t.status === "active" ? "Active" : "Inactive"}</StatusBadge></td>
-                    <td className="p-3 text-right">
-                      <div className="flex flex-wrap justify-end gap-3">
-                        {t.applicability === "selected_students" && <LinkButton onClick={() => setEligibilityFor(t)}>Manage Students</LinkButton>}
-                        <LinkButton onClick={() => toggleApplicability(t)}>Switch to {t.applicability === "class_wide" ? "selected" : "all"}</LinkButton>
-                        <LinkButton onClick={() => toggleStatus(t)}>{t.status === "active" ? "Deactivate" : "Reactivate"}</LinkButton>
-                      </div>
-                    </td>
+                    <td className="p-3 text-right">{rowActionsFor(t)}</td>
                   </tr>
                 ))}
                 {feeTypes.length === 0 && (
@@ -278,6 +406,20 @@ export default function FeeTypesPage() {
           feeType={eligibilityFor}
           onClose={() => setEligibilityFor(null)}
           onSaved={() => showToast("Eligible students updated.")}
+        />
+      )}
+      {renameFor && (
+        <RenameModal
+          feeType={renameFor}
+          onClose={() => setRenameFor(null)}
+          onRenamed={() => { load(); showToast("Fee type renamed."); }}
+        />
+      )}
+      {deleteFor && (
+        <DeleteModal
+          feeType={deleteFor}
+          onClose={() => setDeleteFor(null)}
+          onDeleted={() => { load(); showToast("Fee type deleted."); }}
         />
       )}
 

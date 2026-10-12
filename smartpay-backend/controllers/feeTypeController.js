@@ -26,7 +26,8 @@ exports.list = async (req, res) => {
 };
 
 const VALID_APPLICABILITY = ['class_wide', 'selected_students'];
-const VALID_FREQUENCY = ['termly', 'annual', 'one_time', 'as_needed'];
+const VALID_FREQUENCY = ['weekly', 'termly', 'annual', 'one_time', 'as_needed'];
+const FREQUENCY_ERROR = 'frequency must be one of: weekly, termly, annual, one_time, as_needed.';
 
 exports.create = async (req, res) => {
     try {
@@ -38,7 +39,7 @@ exports.create = async (req, res) => {
             return res.status(400).json({ status: 'error', message: "applicability must be 'class_wide' or 'selected_students'." });
         }
         if (frequency && !VALID_FREQUENCY.includes(frequency)) {
-            return res.status(400).json({ status: 'error', message: "frequency must be one of: termly, annual, one_time, as_needed." });
+            return res.status(400).json({ status: 'error', message: FREQUENCY_ERROR });
         }
 
         const [result] = await pool.query(
@@ -84,6 +85,83 @@ exports.updateApplicability = async (req, res) => {
     }
 };
 
+// Renaming is safe even though fee_structures.name is a snapshot of a
+// fee type's name at creation time (see feeStructureController.create)
+// — renaming here only changes this row and any future structure
+// created from it going forward; every already-created structure keeps
+// its own stored name exactly as it was, untouched. Real usage
+// surfaced the need directly: Phase 1's migration backfill created a
+// fee type from whatever free-text name a pre-existing fee structure
+// already had (e.g. "Term 1 Fees", "Term 1"), and those confusing
+// legacy names had no way to be cleaned up afterward.
+exports.rename = async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name?.trim()) {
+            return res.status(400).json({ status: 'error', message: 'Fee type name is required.' });
+        }
+
+        const [[current]] = await pool.query('SELECT name FROM fee_types WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+        if (!current) {
+            return res.status(404).json({ status: 'error', message: 'Fee type not found.' });
+        }
+
+        await pool.query('UPDATE fee_types SET name = ? WHERE id = ? AND school_id = ?', [name.trim(), req.params.id, req.user.schoolId]);
+        await logAction(req, {
+            action: 'fee_type.rename', entityType: 'fee_type', entityId: Number(req.params.id),
+            oldValues: current, newValues: { name: name.trim() },
+        });
+
+        res.status(200).json({ status: 'success', message: 'Fee type renamed.' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ status: 'error', message: 'A fee type with that name already exists.' });
+        }
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while renaming the fee type.' });
+    }
+};
+
+// Hard-delete, but only when genuinely unused — the moment a real
+// fee_structure (and therefore possibly real invoices) references this
+// type, deleting it would orphan or silently corrupt financial records,
+// which this codebase never does (archive-not-delete, same as
+// classes/parents/payments). For a type that was created by mistake or
+// a one-time event that ended up handled a different way, there's no
+// history to protect, so a real delete is offered instead of forcing
+// it to sit around deactivated forever — directly requested after real
+// usage: "how can a fee type be removed if it was for a one-time
+// event."
+exports.remove = async (req, res) => {
+    try {
+        const [[feeType]] = await pool.query('SELECT id, name FROM fee_types WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+        if (!feeType) {
+            return res.status(404).json({ status: 'error', message: 'Fee type not found.' });
+        }
+
+        const [[{ count }]] = await pool.query('SELECT COUNT(*) AS count FROM fee_structures WHERE fee_type_id = ?', [req.params.id]);
+        if (count > 0) {
+            return res.status(409).json({
+                status: 'error',
+                message: `This fee type has ${count} fee structure${count === 1 ? '' : 's'} already created from it and can't be deleted — deactivate it instead.`,
+            });
+        }
+
+        await pool.query('DELETE FROM student_fee_eligibility WHERE fee_type_id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+        await pool.query('DELETE FROM fee_types WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+
+        await logAction(req, {
+            action: 'fee_type.delete', entityType: 'fee_type', entityId: Number(req.params.id),
+            oldValues: feeType,
+        });
+
+        res.status(200).json({ status: 'success', message: 'Fee type deleted.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while deleting the fee type.' });
+    }
+};
+
 // Display-only — purely for the admin's own clarity on the Fee Types
 // page (termly/annual/one-time/as-needed). Not enforced: duplicate-
 // billing protection is still entirely the per-structure
@@ -93,7 +171,7 @@ exports.updateFrequency = async (req, res) => {
     try {
         const { frequency } = req.body;
         if (!VALID_FREQUENCY.includes(frequency)) {
-            return res.status(400).json({ status: 'error', message: 'frequency must be one of: termly, annual, one_time, as_needed.' });
+            return res.status(400).json({ status: 'error', message: FREQUENCY_ERROR });
         }
 
         const [[current]] = await pool.query('SELECT frequency FROM fee_types WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
