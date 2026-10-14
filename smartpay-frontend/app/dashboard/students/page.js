@@ -21,6 +21,8 @@ import {
   useToast,
 } from "@/components/ui";
 import { Avatar, Badge2, Button2, Card2, StatCard } from "@/components/ui2";
+import StudentAccountModal from "@/components/StudentAccountModal";
+import { useAuth } from "@/context/AuthContext";
 
 const STUDENT_IMPORT_COLUMNS = [
   { header: "Admission No.", key: "admissionNo", required: true },
@@ -194,14 +196,16 @@ function ClassCard({ cls, total, inactive, onClick }) {
   );
 }
 
-function StudentRows({ list, onManageParents }) {
+// Tapping a student opens their fee account (StudentAccountModal).
+function StudentRows({ list, onOpen }) {
   if (list.length === 0) return <EmptyState>No students match.</EmptyState>;
   return (
     <>
       {/* Phones: cards */}
       <div className="space-y-3 xl:hidden">
         {list.map((s) => (
-          <MobileRecordCard key={s.id}>
+          <button key={s.id} type="button" onClick={() => onOpen(s)} className="block w-full text-left transition-transform active:scale-[0.99]">
+          <MobileRecordCard>
             <div className="flex items-start gap-3">
               <Avatar name={`${s.first_name} ${s.last_name}`} />
               <div className="min-w-0 flex-1">
@@ -211,10 +215,11 @@ function StudentRows({ list, onManageParents }) {
               </div>
               <Badge2 tone={s.status === "active" ? "success" : "danger"}>{s.status === "active" ? "Active" : "Inactive"}</Badge2>
             </div>
-            <div className="mt-3 border-t border-[var(--border)] pt-3">
-              <LinkButton onClick={() => onManageParents(s)}>Manage parents</LinkButton>
+            <div className="mt-3 border-t border-[var(--border)] pt-3 text-sm font-medium text-[var(--primary)]">
+              View account ›
             </div>
           </MobileRecordCard>
+          </button>
         ))}
       </div>
 
@@ -229,7 +234,13 @@ function StudentRows({ list, onManageParents }) {
           </thead>
           <tbody>
             {list.map((s) => (
-              <tr key={s.id} className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--hover)]">
+              <tr
+                key={s.id}
+                onClick={() => onOpen(s)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(s); } }}
+                tabIndex={0}
+                className="cursor-pointer border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--hover)] focus:bg-[var(--hover)] focus:outline-none"
+              >
                 <td className="p-3">
                   <div className="flex items-center gap-3">
                     <Avatar name={`${s.first_name} ${s.last_name}`} size={32} />
@@ -244,7 +255,7 @@ function StudentRows({ list, onManageParents }) {
                   ) : <span className="text-[var(--slate-quiet)]">—</span>}
                 </td>
                 <td className="p-3"><Badge2 tone={s.status === "active" ? "success" : "danger"}>{s.status === "active" ? "Active" : "Inactive"}</Badge2></td>
-                <td className="p-3 text-right"><LinkButton onClick={() => onManageParents(s)}>Manage parents</LinkButton></td>
+                <td className="p-3 text-right text-sm font-medium text-[var(--primary)]">View account ›</td>
               </tr>
             ))}
           </tbody>
@@ -268,6 +279,8 @@ function StudentsPageInner() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [managingStudent, setManagingStudent] = useState(null);
+  const [accountStudentId, setAccountStudentId] = useState(null);
+  const { user } = useAuth();
   const { toast, showToast, dismissToast } = useToast();
 
   function load() {
@@ -393,7 +406,7 @@ function StudentsPageInner() {
             <p className="mb-3 text-sm text-[var(--slate-quiet)]">
               {searchResults.length} match{searchResults.length !== 1 ? "es" : ""} for &quot;{search.trim()}&quot;, across all classes
             </p>
-            <StudentRows list={searchResults} onManageParents={setManagingStudent} />
+            <StudentRows list={searchResults} onOpen={(s) => setAccountStudentId(s.id)} />
           </>
         )}
 
@@ -440,7 +453,7 @@ function StudentsPageInner() {
                 <Button2 onClick={() => setShowAddModal(true)}><Plus size={16} /> Add Student</Button2>
               </div>
             </div>
-            <StudentRows list={classRoster} onManageParents={setManagingStudent} />
+            <StudentRows list={classRoster} onOpen={(s) => setAccountStudentId(s.id)} />
           </>
         )}
       </div>
@@ -450,6 +463,15 @@ function StudentsPageInner() {
           classes={classes} years={years} presetClassId={classFilter}
           onClose={() => setShowAddModal(false)}
           onCreated={() => { load(); showToast("Student added."); }}
+        />
+      )}
+      {accountStudentId && (
+        <StudentAccountModal
+          studentId={accountStudentId}
+          currency={user?.school?.currency}
+          onClose={() => setAccountStudentId(null)}
+          onManageParents={(student) => { setAccountStudentId(null); setManagingStudent(student); }}
+          onChanged={() => showToast("Payment recorded.")}
         />
       )}
       {managingStudent && (

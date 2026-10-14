@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatDate, formatMoney } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
+import { METHOD_LABELS, RecordPaymentModal } from "@/components/financeModals";
 import {
   AmountDisplay,
   Button,
@@ -24,7 +25,6 @@ import {
 } from "@/components/ui";
 
 const STATUS_LABELS = { unpaid: "Unpaid", partially_paid: "Partially Paid", paid: "Paid", void: "Void" };
-const METHOD_LABELS = { cash: "Cash", mobile_money: "Mobile Money", bank_transfer: "Bank Transfer", other: "Other" };
 
 function GenerateInvoicesPanel({ structures, currency, onGenerated }) {
   const [feeStructureId, setFeeStructureId] = useState("");
@@ -114,62 +114,6 @@ function GenerateInvoicesPanel({ structures, currency, onGenerated }) {
   );
 }
 
-function RecordPaymentModal({ invoice, currency, onClose, onSaved }) {
-  const [amount, setAmount] = useState(invoice.balance);
-  const [method, setMethod] = useState("cash");
-  const [reference, setReference] = useState("");
-  const [note, setNote] = useState("");
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    setSaving(true);
-    try {
-      await apiRequest("/payments", {
-        method: "POST",
-        body: { invoiceId: invoice.id, amount: Number(amount), method, reference: reference || undefined, note: note || undefined },
-      });
-      onSaved();
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      title="Record Payment"
-      description={`${invoice.first_name} ${invoice.last_name} · ${invoice.invoice_no} · Outstanding: ${formatMoney(invoice.balance, currency)}`}
-      onClose={onClose}
-    >
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <Field label="Amount">
-          <input required type="number" min="0.01" step="0.01" max={invoice.balance} value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Method">
-          <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputClass}>
-            {Object.entries(METHOD_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
-          </select>
-        </Field>
-        <Field label="Reference (optional)">
-          <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. MoMo transaction ID" className={inputClass} />
-        </Field>
-        <Field label="Note (optional)">
-          <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
-        </Field>
-        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={saving}>{saving ? "Recording..." : "Record Payment"}</Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
 
 // Rendered as a plain block so it works inside a table row on desktop and
 // under a card on phones.

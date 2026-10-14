@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
+import { SendReminderModal } from "@/components/financeModals";
 import {
   AmountDisplay,
   Button,
@@ -59,74 +60,6 @@ function PaymentLinkCell({ parentId }) {
   );
 }
 
-function SendReminderModal({ parentId, studentId, label, onClose }) {
-  const [preview, setPreview] = useState(null);
-  const [error, setError] = useState("");
-  const [sending, setSending] = useState(false);
-  const [result, setResult] = useState(null);
-
-  // Scoped to the student, not the one invoice the admin clicked from —
-  // a parent clicking "Send Reminder" from any of a student's rows
-  // expects the message to cover everything that student owes (real
-  // confusion caught live: clicking from a Graduation Fees row sent a
-  // reminder mentioning only Graduation Fees, with no indication the
-  // same student also had an outstanding Feeding invoice). Siblings
-  // still require the separate parent-grouped "Send Reminder" action.
-  useEffect(() => {
-    apiRequest("/reminders/preview", { method: "POST", body: { parentId, studentId } })
-      .then((res) => setPreview(res.data))
-      .catch((err) => setError(err.message));
-  }, [parentId, studentId]);
-
-  async function handleSend() {
-    setSending(true);
-    setError("");
-    try {
-      await apiRequest("/reminders/send", { method: "POST", body: { parentId, studentId } });
-      setResult("success");
-    } catch (err) {
-      setError(err.message);
-      setResult("failed");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <Modal title="Send Reminder" description={label} onClose={onClose}>
-      {!preview && !error && <p className="text-sm text-[var(--slate-quiet)]">Loading preview...</p>}
-
-      {preview && !result && (
-        <>
-          <p className="text-xs text-[var(--slate-quiet)]">To: {preview.phone}</p>
-          <div className="mt-1 rounded-lg bg-[var(--hover)] p-3 text-sm text-[var(--ink)]">{preview.message}</div>
-          {error && <p className="mt-2 text-sm text-[var(--danger)]">{error}</p>}
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSend} disabled={sending}>{sending ? "Sending..." : "Confirm & Send"}</Button>
-          </div>
-        </>
-      )}
-
-      {result === "success" && (
-        <>
-          <p className="text-sm text-[var(--success)]">Reminder sent.</p>
-          <div className="mt-4 flex justify-end"><Button onClick={onClose}>Done</Button></div>
-        </>
-      )}
-      {result === "failed" && (
-        <>
-          <p className="text-sm text-[var(--danger)]">{error}</p>
-          <div className="mt-4 flex justify-end"><Button variant="secondary" onClick={onClose}>Close</Button></div>
-        </>
-      )}
-
-      {error && !preview && (
-        <div className="mt-4 flex justify-end"><Button variant="secondary" onClick={onClose}>Close</Button></div>
-      )}
-    </Modal>
-  );
-}
 
 export default function ArrearsPage() {
   const { user } = useAuth();

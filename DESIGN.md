@@ -2289,6 +2289,33 @@ being considered done, not just locally.
       {{total_balance}}. Pay by MoMo to {{school_momo_number}}
       ({{school_momo_name}}).`
 
+  - **Per-student fee account on the Students page, 2026-10-14.** A
+    headmaster reviewing SmartPay asked to see one child's arrears,
+    invoices and payment history straight from the Students page instead
+    of digging through Invoices/Payments. Tapping a student (whole card on
+    phones, whole row on desktop, keyboard-accessible) now opens a
+    `StudentAccountModal` (new `components/StudentAccountModal.js`):
+    billed / paid / owes / overdue tiles (void invoices excluded),
+    outstanding invoices oldest-due-first with an Overdue badge and a
+    Record payment button each, payment history newest-first (voided
+    payments struck through, recent 8 then "show all"), and a collapsible
+    all-invoices list. Footer: Send reminder (to the primary parent,
+    student-scoped, same as the Arrears page) and Manage parents (moved
+    here from the row). No backend change: `/invoices` and `/payments`
+    already filter by `studentId`.
+    - `RecordPaymentModal` (from Invoices) and `SendReminderModal` (from
+      Arrears) moved verbatim into shared `components/financeModals.js`
+      with `METHOD_LABELS`, so all three pages behave identically. While
+      one is open it replaces the account panel instead of stacking (two
+      stacked `Modal`s would both close on one Escape), then the account
+      reloads. `Modal` gained an optional `size="lg"`.
+    - Verified in a real browser: panel opens with every section, a part
+      payment recorded from the panel updates the tiles and history
+      (500 billed, 100 paid, 400 owing, matching the DB), Send reminder
+      previews correctly, phone layout fits, and the Invoices "Pay" and
+      Arrears "Send Reminder" dialogs still work after the move. Zero
+      console errors. Clean frontend build.
+
 ## Future Work
 
 1. **Per-school prepaid SMS credit, with a hard cap — not built yet,

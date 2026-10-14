@@ -172,7 +172,9 @@ export function MobileRecordCard({ children }) {
 // half-typed payment or reminder is never lost to a stray tap.
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ title, description, onClose, children }) {
+// size="lg" is a wider dialog for record-style content (e.g. a student's
+// account); the default stays narrow for forms and confirmations.
+export function Modal({ title, description, onClose, children, size = "sm" }) {
   const titleId = useId();
   const dialogRef = useRef(null);
 
@@ -213,7 +215,7 @@ export function Modal({ title, description, onClose, children }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-[var(--card)] p-5 shadow-xl outline-none">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={`max-h-[90vh] w-full ${size === "lg" ? "max-w-2xl" : "max-w-sm"} overflow-y-auto rounded-xl bg-[var(--card)] p-5 shadow-xl outline-none`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 id={titleId} className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
