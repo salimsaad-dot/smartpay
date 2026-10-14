@@ -52,8 +52,15 @@ app.use(helmet({
 // public, no-account parent payment-link flow (a later phase) will need
 // its own separate, non-credentialed public route group rather than
 // bending this one.
+// ADDITIONAL_ORIGINS (comma-separated) admits extra frontends, such as a
+// second host being trialled, without touching FRONTEND_URL, which also
+// builds payment and reset links. Same pattern as Academia Hub's backend.
+// It matters even behind the /api rewrite proxy: browsers send Origin on
+// same-origin POSTs and the proxy forwards it, so a frontend missing from
+// this list fails at login with "Not allowed by CORS".
 const allowedOrigins = [
     process.env.FRONTEND_URL || 'http://localhost:3100',
+    ...(process.env.ADDITIONAL_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean),
 ];
 app.use(cors({
     origin: (origin, callback) => {
