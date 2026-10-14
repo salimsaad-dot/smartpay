@@ -44,6 +44,15 @@ describe('buildOutstandingBreakdown (fee-management Phase 4 — unit, no DB)', (
         expect(result).toMatch(/\+\d+ more \(see link for full detail\)/);
     });
 
+    test('a MoMo-only message (no payment link) gets a plain "+N more", never a pointer to a link that is not there', () => {
+        const invoices = Array.from({ length: 15 }, (_, i) => invoice({ feeTypeName: `Fee Type With A Fairly Long Name Number ${i}`, balance: 123.45 }));
+        const withLink = buildOutstandingBreakdown(invoices, 'GHS');
+        const noLink = buildOutstandingBreakdown(invoices, 'GHS', { includesLink: false });
+        expect(withLink).toMatch(/\+\d+ more \(see link for full detail\)$/);
+        expect(noLink).toMatch(/ \+\d+ more$/);
+        expect(noLink).not.toContain('link');
+    });
+
     test('truncation stays within the documented character budget plus the "+N more" suffix', () => {
         const invoices = Array.from({ length: 20 }, (_, i) => invoice({ feeTypeName: `Extra Classes Batch ${i}`, balance: 50 }));
         const result = buildOutstandingBreakdown(invoices, 'GHS');

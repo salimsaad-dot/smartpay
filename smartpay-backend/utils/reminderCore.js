@@ -73,10 +73,12 @@ const MAX_BREAKDOWN_CHARS = 200;
 // item belongs to which child (per the doc's own §11 resolution: "the
 // breakdown should preserve child attribution"), without repeating a
 // name on every single item. Truncates on whole entries only — an
-// amount is never partially shown — falling back to "+N more" plus a
-// pointer to the payment link, which already shows every child's full
-// itemized invoice list (see publicPaymentController.getCheckout).
-function buildOutstandingBreakdown(invoices, currency) {
+// amount is never partially shown — falling back to "+N more", plus a
+// pointer to the payment link (which shows every child's full itemized
+// invoice list, see publicPaymentController.getCheckout) only when the
+// message actually includes that link: a MoMo-only template (e.g. a school
+// whose parents can't use links) must not point to a link that isn't there.
+function buildOutstandingBreakdown(invoices, currency, { includesLink = true } = {}) {
     const byStudent = new Map();
     for (const inv of invoices) {
         if (!byStudent.has(inv.student_id)) {
@@ -102,13 +104,16 @@ function buildOutstandingBreakdown(invoices, currency) {
     }
     const omitted = entries.length - included;
     if (omitted > 0) {
-        result += ` +${omitted} more (see link for full detail)`;
+        result += includesLink ? ` +${omitted} more (see link for full detail)` : ` +${omitted} more`;
     }
     return result;
 }
 
-async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
-    const school = schoolRow || (await pool.query('SELECT name, currency, momo_number FROM schools WHERE id = ?', [schoolId]))[0][0];
+// templateBody (optional) lets the breakdown know whether the message will
+// carry the payment link — see buildOutstandingBreakdown.
+async function buildVariables(schoolId, scope, paymentLinkText, schoolRow, templateBody) {
+    const school = schoolRow || (await pool.query('SELECT name, currency, momo_number, momo_account_name FROM schools WHERE id = ?', [schoolId]))[0][0];
+    const includesLink = templateBody === undefined || templateBody.includes('{{payment_link}}');
     return {
         school_name: school.name,
         parent_name: scope.parent.full_name,
@@ -116,7 +121,7 @@ async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
         student_count: scope.studentCount,
         term_name: scope.termName,
         total_balance: formatMoneyForSms(scope.totalBalance, school.currency),
-        outstanding_breakdown: buildOutstandingBreakdown(scope.invoices, school.currency),
+        outstanding_breakdown: buildOutstandingBreakdown(scope.invoices, school.currency, { includesLink }),
         payment_link: paymentLinkText,
         due_date: new Date(scope.earliestDueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
         // Empty, not the literal string "null", for the (likely common,
@@ -126,6 +131,11 @@ async function buildVariables(schoolId, scope, paymentLinkText, schoolRow) {
         // is trusting it to be set; an empty string is at least never
         // actively wrong the way "null" would read in a real SMS.
         school_momo_number: school.momo_number || '',
+        // The registered name parents see on the MoMo confirmation prompt,
+        // so they can check they're paying the school (added 2026-10-14 for
+        // Eagle Vision, whose parents pay by MoMo only). Empty when unset,
+        // same reasoning as school_momo_number above.
+        school_momo_name: school.momo_account_name || '',
     };
 }
 

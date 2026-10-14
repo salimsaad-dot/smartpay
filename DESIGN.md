@@ -2258,6 +2258,37 @@ being considered done, not just locally.
     several debugging passes) were deleted from the local database
     afterward; nothing touched production this round.
 
+  - **MoMo-only reminders for Eagle Vision, 2026-10-14.** The headmaster
+    asked to drop the payment link from SMS reminders (most parents aren't
+    comfortable with links) and use MoMo only, showing the account name
+    parents see on the MoMo confirmation prompt so they can check they're
+    paying the school.
+    - No code needed to drop the link: templates are per school and
+      `{{payment_link}}` was never required — Eagle Vision's template is
+      simply edited on the SMS Templates page; the second school is
+      untouched.
+    - New `schools.momo_account_name` (nullable, VARCHAR 100) + new
+      `{{school_momo_name}}` template variable (empty when unset, same
+      reasoning as `{{school_momo_number}}`), saved via `PATCH
+      /settings/profile` (`momoAccountName`, 100-char limit, audit-logged)
+      and a second field in the SMS Templates page's Direct Payment Number
+      panel.
+    - Real gap fixed along the way: a long `{{outstanding_breakdown}}`
+      ended in "+N more (see link for full detail)" even in a template
+      with no link. `buildVariables` now gets the template body, and the
+      suffix is a plain "+N more" when the message has no `{{payment_link}}`.
+    - Migration: `scripts/migrate-momo-account-name.js` (idempotent).
+      **Must run on production before this code deploys** (the
+      2026-10-07 login incident above). Verified: 283 passed + 2 skipped
+      via `npm test` (runInBand — a plain parallel `npx jest` produces
+      spurious cross-suite DB collisions), clean frontend build, and a
+      live local check (field saves on blur, preview renders "Pay by MoMo
+      to 0241234567 (EAGLE VISION BASIC SCH)." in 137 chars — one SMS).
+    - Recommended Eagle Vision template: `{{school_name}}:
+      {{student_name}} owes {{outstanding_breakdown}}. Total
+      {{total_balance}}. Pay by MoMo to {{school_momo_number}}
+      ({{school_momo_name}}).`
+
 ## Future Work
 
 1. **Per-school prepaid SMS credit, with a hard cap — not built yet,
@@ -2421,3 +2452,4 @@ being considered done, not just locally.
 | 2026-10-12 | Fee types can now be renamed (`PATCH /fee-types/:id/name`), reversing this project's original Phase-1 decision to omit rename "to keep structure.name an immutable snapshot." | Re-examining that original reasoning found it didn't actually conflict with rename: `fee_structures.name` is already a point-in-time snapshot taken at creation, never a live join, so renaming the fee type it was created from can't retroactively change it. Re-confirmed with a dedicated test (rename after creating a structure, assert the structure's stored name is unchanged while its live `fee_type_name` join reflects the rename) before building on top of that invariant. |
 | 2026-10-12 | Mobile iOS/Android auto-zoom-on-focus is fixed via a responsive `text-base ... sm:text-sm` Tailwind pattern on every text input, not by disabling zoom with a `maximum-scale=1` viewport meta tag. | The viewport-meta approach fixes the symptom by disabling a real accessibility feature (pinch-zoom) for every user, including ones who need it for reasons unrelated to this bug. Keeping text at the browser's native 16px zoom threshold on phones (while staying at the existing smaller size on desktop via the `sm:` breakpoint) fixes the actual cause without taking anything away from the user. |
 | 2026-10-09 | Switched `SMS_PROVIDER` back from `arkesel` to `mnotify` in production. | Two real, independent reasons from the user's own live usage: (1) ~200+ already-paid mNotify credits sitting unused in the wallet vs. ~5 remaining on Arkesel — a sunk-cost/budget reason, not a technical one. (2) A real delivery-speed comparison, same message type, same conditions: mNotify delivered in ~30 seconds, Arkesel took ~45 minutes. A 45-minute delay is a serious reliability problem for a fee-reminder product (a parent clicking a link 45 minutes after the admin meant to nudge them is a materially worse experience than the product's own premise promises). Arkesel stays available as the documented fallback (see the 2026-10-07 entries above) if mNotify's account issue recurs, but is no longer the default live path. No code change — purely the existing `SMS_PROVIDER` env var on Render. |
+| 2026-10-14 | MoMo-only reminders are a per-school template choice, not a product-wide mode: the payment link stays available as a variable, and Eagle Vision simply stops using it. | Only one school asked for it, and the link is still the better path for parents who can use it. A per-school template edit needs no new setting or branching code; the one real code gap it exposed (the breakdown's "see link" suffix) is fixed by checking the template body itself, so a link-less template can never point to a link. |

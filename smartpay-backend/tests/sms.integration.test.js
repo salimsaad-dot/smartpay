@@ -162,6 +162,38 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
         await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoNumber: '' });
     });
 
+    // 2026-10-14: a MoMo-only template (no payment link) for schools whose
+    // parents can't use links, naming the account parents see on the MoMo
+    // confirmation prompt.
+    test('{{school_momo_name}} renders the saved MoMo account name, empty when unset, and a name over 100 chars is rejected', async () => {
+        const momoOnly = await request(app).post('/api/sms-templates').set('Cookie', cookieA)
+            .send({ name: 'MoMo Only Test', body: 'Pay by MoMo to {{school_momo_number}} ({{school_momo_name}}).' });
+
+        const unset = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, invoiceId: kofiInvoiceId, templateId: momoOnly.body.data.id });
+        expect(unset.body.data.message).toBe('Pay by MoMo to  ().');
+
+        const saved = await request(app).patch('/api/settings/profile').set('Cookie', cookieA)
+            .send({ momoNumber: '0241234567', momoAccountName: '  EAGLE VISION BASIC SCH  ' });
+        expect(saved.body.data.momoAccountName).toBe('EAGLE VISION BASIC SCH');
+        const profile = await request(app).get('/api/settings/profile').set('Cookie', cookieA);
+        expect(profile.body.data.momo_account_name).toBe('EAGLE VISION BASIC SCH');
+
+        const set = await request(app).post('/api/reminders/preview').set('Cookie', cookieA)
+            .send({ parentId: mensahParentId, invoiceId: kofiInvoiceId, templateId: momoOnly.body.data.id });
+        expect(set.body.data.message).toBe('Pay by MoMo to 0241234567 (EAGLE VISION BASIC SCH).');
+
+        // Saving only the number leaves the name alone
+        await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoNumber: '0207654321' });
+        const keptName = await request(app).get('/api/settings/profile').set('Cookie', cookieA);
+        expect(keptName.body.data.momo_account_name).toBe('EAGLE VISION BASIC SCH');
+
+        const tooLong = await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoAccountName: 'X'.repeat(101) });
+        expect(tooLong.status).toBe(400);
+
+        await request(app).patch('/api/settings/profile').set('Cookie', cookieA).send({ momoNumber: '', momoAccountName: '' });
+    });
+
     // fee-management Phase 4: {{outstanding_breakdown}} pulls the real
     // fee type name through resolveReminderScope's new fee_structures/
     // fee_types join, not just the invoice total — proven against a

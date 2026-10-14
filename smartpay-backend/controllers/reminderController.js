@@ -25,7 +25,7 @@ exports.preview = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'No active SMS template found.' });
         }
 
-        const variables = await buildVariables(req.user.schoolId, scope, '(a secure payment link will be included)');
+        const variables = await buildVariables(req.user.schoolId, scope, '(a secure payment link will be included)', undefined, template.body);
         const message = renderTemplate(template.body, variables);
 
         res.status(200).json({ status: 'success', data: { message, phone: scope.parent.phone, templateId: template.id } });
@@ -85,7 +85,7 @@ exports.send = async (req, res) => {
 
         const [[linkRow]] = await pool.query("SELECT id FROM payment_links WHERE parent_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [parentId]);
 
-        const variables = await buildVariables(req.user.schoolId, scope, link.url);
+        const variables = await buildVariables(req.user.schoolId, scope, link.url, undefined, template.body);
         const message = renderTemplate(template.body, variables);
 
         const cycleKey = `manual-${Date.now()}`;

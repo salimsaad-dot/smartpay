@@ -22,7 +22,7 @@ import {
   useToast,
 } from "@/components/ui";
 
-const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "outstanding_breakdown", "payment_link", "due_date", "school_momo_number"];
+const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "outstanding_breakdown", "payment_link", "due_date", "school_momo_number", "school_momo_name"];
 
 // Same "this school's own number, this calendar month" view already on
 // the Dashboard — added here too since a user naturally checks the page
@@ -86,23 +86,27 @@ function UsageSummaryPanel() {
 // For parents with no smartphone/data, the payment link alone is a dead
 // end — this gives every reminder a second, phone-agnostic way to pay
 // (send directly to the school's own MoMo number via USSD), without
-// needing to guess which parents can or can't use the online link.
+// needing to guess which parents can or can't use the online link. Some
+// schools (e.g. Eagle Vision, 2026-10-14) drop the link entirely and use
+// MoMo only, so the account name parents see on the MoMo confirmation
+// prompt can go in the SMS too, letting them check they're paying the school.
 function MomoNumberPanel({ showToast }) {
-  const [momoNumber, setMomoNumber] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    apiRequest("/settings/profile").then((res) => setMomoNumber(res.data.momo_number || ""));
+    apiRequest("/settings/profile").then((res) =>
+      setProfile({ number: res.data.momo_number || "", name: res.data.momo_account_name || "" })
+    );
   }, []);
 
-  async function handleBlur(e) {
-    const value = e.target.value;
+  async function save(body, message) {
     setError("");
     setSaving(true);
     try {
-      await apiRequest("/settings/profile", { method: "PATCH", body: { momoNumber: value } });
-      showToast("Payment number saved.");
+      await apiRequest("/settings/profile", { method: "PATCH", body });
+      showToast(message);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -110,22 +114,33 @@ function MomoNumberPanel({ showToast }) {
     }
   }
 
-  if (momoNumber === null) return <LoadingSkeleton lines={1} />;
+  if (profile === null) return <LoadingSkeleton lines={1} />;
 
   return (
     <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
       <h2 className="font-semibold text-[var(--ink)]">Direct Payment Number</h2>
       <p className="mt-1 text-sm text-[var(--slate-quiet)]">
-        For parents without a smartphone — add this as <code className="rounded bg-[var(--hover)] px-1 py-0.5 text-xs">{"{{school_momo_number}}"}</code> in
-        a template so every reminder also offers a direct MoMo option, not just the online payment link.
+        For parents who pay by MoMo — add <code className="rounded bg-[var(--hover)] px-1 py-0.5 text-xs">{"{{school_momo_number}}"}</code> and{" "}
+        <code className="rounded bg-[var(--hover)] px-1 py-0.5 text-xs">{"{{school_momo_name}}"}</code> to a template. The name is the one
+        parents see on the MoMo confirmation, so they can check they&apos;re paying the school.
       </p>
-      <div className="mt-3 max-w-xs">
+      <div className="mt-3 grid max-w-2xl gap-3 sm:grid-cols-2">
         <Field label="Mobile Money Number">
           <input
             type="tel"
-            defaultValue={momoNumber}
-            onBlur={handleBlur}
+            defaultValue={profile.number}
+            onBlur={(e) => save({ momoNumber: e.target.value }, "Payment number saved.")}
             placeholder="e.g. 024 123 4567"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="MoMo Account Name">
+          <input
+            type="text"
+            maxLength={100}
+            defaultValue={profile.name}
+            onBlur={(e) => save({ momoAccountName: e.target.value }, "MoMo account name saved.")}
+            placeholder="As shown on MoMo, e.g. EAGLE VISION BASIC SCH"
             className={inputClass}
           />
         </Field>

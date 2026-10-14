@@ -334,6 +334,7 @@ CREATE TABLE `schools` (
   `reminder_min_balance` decimal(12,2) DEFAULT NULL,
   `reminder_cooldown_days` int(11) DEFAULT NULL,
   `momo_number` varchar(50) DEFAULT NULL,
+  `momo_account_name` varchar(100) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_code` (`code`),
   KEY `fk_school_friday_template` (`friday_template_id`),
