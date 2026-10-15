@@ -1,0 +1,12 @@
+# Netlify trial host (2026-10-15), alongside the live Vercel deploy.
+# Netlify picks its Next.js runtime automatically only when it detects the
+# framework at project creation; the first trial deploy missed it and
+# published .next as plain static files (every page 404, build internals
+# public). Declaring the runtime here makes it explicit. Vercel ignores
+# this file.
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
