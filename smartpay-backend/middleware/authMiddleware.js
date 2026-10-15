@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
+const { ACCESS_COLUMNS_SQL, describeAccess } = require('../utils/schoolAccess');
 
 // Verify Token — ensures the user is logged in AND re-derives every
 // tenant-sensitive claim live from the DB on every request, never from the
@@ -29,8 +30,14 @@ exports.verifyToken = async (req, res, next) => {
         // gap with no reason to leave open.
         const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
+        // The owner console's tokens are a different kind and never valid here.
+        if (decoded.kind === 'platform') {
+            return res.status(403).json({ status: 'error', message: 'Invalid or expired token.' });
+        }
+
         const [[user]] = await pool.query(
-            'SELECT school_id, status, token_version FROM users WHERE id = ?',
+            `SELECT u.school_id, u.status, u.token_version, ${ACCESS_COLUMNS_SQL}
+             FROM users u JOIN schools s ON s.id = u.school_id WHERE u.id = ?`,
             [decoded.userId]
         );
         if (!user || user.status !== 'active') {
@@ -38,6 +45,13 @@ exports.verifyToken = async (req, res, next) => {
         }
         if (user.token_version !== decoded.tokenVersion) {
             return res.status(401).json({ status: 'error', message: 'Your session is no longer valid. Please log in again.' });
+        }
+        // Checked on every request, not just at login, so suspending a
+        // school (or its subscription lapsing) takes effect immediately,
+        // even for someone already logged in.
+        const access = describeAccess(user);
+        if (access.blocked) {
+            return res.status(403).json({ status: 'error', code: 'SCHOOL_BLOCKED', reason: access.reason, message: access.message });
         }
 
         // userId/role come from the verified token; schoolId comes from

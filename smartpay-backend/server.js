@@ -26,6 +26,7 @@ const reportsRoutes = require('./routes/reportsRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
 const intelligenceRoutes = require('./routes/intelligenceRoutes');
 const demoRequestRoutes = require('./routes/demoRequestRoutes');
+const platformRoutes = require('./routes/platformRoutes');
 
 const app = express();
 
@@ -142,6 +143,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 app.use('/api/demo-requests', demoRequestRoutes);
+app.use('/api/platform', platformRoutes);
 
 app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });

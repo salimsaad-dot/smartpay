@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, ArrowRight, Sparkles, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/Logo";
 import { AuthSplitLayout } from "@/components/AuthSplitLayout";
+import { SMARTPAY_CONTACT, whatsappLink } from "@/lib/contact";
 
-export default function LoginPage() {
+// Shown when a logged-in session was cut off because the school was
+// suspended or its subscription ended (lib/api.js redirects here).
+const BLOCKED_MESSAGES = {
+  suspended: "Your school's SmartPay account is suspended. Please contact SmartPay to restore access.",
+  expired: "Your school's SmartPay subscription has ended. Please contact SmartPay to renew.",
+};
+
+function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
+  const blockedReason = useSearchParams().get("blocked");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -41,7 +50,16 @@ export default function LoginPage() {
         <h2 className="mt-6 text-center text-2xl font-bold text-[var(--ink)] lg:mt-0">Welcome Back</h2>
         <p className="mt-1 text-center text-sm text-[var(--slate-quiet)]">Sign in to your school account to continue</p>
 
-        {error && <div className="mt-4 rounded-lg bg-[var(--danger-wash)] px-3 py-2 text-sm text-[var(--danger)]">{error}</div>}
+        {(error || BLOCKED_MESSAGES[blockedReason]) && (
+          <div className="mt-4 rounded-lg bg-[var(--danger-wash)] px-3 py-2 text-sm text-[var(--danger)]" role="alert">
+            {error || BLOCKED_MESSAGES[blockedReason]}
+            {/suspended|subscription has ended/.test(error || BLOCKED_MESSAGES[blockedReason]) && (
+              <a href={whatsappLink("Hello, I'm contacting you about our school's SmartPay account.")} target="_blank" rel="noopener noreferrer" className="mt-1 block font-semibold underline">
+                WhatsApp SmartPay ({SMARTPAY_CONTACT.phoneDisplay})
+              </a>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
@@ -90,7 +108,8 @@ export default function LoginPage() {
 
         <div className="mt-6 border-t border-[var(--border)] pt-5 text-center">
           <p className="flex items-center justify-center gap-1.5 text-sm text-[var(--slate-quiet)]">
-            <Sparkles size={14} /> New school? <Link href="/register" className="font-medium text-[var(--primary)] hover:underline">Register here</Link>
+            <Sparkles size={14} /> Want SmartPay for your school?{" "}
+            <a href={`${SMARTPAY_CONTACT.marketingUrl}/#contact`} className="font-medium text-[var(--primary)] hover:underline">Talk to us</a>
           </p>
         </div>
 
@@ -99,5 +118,14 @@ export default function LoginPage() {
         </p>
       </div>
     </AuthSplitLayout>
+  );
+}
+
+// useSearchParams needs a Suspense boundary in the App Router.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

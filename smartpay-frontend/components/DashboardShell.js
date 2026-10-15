@@ -9,6 +9,7 @@ import {
   BarChart3, ClipboardList, LogOut, ChevronDown, Menu, X, ShieldCheck, Tags,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { SMARTPAY_CONTACT, whatsappLink } from "@/lib/contact";
 import { Logo, LogoMark } from "@/components/Logo";
 import { SearchBar } from "@/components/ui2";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -137,6 +138,32 @@ function UserMenu({ user, onLogout }) {
   );
 }
 
+// Shown for the last 7 days of a school's paid period (billing comes from
+// /auth/me; renewalDue is computed by the backend). After the date passes,
+// the backend blocks the school entirely and lib/api.js sends staff to the
+// login page, so this is the only warning they get. Schools with no
+// paid-until date never see it.
+function RenewalNotice({ billing }) {
+  if (!billing?.renewalDue) return null;
+  const when = billing.daysLeft === 0 ? "today" : billing.daysLeft === 1 ? "tomorrow" : `in ${billing.daysLeft} days`;
+  const date = new Date(`${billing.paidUntil}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--warning)]/30 bg-[var(--warning-wash)] px-4 py-2.5 text-sm text-[var(--warning)] sm:px-6" role="status">
+      <span>
+        <strong>Your SmartPay subscription ends {when}</strong> ({date}). After that, staff can&rsquo;t log in and reminders stop.
+      </span>
+      <a
+        href={whatsappLink(`Hello, I'd like to renew SmartPay for our school. Our subscription ends on ${date}.`)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold underline"
+      >
+        Renew on WhatsApp ({SMARTPAY_CONTACT.phoneDisplay})
+      </a>
+    </div>
+  );
+}
+
 export default function DashboardShell({ children }) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
@@ -234,6 +261,7 @@ export default function DashboardShell({ children }) {
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
         </header>
+        <RenewalNotice billing={user.school.billing} />
         <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>

@@ -2,9 +2,8 @@ const pool = require('../db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { isValidCode } = require('../utils/schoolCode');
-const { DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY } = require('../utils/smsTemplate');
-const { DEFAULT_FEE_TYPES } = require('../utils/feeTypes');
+const { createSchoolWithAdmin } = require('../utils/schoolProvisioning');
+const { ACCESS_COLUMNS_SQL, describeAccess, billingSummary } = require('../utils/schoolAccess');
 const { logAction, logAuthEvent } = require('../utils/auditLog');
 // Required as a module object, never destructured — a test that spies
 // on this module (jest.spyOn(emailSender, 'sendPasswordResetEmail'))
@@ -56,79 +55,27 @@ function signToken(user) {
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
-// Creates a school + its first school_admin user in a single transaction.
-// Unlike Academia Hub's one-time-ever bootstrap (gated by "is the whole
-// users table empty"), this is a permanently open, repeatable public
-// endpoint — every new school signs up this way. Two schools racing for
-// the same code is a real scenario, not theoretical: relies on the DB's
-// own UNIQUE KEY on schools.code (caught below as ER_DUP_ENTRY) rather
-// than a SELECT-then-INSERT pre-check, which would be a TOCTOU gap.
+// Test-only since 2026-10-15: schools are created by the platform owner in
+// the console (platformController.createSchool), never by public sign-up.
+// server.js mounts this route only when NODE_ENV === 'test', because the
+// backend test suite creates its throwaway schools through it.
 exports.registerSchool = async (req, res) => {
-    const { schoolName, code, adminName, email, password } = req.body;
-
-    if (!schoolName?.trim() || !code?.trim() || !adminName?.trim() || !email?.trim() || !password) {
-        return res.status(400).json({ status: 'error', message: 'School name, code, admin name, email, and password are all required.' });
-    }
-    const normalizedCode = code.trim().toLowerCase();
-    if (!isValidCode(normalizedCode)) {
-        return res.status(400).json({ status: 'error', message: 'Code must be 3-30 characters, lowercase letters/numbers/hyphens only, and not a reserved word.' });
-    }
-    if (password.length < 8) {
-        return res.status(400).json({ status: 'error', message: 'Password must be at least 8 characters.' });
-    }
-
-    const connection = await pool.getConnection();
     try {
-        await connection.beginTransaction();
+        const { schoolName, code, adminName, email, password } = req.body;
+        const created = await createSchoolWithAdmin({ schoolName, code, adminName, email, password });
 
-        const [schoolResult] = await connection.query(
-            'INSERT INTO schools (name, code) VALUES (?, ?)',
-            [schoolName.trim(), normalizedCode]
-        );
-        const schoolId = schoolResult.insertId;
-
-        const passwordHash = await bcrypt.hash(password, 10);
-        const [userResult] = await connection.query(
-            'INSERT INTO users (school_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-            [schoolId, adminName.trim(), email.trim().toLowerCase(), passwordHash, 'school_admin']
-        );
-
-        // A school can send a reminder immediately without configuring
-        // anything first — matches the "replacement for a failed, overly
-        // complicated system" premise this product exists for.
-        await connection.query(
-            `INSERT INTO sms_templates (school_id, name, body, type) VALUES (?, ?, ?, 'manual_reminder')`,
-            [schoolId, DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY]
-        );
-
-        // Seeded so a school can create its first fee structure
-        // immediately without a separate "set up your fee types first"
-        // step — a starting point, not a fixed list (school-scoped and
-        // editable from the Fee Types page afterward).
-        for (const typeName of DEFAULT_FEE_TYPES) {
-            await connection.query('INSERT INTO fee_types (school_id, name) VALUES (?, ?)', [schoolId, typeName]);
-        }
-
-        await connection.commit();
-
-        const token = signToken({ id: userResult.insertId, role: 'school_admin', token_version: 1 });
+        const token = signToken({ id: created.userId, role: 'school_admin', token_version: 1 });
         res.cookie('token', token, { ...authCookieOptions(), maxAge: 24 * 60 * 60 * 1000 });
 
         res.status(201).json({
             status: 'success',
             message: 'School registered.',
-            data: { schoolId, schoolName: schoolName.trim(), code: normalizedCode, userId: userResult.insertId, role: 'school_admin' },
+            data: { schoolId: created.schoolId, schoolName: created.schoolName, code: created.code, userId: created.userId, role: 'school_admin' },
         });
     } catch (error) {
-        await connection.rollback();
-        if (error.code === 'ER_DUP_ENTRY') {
-            const field = error.sqlMessage?.includes('unique_code') ? 'That school code is' : 'That email is';
-            return res.status(409).json({ status: 'error', message: `${field} already taken.` });
-        }
+        if (error.status) return res.status(error.status).json({ status: 'error', message: error.message });
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while registering the school.' });
-    } finally {
-        connection.release();
     }
 };
 
@@ -166,13 +113,23 @@ exports.login = async (req, res) => {
             return res.status(401).json({ status: 'error', message: 'Invalid email or password.' });
         }
 
+        // Checked only after the password is right, so a stranger can't
+        // probe which schools are suspended.
+        const [[school]] = await pool.query(
+            `SELECT s.id, s.name, s.code, s.currency, ${ACCESS_COLUMNS_SQL} FROM schools s WHERE s.id = ?`,
+            [user.school_id]
+        );
+        const access = describeAccess(school);
+        if (access.blocked) {
+            await logAuthEvent(req, { schoolId: user.school_id, userId: user.id, action: `auth.login_school_${access.reason}` });
+            return res.status(403).json({ status: 'error', code: 'SCHOOL_BLOCKED', reason: access.reason, message: access.message });
+        }
+
         await pool.query(
             'UPDATE users SET last_login_at = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
             [user.id]
         );
         await logAuthEvent(req, { schoolId: user.school_id, userId: user.id, action: 'auth.login_success' });
-
-        const [[school]] = await pool.query('SELECT id, name, code, currency FROM schools WHERE id = ?', [user.school_id]);
 
         const token = signToken(user);
         res.cookie('token', token, { ...authCookieOptions(), maxAge: 24 * 60 * 60 * 1000 });
@@ -185,7 +142,7 @@ exports.login = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                school: { id: school.id, name: school.name, code: school.code, currency: school.currency },
+                school: { id: school.id, name: school.name, code: school.code, currency: school.currency, billing: billingSummary(school) },
             },
         });
     } catch (error) {
@@ -286,7 +243,10 @@ exports.getMe = async (req, res) => {
         if (!user) {
             return res.status(404).json({ status: 'error', message: 'Account not found.' });
         }
-        const [[school]] = await pool.query('SELECT id, name, code, currency FROM schools WHERE id = ?', [user.school_id]);
+        const [[school]] = await pool.query(
+            `SELECT s.id, s.name, s.code, s.currency, ${ACCESS_COLUMNS_SQL} FROM schools s WHERE s.id = ?`,
+            [user.school_id]
+        );
 
         res.status(200).json({
             status: 'success',
@@ -295,7 +255,7 @@ exports.getMe = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                school: { id: school.id, name: school.name, code: school.code, currency: school.currency },
+                school: { id: school.id, name: school.name, code: school.code, currency: school.currency, billing: billingSummary(school) },
             },
         });
     } catch (error) {

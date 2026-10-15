@@ -4,7 +4,12 @@ const authController = require('../controllers/authController');
 const { verifyToken } = require('../middleware/authMiddleware');
 const { loginRateLimit, registerRateLimit } = require('../middleware/authRateLimit');
 
-router.post('/register-school', registerRateLimit, authController.registerSchool);
+// No public sign-up since 2026-10-15: the platform owner creates schools in
+// the console. The backend tests still create throwaway schools through
+// this route, so it exists only under NODE_ENV=test (Jest sets that).
+if (process.env.NODE_ENV === 'test') {
+    router.post('/register-school', registerRateLimit, authController.registerSchool);
+}
 router.post('/login', loginRateLimit, authController.login);
 router.post('/logout', authController.logout);
 router.get('/me', verifyToken, authController.getMe);

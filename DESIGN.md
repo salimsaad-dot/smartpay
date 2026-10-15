@@ -2315,6 +2315,64 @@ being considered done, not just locally.
       previews correctly, phone layout fits, and the Invoices "Pay" and
       Arrears "Send Reminder" dialogs still work after the move. Zero
       console errors. Clean frontend build.
+  - **Owner control over which schools use SmartPay, 2026-10-15.** The
+    user realised anyone could open `/register`, create a school and
+    start using SmartPay, with no say from the owner. Worse, every school
+    shares the platform's SMS account and its one Paystack account, so a
+    stranger could spend the owner's SMS credit, and their parents'
+    online payments would settle into the owner's Paystack balance. The
+    user chose: owner-created accounts only, plus a paid-until date that
+    warns and then suspends automatically.
+    - **No public sign-up.**
+      - `/register` page removed. The login page now says "Want SmartPay
+        for your school? Talk to us", linking to the marketing site.
+      - `POST /api/auth/register-school` is mounted only when
+        `NODE_ENV=test`, because 22 backend test files create throwaway
+        schools through it. A test asserts the route is absent under
+        `NODE_ENV=production`.
+      - Provisioning moved into `utils/schoolProvisioning.js`, shared by
+        the console and that test route.
+    - **Access rules** (`utils/schoolAccess.js`): a school is blocked when
+      `schools.status = 'suspended'` (that column existed but nothing
+      checked it) or when the new `schools.paid_until` date is in the
+      past. A NULL date means no expiry, which every existing school has.
+      The rule is enforced in four places:
+      1. Login, checked after the password so nobody can probe which
+         schools are suspended.
+      2. `verifyToken` on every request, so suspension takes effect
+         mid-session.
+      3. The Friday job's school query.
+      4. Payment-link checkout. The webhook is untouched, so a payment
+         already started still completes.
+      - Blocked responses carry `code: 'SCHOOL_BLOCKED'`. `lib/api.js`
+        redirects to `/login?blocked=<reason>`, which explains the block
+        and gives the owner's WhatsApp.
+      - `/auth/me` returns `school.billing`, and the dashboard shows a
+        renewal notice for the last 7 days.
+    - **Owner console** (`/platform`, `/platform/login`; backend
+      `routes/platformRoutes.js`):
+      - It has its own `platform_admins` table, its own `platform_token`
+        cookie, its own token kind and its own lockout. This is the
+        separation the 2026-10-02 decision called for. Each side's tokens
+        are rejected by the other's guard.
+      - Screens: a schools list with admin, students, SMS sent this month,
+        paid-until and status; Add school, which returns a one-time
+        password once; set paid-until (+1 term / +1 year); suspend and
+        reactivate; reset the admin password, which also signs them out.
+      - Owner actions are written to the school's own audit log as
+        "… by SmartPay".
+      - The owner account is created only with
+        `scripts/create-platform-admin.js`.
+    - **Production steps:** run `scripts/migrate-platform-access.js`
+      before deploying, then create the owner account.
+    - **Verified:**
+      - 11 new tests, full suite 305 passing.
+      - Real-browser walkthrough with 0 page errors: owner login → add
+        school → the school logs in with the one-time password → a date 3
+        days out shows the notice → suspend sends the live session to
+        login with the reason.
+    - **Still open:** Paystack subaccounts (Future Work), so each school's
+      online payments settle to that school.
 
 ## Future Work
 
@@ -2480,3 +2538,4 @@ being considered done, not just locally.
 | 2026-10-12 | Mobile iOS/Android auto-zoom-on-focus is fixed via a responsive `text-base ... sm:text-sm` Tailwind pattern on every text input, not by disabling zoom with a `maximum-scale=1` viewport meta tag. | The viewport-meta approach fixes the symptom by disabling a real accessibility feature (pinch-zoom) for every user, including ones who need it for reasons unrelated to this bug. Keeping text at the browser's native 16px zoom threshold on phones (while staying at the existing smaller size on desktop via the `sm:` breakpoint) fixes the actual cause without taking anything away from the user. |
 | 2026-10-09 | Switched `SMS_PROVIDER` back from `arkesel` to `mnotify` in production. | Two real, independent reasons from the user's own live usage: (1) ~200+ already-paid mNotify credits sitting unused in the wallet vs. ~5 remaining on Arkesel — a sunk-cost/budget reason, not a technical one. (2) A real delivery-speed comparison, same message type, same conditions: mNotify delivered in ~30 seconds, Arkesel took ~45 minutes. A 45-minute delay is a serious reliability problem for a fee-reminder product (a parent clicking a link 45 minutes after the admin meant to nudge them is a materially worse experience than the product's own premise promises). Arkesel stays available as the documented fallback (see the 2026-10-07 entries above) if mNotify's account issue recurs, but is no longer the default live path. No code change — purely the existing `SMS_PROVIDER` env var on Render. |
 | 2026-10-14 | MoMo-only reminders are a per-school template choice, not a product-wide mode: the payment link stays available as a variable, and Eagle Vision simply stops using it. | Only one school asked for it, and the link is still the better path for parents who can use it. A per-school template edit needs no new setting or branching code; the one real code gap it exposed (the breakdown's "see link" suffix) is fixed by checking the template body itself, so a link-less template can never point to a link. |
+| 2026-10-15 | Owner-created schools only (no public sign-up); a school is blocked when suspended or past `paid_until`, derived at query time with `CURDATE()`, not by a scheduled job. NULL `paid_until` = no expiry. | Expiry needs no cron that could fail silently: the date check runs wherever access is checked. NULL-means-open keeps every pre-existing pilot school working without a data backfill. The register route survives only under `NODE_ENV=test`, so 22 test files keep their setup unchanged while production has no sign-up path. |

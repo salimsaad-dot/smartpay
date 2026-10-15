@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { SCHOOL_IS_OPEN_SQL } = require('./schoolAccess');
 const { createPaymentLink } = require('./paymentLink');
 const { renderTemplate } = require('./smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('./reminderCore');
@@ -210,7 +211,9 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
 // day. Each school's failure is isolated: one school's crash never
 // blocks another's.
 async function runFridayJobForAllSchools(options = {}) {
-    const [schools] = await pool.query(`SELECT id FROM schools WHERE friday_reminders_enabled = 1 AND status = 'active'`);
+    // Suspended schools and lapsed subscriptions get no reminders (and so
+    // spend none of the platform's SMS credit).
+    const [schools] = await pool.query(`SELECT s.id FROM schools s WHERE s.friday_reminders_enabled = 1 AND ${SCHOOL_IS_OPEN_SQL}`);
     const results = [];
     for (const { id } of schools) {
         try {

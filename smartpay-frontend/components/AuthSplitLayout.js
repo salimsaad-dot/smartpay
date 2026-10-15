@@ -12,7 +12,7 @@ const FEATURES = [
   { icon: BarChart3, tone: "info", title: "Insightful Reports", desc: "Make better financial decisions" },
 ];
 
-// Shared shell for Login and Register — a hero panel (hidden on phones)
+// Shared shell for the login and password-reset pages — a hero panel (hidden on phones)
 // plus a centered card for the form itself.
 export function AuthSplitLayout({ children }) {
   return (

@@ -28,7 +28,19 @@ const ACTION_LABELS = {
   "auth.password_changed": "Password changed",
   "auth.password_reset": "Password reset via email link",
   "auth.sessions_revoked": "Logged out everywhere",
+  "auth.login_school_suspended": "Sign-in refused (school suspended)",
+  "auth.login_school_expired": "Sign-in refused (subscription ended)",
+  // Done by the SmartPay owner from the console (no school user).
+  "platform.school_created": "School account created by SmartPay",
+  "platform.school_suspended": "School suspended by SmartPay",
+  "platform.school_reactivated": "School reactivated by SmartPay",
+  "platform.subscription_updated": "Subscription date changed by SmartPay",
+  "platform.admin_password_reset": "Admin password reset by SmartPay",
 };
+
+// Entries with no school user are either SmartPay's own actions from the
+// owner console or automatic system events.
+const actorName = (log) => log.user_name || (log.action.startsWith("platform.") ? "SmartPay" : "System");
 
 function LogDetails({ log }) {
   return (
@@ -80,7 +92,7 @@ export default function AuditLogPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-medium text-[var(--ink)]">{ACTION_LABELS[l.action] || l.action}</p>
-                    <p className="truncate text-xs text-[var(--slate-quiet)]">{l.user_name || "System"} · {formatDate(l.created_at)}</p>
+                    <p className="truncate text-xs text-[var(--slate-quiet)]">{actorName(l)} · {formatDate(l.created_at)}</p>
                     <p className="truncate text-xs text-[var(--slate-quiet)]">{l.entity_type} #{l.entity_id}</p>
                   </div>
                 </div>
@@ -109,7 +121,7 @@ export default function AuditLogPage() {
                   <Fragment key={l.id}>
                     <tr className="border-b border-[var(--border)] last:border-b-0">
                       <td className="p-3">{formatDate(l.created_at)}</td>
-                      <td className="p-3 font-medium">{l.user_name || "System"}</td>
+                      <td className="p-3 font-medium">{actorName(l)}</td>
                       <td className="p-3">{ACTION_LABELS[l.action] || l.action}</td>
                       <td className="p-3 text-xs text-[var(--slate-quiet)]">{l.entity_type} #{l.entity_id}</td>
                       <td className="p-3">

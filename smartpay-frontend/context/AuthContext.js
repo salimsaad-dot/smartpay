@@ -19,22 +19,6 @@ export function AuthProvider({ children }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  async function registerSchool(payload) {
-    const res = await apiRequest("/auth/register-school", { method: "POST", body: payload });
-    setUser({
-      userId: res.data.userId,
-      name: payload.adminName,
-      email: payload.email,
-      role: res.data.role,
-      // currency isn't returned by register-school (no currency-selection
-      // UI exists at signup) — GHS is the real DB default for a freshly
-      // created school, so it's safe to assume here rather than add a
-      // field the endpoint has no other reason to return.
-      school: { id: res.data.schoolId, name: res.data.schoolName, code: res.data.code, currency: "GHS" },
-    });
-    return res.data;
-  }
-
   async function login(email, password) {
     const res = await apiRequest("/auth/login", { method: "POST", body: { email, password } });
     setUser(res.data);
@@ -51,7 +35,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, registerSchool, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

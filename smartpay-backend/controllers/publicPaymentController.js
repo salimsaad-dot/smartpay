@@ -3,6 +3,7 @@ const pool = require('../db');
 const { hashToken } = require('../utils/paymentLink');
 const { recalculateInvoiceBalance } = require('../utils/invoiceRules');
 const paystackGateway = require('../utils/paystackGateway');
+const { ACCESS_COLUMNS_SQL, describeAccess } = require('../utils/schoolAccess');
 
 // Shared by every public endpoint below: resolve a raw URL token to its
 // payment_links row, enforcing active/not-expired — never trusts anything
@@ -11,7 +12,8 @@ const paystackGateway = require('../utils/paystackGateway');
 async function resolveLink(connection, token) {
     const tokenHash = hashToken(token);
     const [[link]] = await connection.query(
-        `SELECT pl.*, p.full_name AS parent_name, p.email AS parent_email, s.name AS school_name, s.currency
+        `SELECT pl.*, p.full_name AS parent_name, p.email AS parent_email, s.name AS school_name, s.currency,
+                ${ACCESS_COLUMNS_SQL}
          FROM payment_links pl
          JOIN parents p ON p.id = pl.parent_id
          JOIN schools s ON s.id = pl.school_id
@@ -19,6 +21,12 @@ async function resolveLink(connection, token) {
         [tokenHash]
     );
     if (!link) return { error: { status: 404, message: 'This payment link is invalid.' } };
+    // A suspended or lapsed school takes no new online payments. The
+    // webhook doesn't go through here, so a payment already started still
+    // completes and is recorded.
+    if (describeAccess(link).blocked) {
+        return { error: { status: 410, message: 'Online payment for this school is unavailable right now. Please contact the school.' } };
+    }
     if (link.status !== 'active') return { error: { status: 410, message: 'This payment link has been revoked.' } };
     if (link.expires_at && new Date(link.expires_at) < new Date()) {
         return { error: { status: 410, message: 'This payment link has expired. Please contact the school for a new one.' } };
