@@ -59,6 +59,16 @@ exports.webhookRateLimit = rateLimit({
 // than an anonymous attacker, but a compromised or buggy client
 // shouldn't be able to burn through a school's SMS credit at unbounded
 // speed either.
+// The marketing site's public demo form. A real school sends one request,
+// maybe two after a typo; anything more from one IP is spam filling the
+// table and the owner's inbox.
+exports.demoRequestRateLimit = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 exports.reminderRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 30,

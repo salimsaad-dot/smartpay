@@ -72,4 +72,27 @@ async function sendPasswordResetEmail(toEmail, resetLink) {
     });
 }
 
-module.exports = { sendPasswordResetEmail, isEmailDeliveryConfigured };
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Lead alert for the marketing site's demo form. Every field is typed by an
+// anonymous visitor, so all of it is escaped before going into the HTML.
+async function sendDemoRequestEmail(toEmail, request) {
+    const rows = [
+        ['School', request.schoolName],
+        ['Contact', request.role ? `${request.contactName} (${request.role})` : request.contactName],
+        ['Phone', request.phone],
+        ['Email', request.email],
+        ['Students', request.studentCount],
+        ['Message', request.message],
+    ].filter(([, value]) => value);
+    return sendEmail({
+        to: toEmail,
+        subject: `New SmartPay demo request: ${request.schoolName}`,
+        html: `
+            <p>A school asked for a SmartPay demo through the marketing site.</p>
+            <table cellpadding="4">${rows.map(([label, value]) => `<tr><td><strong>${label}</strong></td><td>${escapeHtml(value).replace(/\n/g, '<br>')}</td></tr>`).join('')}</table>
+        `,
+    });
+}
+
+module.exports = { sendPasswordResetEmail, sendDemoRequestEmail, isEmailDeliveryConfigured };
