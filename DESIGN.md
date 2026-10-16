@@ -2650,6 +2650,38 @@ being considered done, not just locally.
       history-write failure after a send not resent; crashed mid-send
       flagged, not resent; provider timeout and network-error results.
     - Full suite 353 passing.
+- **Migrations apply themselves on start, 2026-10-16.** This is item 9
+  on the council fix list. Each schema change used to be a script the
+  owner had to run against production **before** deploying. Forgetting
+  once caused the 2026-10-07 login outage, and several changes in a row
+  made it easy to miss one.
+  - **What changed:**
+    - New `utils/migrations.js`. A `schema_migrations` table records what
+      has run. `MIGRATIONS` lists every `scripts/migrate-*.js` in order;
+      **add new ones to the end** (a test fails if any script is
+      unregistered).
+    - `server.js` calls `runPendingMigrations()` before `listen`: each
+      unrecorded migration runs as its own process, exactly as it was run
+      by hand, so the scripts are unchanged and all idempotent. Then it's
+      recorded.
+    - A MySQL `GET_LOCK` means that when two copies start together (as
+      Render does during a deploy), only one migrates.
+    - If a migration fails, the process exits, so Render marks the deploy
+      failed and keeps the previous version serving instead of running
+      new code on an old schema.
+    - `SKIP_MIGRATIONS=true` is an emergency escape hatch;
+      `npm run migrate` runs them by hand.
+    - Production's first boot with this records all 10 existing
+      migrations (each is a no-op where already applied).
+  - **The deploy procedure is now just: push, then Manual Deploy.** No
+    separate migration step.
+  - **Verified:**
+    - 4 new tests: every script registered; applies missing ones,
+      records them, then is a no-op; a failing one isn't recorded and
+      releases the lock; two simultaneous runners only migrate once.
+    - A real `node server.js` boot applied a deliberately un-recorded
+      migration, then served.
+    - Full suite 357 passing.
 
 ## Future Work
 

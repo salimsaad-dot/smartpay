@@ -18,7 +18,7 @@ CREATE TABLE `academic_years` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_school_year_name` (`school_id`,`name`),
   CONSTRAINT `fk_ay_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1555 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1577 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `audit_logs`;
 CREATE TABLE `audit_logs` (
@@ -40,7 +40,7 @@ CREATE TABLE `audit_logs` (
   KEY `fk_al_user` (`user_id`),
   CONSTRAINT `fk_al_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_al_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=7311 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=7468 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `classes`;
 CREATE TABLE `classes` (
@@ -54,7 +54,7 @@ CREATE TABLE `classes` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_school_class_name` (`school_id`,`name`),
   CONSTRAINT `fk_class_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1473 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1494 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `demo_requests`;
 CREATE TABLE `demo_requests` (
@@ -69,7 +69,7 @@ CREATE TABLE `demo_requests` (
   `status` enum('new','contacted','closed') NOT NULL DEFAULT 'new',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=30 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=32 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `fee_structure_items`;
 CREATE TABLE `fee_structure_items` (
@@ -84,7 +84,7 @@ CREATE TABLE `fee_structure_items` (
   PRIMARY KEY (`id`),
   KEY `idx_fee_structure` (`fee_structure_id`),
   CONSTRAINT `fk_fsi_structure` FOREIGN KEY (`fee_structure_id`) REFERENCES `fee_structures` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2186 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2221 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `fee_structures`;
 CREATE TABLE `fee_structures` (
@@ -109,7 +109,7 @@ CREATE TABLE `fee_structures` (
   CONSTRAINT `fk_fs_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_fs_term` FOREIGN KEY (`term_id`) REFERENCES `terms` (`id`),
   CONSTRAINT `fk_fs_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1302 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1328 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `fee_types`;
 CREATE TABLE `fee_types` (
@@ -124,7 +124,7 @@ CREATE TABLE `fee_types` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_school_type_name` (`school_id`,`name`),
   CONSTRAINT `fk_feetype_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=15992 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=17236 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `financial_insight_cache`;
 CREATE TABLE `financial_insight_cache` (
@@ -135,7 +135,7 @@ CREATE TABLE `financial_insight_cache` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_school` (`school_id`),
   CONSTRAINT `fk_financial_insight_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=198 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=203 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `invoice_items`;
 CREATE TABLE `invoice_items` (
@@ -149,7 +149,7 @@ CREATE TABLE `invoice_items` (
   PRIMARY KEY (`id`),
   KEY `idx_invoice` (`invoice_id`),
   CONSTRAINT `fk_ii_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=5128 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5205 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `invoices`;
 CREATE TABLE `invoices` (
@@ -183,7 +183,7 @@ CREATE TABLE `invoices` (
   CONSTRAINT `fk_inv_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`),
   CONSTRAINT `fk_inv_term` FOREIGN KEY (`term_id`) REFERENCES `terms` (`id`),
   CONSTRAINT `fk_inv_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3057 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3106 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `keepalive_heartbeat`;
 CREATE TABLE `keepalive_heartbeat` (
@@ -205,7 +205,7 @@ CREATE TABLE `parent_student` (
   KEY `idx_student` (`student_id`),
   CONSTRAINT `fk_ps_parent` FOREIGN KEY (`parent_id`) REFERENCES `parents` (`id`),
   CONSTRAINT `fk_ps_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2393 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2425 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `parents`;
 CREATE TABLE `parents` (
@@ -222,7 +222,7 @@ CREATE TABLE `parents` (
   KEY `idx_school` (`school_id`),
   KEY `idx_phone` (`phone`),
   CONSTRAINT `fk_parent_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1815 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1839 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `password_reset_tokens`;
 CREATE TABLE `password_reset_tokens` (
@@ -235,7 +235,7 @@ CREATE TABLE `password_reset_tokens` (
   PRIMARY KEY (`reset_token_id`),
   KEY `idx_user` (`user_id`),
   CONSTRAINT `fk_reset_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=187 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=192 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `payment_attempts`;
 CREATE TABLE `payment_attempts` (
@@ -248,7 +248,7 @@ CREATE TABLE `payment_attempts` (
   PRIMARY KEY (`id`),
   KEY `idx_payment` (`payment_id`),
   CONSTRAINT `fk_pa_payment` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1054 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1080 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `payment_links`;
 CREATE TABLE `payment_links` (
@@ -270,7 +270,7 @@ CREATE TABLE `payment_links` (
   CONSTRAINT `fk_pl_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
   CONSTRAINT `fk_pl_parent` FOREIGN KEY (`parent_id`) REFERENCES `parents` (`id`),
   CONSTRAINT `fk_pl_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1601 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1635 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `payments`;
 CREATE TABLE `payments` (
@@ -309,7 +309,7 @@ CREATE TABLE `payments` (
   CONSTRAINT `fk_pay_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_pay_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`),
   CONSTRAINT `fk_pay_voided_by` FOREIGN KEY (`voided_by`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2901 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2956 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `platform_admins`;
 CREATE TABLE `platform_admins` (
@@ -324,7 +324,7 @@ CREATE TABLE `platform_admins` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_platform_admin_email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `reminder_send_claims`;
 CREATE TABLE `reminder_send_claims` (
@@ -341,7 +341,7 @@ CREATE TABLE `reminder_send_claims` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_reminder_claim` (`school_id`,`parent_id`,`cycle_key`),
   KEY `idx_claim_cycle` (`school_id`,`cycle_key`,`status`)
-) ENGINE=InnoDB AUTO_INCREMENT=65 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=97 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `scheduled_jobs`;
 CREATE TABLE `scheduled_jobs` (
@@ -361,7 +361,14 @@ CREATE TABLE `scheduled_jobs` (
   UNIQUE KEY `unique_school_job_cycle` (`school_id`,`job_type`,`cycle_key`),
   KEY `idx_school` (`school_id`),
   CONSTRAINT `fk_sj_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2309 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2328 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `schema_migrations`;
+CREATE TABLE `schema_migrations` (
+  `name` varchar(100) NOT NULL,
+  `applied_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `schools`;
 CREATE TABLE `schools` (
@@ -389,7 +396,7 @@ CREATE TABLE `schools` (
   UNIQUE KEY `unique_code` (`code`),
   KEY `fk_school_friday_template` (`friday_template_id`),
   CONSTRAINT `fk_school_friday_template` FOREIGN KEY (`friday_template_id`) REFERENCES `sms_templates` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3449 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3495 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `sms_reminders`;
 CREATE TABLE `sms_reminders` (
@@ -424,7 +431,7 @@ CREATE TABLE `sms_reminders` (
   CONSTRAINT `fk_sr_payment_link` FOREIGN KEY (`payment_link_id`) REFERENCES `payment_links` (`id`),
   CONSTRAINT `fk_sr_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_sr_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1166 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1189 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `sms_templates`;
 CREATE TABLE `sms_templates` (
@@ -440,7 +447,7 @@ CREATE TABLE `sms_templates` (
   UNIQUE KEY `unique_school_template_name` (`school_id`,`name`),
   KEY `idx_school` (`school_id`),
   CONSTRAINT `fk_st_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3525 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3576 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `student_fee_eligibility`;
 CREATE TABLE `student_fee_eligibility` (
@@ -456,7 +463,7 @@ CREATE TABLE `student_fee_eligibility` (
   CONSTRAINT `fk_sfe_feetype` FOREIGN KEY (`fee_type_id`) REFERENCES `fee_types` (`id`),
   CONSTRAINT `fk_sfe_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_sfe_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=228 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=237 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `students`;
 CREATE TABLE `students` (
@@ -480,7 +487,7 @@ CREATE TABLE `students` (
   CONSTRAINT `fk_student_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`),
   CONSTRAINT `fk_student_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_student_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3665 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3718 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `terms`;
 CREATE TABLE `terms` (
@@ -499,7 +506,7 @@ CREATE TABLE `terms` (
   KEY `fk_term_school` (`school_id`),
   CONSTRAINT `fk_term_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`),
   CONSTRAINT `fk_term_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1255 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1274 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
@@ -520,6 +527,6 @@ CREATE TABLE `users` (
   UNIQUE KEY `unique_email` (`email`),
   KEY `school_id` (`school_id`),
   CONSTRAINT `users_ibfk_1` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3542 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3593 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS=1;

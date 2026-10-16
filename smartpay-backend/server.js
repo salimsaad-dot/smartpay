@@ -28,6 +28,7 @@ const intelligenceRoutes = require('./routes/intelligenceRoutes');
 const demoRequestRoutes = require('./routes/demoRequestRoutes');
 const platformRoutes = require('./routes/platformRoutes');
 const { connectionRateLimit } = require('./middleware/authRateLimit');
+const { runPendingMigrations } = require('./utils/migrations');
 
 const app = express();
 
@@ -158,10 +159,28 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5100;
+// Pending database migrations run before the server accepts any request
+// (utils/migrations.js). If one fails, the process exits, Render marks the
+// deploy failed and keeps the previous version running. SKIP_MIGRATIONS=true
+// is an emergency escape hatch only.
 if (require.main === module) {
-    app.listen(PORT, '0.0.0.0', () => {
+    const start = () => app.listen(PORT, '0.0.0.0', () => {
         console.log(`SmartPay server is running on port ${PORT}`);
     });
+    if (process.env.SKIP_MIGRATIONS === 'true') {
+        console.warn('SKIP_MIGRATIONS=true: starting without checking database migrations.');
+        start();
+    } else {
+        runPendingMigrations()
+            .then((applied) => {
+                console.log(applied.length ? `Applied ${applied.length} migration(s): ${applied.join(', ')}` : 'Database migrations up to date.');
+                start();
+            })
+            .catch((error) => {
+                console.error('Database migration failed; refusing to start so the previous version keeps serving:', error.message);
+                process.exit(1);
+            });
+    }
 }
 
 module.exports = app;
