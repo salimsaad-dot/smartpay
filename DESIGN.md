@@ -2454,19 +2454,19 @@ being considered done, not just locally.
 - **Voids, refunds and overpayment, 2026-10-16.** This is item 3 on the
   council fix list. Void resurrection and the currency check were already
   fixed in the reconciliation entry above.
-  - **Online payments can't be voided** (\`voidPayment\` rejects
-    \`source='online'\`). The money really arrived at Paystack, so a void
+  - **Online payments can't be voided** (`voidPayment` rejects
+    `source='online'`). The money really arrived at Paystack, so a void
     showed the fee unpaid while the school held the money. The Payments
     page shows "Paid online" instead of a Void link.
   - **Refunds and reversals:**
-    - New \`'refunded'\` status, added by
-      \`scripts/migrate-payment-refunded.js\`. **Run it on production
+    - New `'refunded'` status, added by
+      `scripts/migrate-payment-refunded.js`. **Run it on production
       before deploying.**
-    - The webhook recognises \`refund.processed\`
-      (\`paystackGateway.parseRefundEvent\` takes only the reference).
-      It then asks Paystack (\`verifyTransaction\`, which now maps
-      \`reversed\` to 'refunded') before undoing anything.
-    - \`applyRefund\` in the finalizer moves the payment to 'refunded'
+    - The webhook recognises `refund.processed`
+      (`paystackGateway.parseRefundEvent` takes only the reference).
+      It then asks Paystack (`verifyTransaction`, which now maps
+      `reversed` to 'refunded') before undoing anything.
+    - `applyRefund` in the finalizer moves the payment to 'refunded'
       under the invoice lock, so the fee shows as owed again.
     - A partial refund (Paystack still reports success) is logged for
       manual review, not applied.
@@ -2474,8 +2474,8 @@ being considered done, not just locally.
       refund; reading only the reference and confirming via verify keeps
       this robust to that.
   - **Overpayment is visible:**
-    - The invoice list returns \`refund_due = GREATEST(paid_amount -
-      total, 0)\` and takes an \`?overpaid=1\` filter.
+    - The invoice list returns `refund_due = GREATEST(paid_amount -
+      total, 0)` and takes an `?overpaid=1` filter.
     - The Dashboard shows an alert linking to Invoices.
     - The Invoices page shows a banner explaining what to do (void the
       duplicate hand entry, or refund through Paystack), plus a "Refund
@@ -2485,17 +2485,17 @@ being considered done, not just locally.
   - **The Payments page counted unsettled checkouts as collected.** Its
     totals summed every non-void row, including online payments only
     started or failed, which also showed a 1970 date and a Void link.
-    - \`GET /payments\` now leaves out unsettled online payments unless
-      \`?status=\` is given. This also fixes the dashboard's Recent
+    - `GET /payments` now leaves out unsettled online payments unless
+      `?status=` is given. This also fixes the dashboard's Recent
       Payments and the student account history.
-    - Totals count only 'success'. Dates fall back to \`created_at\`.
+    - Totals count only 'success'. Dates fall back to `created_at`.
   - The Payments page's own Record Payment form now sends the idempotency
     key too. It's a separate copy of the form that the previous item
     missed.
   - **Verified:**
     - 5 new tests: online void refused, list filter, full refund
       restores the balance and a redelivery is a no-op, partial refund
-      left counted, overpayment shows \`refund_due\` and clears when the
+      left counted, overpayment shows `refund_due` and clears when the
       duplicate is voided.
     - Full suite 322 passing.
     - Real browser: dashboard alert, invoices banner and badge, "Paid
