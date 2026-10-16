@@ -1,5 +1,6 @@
 const pool = require('../db');
-const { recalculateInvoiceBalance } = require('../utils/invoiceRules');
+const { recalculateInvoiceBalance, lockInvoice } = require('../utils/invoiceRules');
+const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
 const { logAction } = require('../utils/auditLog');
 
 const VALID_METHODS = ['cash', 'mobile_money', 'bank_transfer', 'other'];
@@ -37,64 +38,97 @@ exports.list = async (req, res) => {
 };
 
 // Manual payment entry — a school still receives cash/MoMo/bank payments
-// outside the platform, and this is how that gets reflected. Amount is
-// validated against the invoice's CURRENT balance (re-read inside the
-// transaction, not trusted from an earlier page load) and rejected if it
-// would overpay — the spec's stated default when overpayment handling
-// isn't explicitly built (it isn't, yet).
+// outside the platform, and this is how that gets reflected. The invoice is
+// locked first (lockInvoice), so the balance check and the insert happen
+// with no other payment able to land on the same invoice in between; an
+// amount that would overpay is rejected (the spec's default while
+// overpayment handling isn't built). idempotencyKey, sent by the Record
+// Payment form once per submission, makes a double-clicked or retried
+// submission return the payment it already created instead of a second one.
+const IDEMPOTENCY_KEY_SHAPE = /^[A-Za-z0-9-]{8,64}$/;
+
 exports.create = async (req, res) => {
-    const { invoiceId, amount, method, paidAt, reference, note } = req.body;
+    const { invoiceId, amount, method, paidAt, reference, note, idempotencyKey } = req.body;
     if (!invoiceId || !(Number(amount) > 0) || !method) {
         return res.status(400).json({ status: 'error', message: 'invoiceId, a positive amount, and a method are required.' });
     }
     if (!VALID_METHODS.includes(method)) {
         return res.status(400).json({ status: 'error', message: `method must be one of ${VALID_METHODS.join(', ')}.` });
     }
+    if (idempotencyKey !== undefined && idempotencyKey !== null && !IDEMPOTENCY_KEY_SHAPE.test(String(idempotencyKey))) {
+        return res.status(400).json({ status: 'error', message: 'Invalid idempotency key.' });
+    }
+    const key = idempotencyKey ? String(idempotencyKey) : null;
 
-    const connection = await pool.getConnection();
     try {
-        const [[invoice]] = await connection.query(
-            'SELECT id, student_id, balance, status FROM invoices WHERE id = ? AND school_id = ?',
-            [invoiceId, req.user.schoolId]
-        );
-        if (!invoice) {
-            connection.release();
-            return res.status(404).json({ status: 'error', message: 'Invoice not found.' });
-        }
-        if (invoice.status === 'void') {
-            connection.release();
-            return res.status(400).json({ status: 'error', message: 'This invoice has been voided and can no longer accept payments.' });
-        }
-        if (Number(amount) > Number(invoice.balance)) {
-            connection.release();
-            return res.status(400).json({ status: 'error', message: `Amount exceeds the outstanding balance of ${invoice.balance}.` });
-        }
+        const outcome = await withDeadlockRetry(async () => {
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
+                const invoice = await lockInvoice(connection, invoiceId, req.user.schoolId);
+                if (!invoice) {
+                    await connection.rollback();
+                    return { status: 404, body: { status: 'error', message: 'Invoice not found.' } };
+                }
 
-        await connection.beginTransaction();
+                if (key) {
+                    const [[existing]] = await connection.query(
+                        'SELECT id FROM payments WHERE school_id = ? AND idempotency_key = ?',
+                        [req.user.schoolId, key]
+                    );
+                    if (existing) {
+                        const [[current]] = await connection.query('SELECT paid_amount, balance, status FROM invoices WHERE id = ?', [invoiceId]);
+                        await connection.rollback();
+                        return {
+                            status: 200,
+                            body: {
+                                status: 'success', message: 'Payment already recorded.',
+                                data: { paymentId: existing.id, duplicate: true, invoice: { paidAmount: Number(current.paid_amount), balance: Number(current.balance), status: current.status } },
+                            },
+                        };
+                    }
+                }
 
-        const [result] = await connection.query(
-            `INSERT INTO payments (school_id, invoice_id, student_id, amount, method, source, status, reference, note, paid_at, created_by)
-             VALUES (?, ?, ?, ?, ?, 'manual', 'success', ?, ?, ?, ?)`,
-            [req.user.schoolId, invoiceId, invoice.student_id, Number(amount), method, reference?.trim() || null, note?.trim() || null, paidAt || new Date(), req.user.userId]
-        );
-        const paymentId = result.insertId;
+                if (invoice.status === 'void') {
+                    await connection.rollback();
+                    return { status: 400, body: { status: 'error', message: 'This invoice has been voided and can no longer accept payments.' } };
+                }
+                if (Number(amount) > Number(invoice.balance)) {
+                    await connection.rollback();
+                    return { status: 400, body: { status: 'error', message: `Amount exceeds the outstanding balance of ${invoice.balance}.` } };
+                }
 
-        const updatedInvoice = await recalculateInvoiceBalance(connection, invoiceId);
-
-        await connection.commit();
-
-        await logAction(req, {
-            action: 'payment.create', entityType: 'payment', entityId: paymentId,
-            newValues: { invoiceId, amount: Number(amount), method, reference: reference?.trim() || null },
+                const [result] = await connection.query(
+                    `INSERT INTO payments (school_id, invoice_id, student_id, amount, method, source, status, reference, idempotency_key, note, paid_at, created_by)
+                     VALUES (?, ?, ?, ?, ?, 'manual', 'success', ?, ?, ?, ?, ?)`,
+                    [req.user.schoolId, invoiceId, invoice.student_id, Number(amount), method, reference?.trim() || null, key,
+                        note?.trim() || null, paidAt || new Date(), req.user.userId]
+                );
+                const updatedInvoice = await recalculateInvoiceBalance(connection, invoiceId);
+                await connection.commit();
+                return { status: 201, paymentId: result.insertId, body: { status: 'success', message: 'Payment recorded.', data: { paymentId: result.insertId, invoice: updatedInvoice } } };
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
+            }
         });
 
-        res.status(201).json({ status: 'success', message: 'Payment recorded.', data: { paymentId, invoice: updatedInvoice } });
+        if (outcome.status === 201) {
+            await logAction(req, {
+                action: 'payment.create', entityType: 'payment', entityId: outcome.paymentId,
+                newValues: { invoiceId, amount: Number(amount), method, reference: reference?.trim() || null },
+            });
+        }
+        res.status(outcome.status).json(outcome.body);
     } catch (error) {
-        await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY') {
+            // Same key reused for a different invoice: the unique index stops it.
+            return res.status(409).json({ status: 'error', message: 'This payment was already submitted. Refresh the page to see it.' });
+        }
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while recording the payment.' });
-    } finally {
-        connection.release();
     }
 };
 
@@ -102,48 +136,58 @@ exports.create = async (req, res) => {
 // marked void and excluded from the invoice's paid_amount going forward.
 // A reason is required, since this is exactly the kind of action an
 // eventual audit trail (Phase 10) needs a real explanation attached to.
+// Locks the invoice first, like every other payment write.
 exports.voidPayment = async (req, res) => {
     const { reason } = req.body;
     if (!reason?.trim()) {
         return res.status(400).json({ status: 'error', message: 'A reason is required to void a payment.' });
     }
 
-    const connection = await pool.getConnection();
     try {
-        const [[payment]] = await connection.query(
-            'SELECT id, invoice_id, status FROM payments WHERE id = ? AND school_id = ?',
-            [req.params.id, req.user.schoolId]
-        );
-        if (!payment) {
-            connection.release();
+        // Which invoice to lock. Read outside the transaction on purpose: a
+        // plain read inside it would fix its snapshot before the lock.
+        const [[found]] = await pool.query('SELECT invoice_id FROM payments WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);
+        if (!found) {
             return res.status(404).json({ status: 'error', message: 'Payment not found.' });
         }
-        if (payment.status === 'void') {
-            connection.release();
-            return res.status(400).json({ status: 'error', message: 'This payment has already been voided.' });
-        }
 
-        await connection.beginTransaction();
-
-        await connection.query(
-            'UPDATE payments SET status = ?, void_reason = ?, voided_at = NOW(), voided_by = ? WHERE id = ?',
-            ['void', reason.trim(), req.user.userId, req.params.id]
-        );
-        const updatedInvoice = await recalculateInvoiceBalance(connection, payment.invoice_id);
-
-        await connection.commit();
-
-        await logAction(req, {
-            action: 'payment.void', entityType: 'payment', entityId: Number(req.params.id),
-            oldValues: { status: payment.status }, newValues: { status: 'void', reason: reason.trim() },
+        const outcome = await withDeadlockRetry(async () => {
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
+                await lockInvoice(connection, found.invoice_id);
+                const [[payment]] = await connection.query(
+                    'SELECT id, invoice_id, status FROM payments WHERE id = ? AND school_id = ? FOR UPDATE',
+                    [req.params.id, req.user.schoolId]
+                );
+                if (payment.status === 'void') {
+                    await connection.rollback();
+                    return { status: 400, body: { status: 'error', message: 'This payment has already been voided.' } };
+                }
+                await connection.query(
+                    'UPDATE payments SET status = ?, void_reason = ?, voided_at = NOW(), voided_by = ? WHERE id = ?',
+                    ['void', reason.trim(), req.user.userId, req.params.id]
+                );
+                const updatedInvoice = await recalculateInvoiceBalance(connection, payment.invoice_id);
+                await connection.commit();
+                return { status: 200, previousStatus: payment.status, body: { status: 'success', message: 'Payment voided.', data: { invoice: updatedInvoice } } };
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
+            }
         });
 
-        res.status(200).json({ status: 'success', message: 'Payment voided.', data: { invoice: updatedInvoice } });
+        if (outcome.status === 200) {
+            await logAction(req, {
+                action: 'payment.void', entityType: 'payment', entityId: Number(req.params.id),
+                oldValues: { status: outcome.previousStatus }, newValues: { status: 'void', reason: reason.trim() },
+            });
+        }
+        res.status(outcome.status).json(outcome.body);
     } catch (error) {
-        await connection.rollback();
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while voiding the payment.' });
-    } finally {
-        connection.release();
     }
 };

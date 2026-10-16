@@ -11,7 +11,17 @@ import { Button, Field, Modal, inputClass } from "@/components/ui";
 
 export const METHOD_LABELS = { cash: "Cash", mobile_money: "Mobile Money", bank_transfer: "Bank Transfer", other: "Other" };
 
+// One ID per opening of the dialog, sent with the payment. If the same
+// submission reaches the server twice (double-click, a retry after the
+// network dropped the reply), the backend recognises the ID and returns the
+// payment it already recorded instead of saving a second one.
+function newSubmissionId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export function RecordPaymentModal({ invoice, currency, onClose, onSaved }) {
+  const [submissionId] = useState(newSubmissionId);
   const [amount, setAmount] = useState(invoice.balance);
   const [method, setMethod] = useState("cash");
   const [reference, setReference] = useState("");
@@ -26,7 +36,7 @@ export function RecordPaymentModal({ invoice, currency, onClose, onSaved }) {
     try {
       await apiRequest("/payments", {
         method: "POST",
-        body: { invoiceId: invoice.id, amount: Number(amount), method, reference: reference || undefined, note: note || undefined },
+        body: { invoiceId: invoice.id, amount: Number(amount), method, reference: reference || undefined, note: note || undefined, idempotencyKey: submissionId },
       });
       onSaved();
       onClose();

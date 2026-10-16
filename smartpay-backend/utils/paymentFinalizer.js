@@ -1,5 +1,5 @@
 const pool = require('../db');
-const { recalculateInvoiceBalance } = require('./invoiceRules');
+const { recalculateInvoiceBalance, lockInvoice } = require('./invoiceRules');
 
 // The one place an online payment's status ever changes after it starts.
 // Called from the Paystack webhook, the parent's status page, and the
@@ -78,6 +78,7 @@ async function finalizePaymentEvent(payment, result, source) {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+        await lockInvoice(connection, payment.invoice_id);
         const [update] = await connection.query(
             `UPDATE payments SET status = 'success', method = ?, provider_reference = ?, paid_at = ?
              WHERE id = ? AND status IN (?)`,

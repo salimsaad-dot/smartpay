@@ -25,8 +25,12 @@ function invoiceNumber(schoolId, invoiceId) {
 // which is what makes voiding "work" from the invoice's point of view —
 // the payment row itself is never deleted, only marked void, so the full
 // history stays intact.
+//
+// Callers must be inside a transaction and call lockInvoice() FIRST, before
+// touching any payment row (see lockInvoice for why). The FOR UPDATE here
+// is a safety net; re-locking a row this transaction already holds is free.
 async function recalculateInvoiceBalance(connection, invoiceId) {
-    const [[invoice]] = await connection.query('SELECT total FROM invoices WHERE id = ?', [invoiceId]);
+    const [[invoice]] = await connection.query('SELECT total FROM invoices WHERE id = ? FOR UPDATE', [invoiceId]);
     const [[{ paidAmount }]] = await connection.query(
         `SELECT COALESCE(SUM(amount), 0) AS paidAmount FROM payments WHERE invoice_id = ? AND status = 'success'`,
         [invoiceId]
@@ -40,4 +44,22 @@ async function recalculateInvoiceBalance(connection, invoiceId) {
     return { paidAmount: Number(paidAmount), balance, status };
 }
 
-module.exports = { deriveStatus, invoiceNumber, recalculateInvoiceBalance };
+// Every write that changes an invoice's payments (recording, voiding, an
+// online confirmation) takes this lock as its first statement (added
+// 2026-10-16). Two effects:
+//   - they run one at a time per invoice, so a balance check can't be
+//     passed by two payments at once, and each recalculation sees the
+//     other's committed payment instead of overwriting it with a stale sum;
+//   - locking the invoice before any payment row, in every path, keeps the
+//     lock order the same everywhere, so they can't deadlock each other.
+// Returns the invoice row, or undefined if it doesn't exist (in this school,
+// when schoolId is given).
+async function lockInvoice(connection, invoiceId, schoolId = null) {
+    const [[invoice]] = await connection.query(
+        `SELECT id, school_id, student_id, total, balance, status FROM invoices WHERE id = ?${schoolId === null ? '' : ' AND school_id = ?'} FOR UPDATE`,
+        schoolId === null ? [invoiceId] : [invoiceId, schoolId]
+    );
+    return invoice;
+}
+
+module.exports = { deriveStatus, invoiceNumber, recalculateInvoiceBalance, lockInvoice };

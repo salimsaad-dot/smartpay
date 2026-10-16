@@ -2415,6 +2415,42 @@ being considered done, not just locally.
       ("initializing a valid payment returns a real Paystack authorization
       URL") fails occasionally on network timing, untouched by this change.
   - No migration needed.
+- **Invoice locking and duplicate-proof manual payments, 2026-10-16.**
+  This is item 2 on the council fix list. New tests, run against the old
+  code first, proved two bugs were real:
+    - Five simultaneous GHS 500 payments on a GHS 500 invoice recorded two
+      of them, so the invoice showed GHS 1,000 paid.
+    - A manual payment racing an online confirmation, or a void racing a
+      new payment, left the stored balance wrong, because each
+      recalculation summed without seeing the other's payment.
+  - **What changed:**
+    - New \`lockInvoice()\` in \`utils/invoiceRules.js\`
+      (\`SELECT ... FOR UPDATE\`). It's the first statement of every
+      write that changes an invoice's payments: manual create, void, and
+      the online finalizer. Writes per invoice therefore run one at a
+      time, always in the same lock order, so they can't deadlock.
+    - \`recalculateInvoiceBalance\` also locks, as a safety net.
+    - Create and void are wrapped in the existing \`withDeadlockRetry\`.
+    - Manual payments carry an \`idempotencyKey\`: the Record Payment
+      form makes one per dialog opening. A repeat returns the
+      already-recorded payment with 200 \`duplicate: true\` instead of
+      saving a second one. This adds the new column
+      \`payments.idempotency_key\` plus
+      \`UNIQUE (school_id, idempotency_key)\`, created by
+      \`scripts/migrate-payment-idempotency.js\`. **Run it on production
+      before deploying.**
+    - Fixed the old double \`connection.release()\` on early returns.
+  - **Verified:**
+    - \`tests/paymentConcurrency.integration.test.js\`, 4 tests: all
+      failed before the fix and pass after, 3 runs in a row.
+    - Full suite 317 passing.
+    - A real browser double-click on Record Payment saved exactly one
+      payment.
+  - **Left for the next item on the list:**
+    - Overpayment between an online payment still in flight and a manual
+      one. The balance check counts only settled money; it'll be handled
+      as "refund due".
+    - Voiding confirmed online payments.
 
 ## Future Work
 
