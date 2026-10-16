@@ -10,12 +10,18 @@
 // code your app then shows, and saves only if that code is right. Lost
 // your phone? Run it again: the old phone stops working and every console
 // session is signed out.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { exec } = require('child_process');
 const readline = require('readline');
 const QRCode = require('qrcode');
 const pool = require('../db');
 const totp = require('../utils/totp');
 
 const [email] = process.argv.slice(2);
+let qrImage = null;
+process.on('exit', () => { if (qrImage) fs.rmSync(qrImage, { force: true }); });
 
 function ask(question) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -38,6 +44,14 @@ function ask(question) {
     console.log('\nIn your authenticator app, add an account and scan this QR code:\n');
     console.log(await QRCode.toString(totp.otpauthUri(normalizedEmail, secret), { type: 'terminal', small: true }));
     console.log(`Can't scan it? Choose "Enter a setup key" and type:\n\n    ${secret.match(/.{1,4}/g).join(' ')}\n`);
+
+    // Terminal QR codes often don't scan (fonts, line spacing), so also open
+    // a real image. It holds the secret, so it's deleted when the script ends.
+    qrImage = path.join(os.tmpdir(), `smartpay-console-2fa-${process.pid}.png`);
+    await QRCode.toFile(qrImage, totp.otpauthUri(normalizedEmail, secret), { width: 360, margin: 2 });
+    const opener = process.platform === 'win32' ? `start "" "${qrImage}"` : process.platform === 'darwin' ? `open "${qrImage}"` : `xdg-open "${qrImage}"`;
+    exec(opener, () => {});
+    console.log('A larger QR code has also opened in an image window. Scan that one with your phone.\n');
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
         const code = await ask('Enter the 6-digit code the app shows now: ');
