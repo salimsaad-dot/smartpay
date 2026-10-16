@@ -40,7 +40,9 @@ async function initializePayment({ email, amountGhs, reference, metadata, callba
 
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.status) {
-        console.error('Paystack initialize error:', response.status, body);
+        // Status and Paystack's message only: the full body can echo the
+        // parent's email and transaction details into the logs.
+        console.error('Paystack initialize error:', response.status, body?.message || '(no message)');
         throw { status: 502, message: 'Could not start payment with Paystack — try again in a moment.' };
     }
 

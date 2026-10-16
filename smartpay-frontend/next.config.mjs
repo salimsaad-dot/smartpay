@@ -1,5 +1,21 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Other sites may not show SmartPay pages inside a frame (clickjacking:
+  // a hidden payment or admin page under a fake one). Added 2026-10-16.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+    ];
+  },
+
   // Proxies /api/* to the backend server-side, so the browser only ever
   // sees one origin. Without this, sameSite:'lax' cookies silently stop
   // being sent once frontend/backend are deployed on different domains —

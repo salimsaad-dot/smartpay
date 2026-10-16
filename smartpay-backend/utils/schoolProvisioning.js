@@ -16,7 +16,13 @@ const { DEFAULT_FEE_TYPES } = require('./feeTypes');
 // Throws an Error with .status (400/409) for problems the caller should
 // show to the person, or a plain Error for anything unexpected.
 
-const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+// A real calendar date in YYYY-MM-DD (rejects 2026-13-45 or 2026-02-30,
+// which used to reach MySQL and fail with a 500).
+function isRealDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const d = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
 
 function provisioningError(status, message) {
     const error = new Error(message);
@@ -35,7 +41,7 @@ async function createSchoolWithAdmin({ schoolName, code, adminName, email, passw
     if (password.length < 8) {
         throw provisioningError(400, 'Password must be at least 8 characters.');
     }
-    if (paidUntil !== null && !DATE_SHAPE.test(paidUntil)) {
+    if (paidUntil !== null && !isRealDate(paidUntil)) {
         throw provisioningError(400, 'Paid-until date must be a date (YYYY-MM-DD), or left empty for no expiry.');
     }
 

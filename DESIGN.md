@@ -2776,6 +2776,40 @@ being considered done, not just locally.
     - A real boot with `SMS_PROVIDER=mnotfy` refused to start with a
       clear message; a normal boot started.
     - Full suite 370 passing.
+- **Low-priority batch from the council list, 2026-10-16.**
+  - **Impossible dates:** paid-until dates are rejected unless they're a
+    real calendar date (`isRealDate`). 2026-02-30 used to reach MySQL and
+    500.
+  - **Choosing the admin to reset:** the console's reset takes an
+    optional `adminUserId`, checked to belong to the school. The default
+    is still the first admin.
+  - **Logging:** Paystack initialize errors log status and message only,
+    not the full body.
+  - **UTC:** every DB connection sets `time_zone = '+00:00'`
+    (`db.js` `pool.pool.on('connection')`), so CURDATE()/NOW() agree
+    locally and on Aiven.
+  - **Certificate checking:** `DB_CA_CERT` (Aiven's CA PEM; `\n` escapes
+    allowed) switches TLS to `rejectUnauthorized: true`. Without it, a
+    deployed server logs a config warning. To enable: copy the CA
+    certificate from Aiven's service page into Render as `DB_CA_CERT`.
+  - **AI summary:** a failed Gemini call pauses further calls for 30
+    minutes, because the quota is shared by every school.
+  - **Index:** `idx_school_status_created` on sms_reminders, for the
+    console's monthly SMS count (migration `migrate-sms-reminder-index`).
+  - **Go Back:** after a failed payment it returns to the parent's own
+    checkout. The checkout stores its token in sessionStorage before
+    redirecting to Paystack; history "back" landed on Paystack's
+    finished page.
+  - **Framing:** the frontend sends `frame-ancestors 'none'`,
+    `X-Frame-Options: DENY`, `nosniff` and a referrer policy on every
+    page.
+  - **Found along the way:** a backup decrypted with a wrong key returned
+    garbage about 1 time in 256 (AES-CBC padding check), instead of an
+    error. Decryption now also checks the text starts like a SmartPay
+    backup; 3,000 wrong keys were tried and all rejected.
+  - **Verified:** tests for dates, UTC and the AI cooldown. Real headers
+    were checked on a running server, and Go Back was tested in a
+    browser. Full suite 373 passing.
 
 ## Future Work
 

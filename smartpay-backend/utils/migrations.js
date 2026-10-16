@@ -31,6 +31,7 @@ const MIGRATIONS = [
     'migrate-reminder-claims',
     'migrate-redact-sms-links',
     'migrate-login-hardening',
+    'migrate-sms-reminder-index',
 ];
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');

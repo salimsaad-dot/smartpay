@@ -15,7 +15,13 @@ const { ACCESS_COLUMNS_SQL, describeAccess, billingSummary } = require('../utils
 // and resets a school admin's password. Nothing here is reachable with a
 // school login; see middleware/platformAuth.js.
 
-const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+// A real calendar date in YYYY-MM-DD (rejects 2026-13-45 or 2026-02-30,
+// which used to reach MySQL and fail with a 500).
+function isRealDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const d = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
 
 function cookieOptions() {
     return { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' };
@@ -171,7 +177,7 @@ exports.updateSchool = async (req, res) => {
             updates.status = body.status;
         }
         if (body.paidUntil !== undefined) {
-            if (body.paidUntil !== null && !DATE_SHAPE.test(body.paidUntil)) {
+            if (body.paidUntil !== null && !isRealDate(body.paidUntil)) {
                 return res.status(400).json({ status: 'error', message: 'Paid-until must be a date (YYYY-MM-DD), or empty for no expiry.' });
             }
             updates.paid_until = body.paidUntil;
@@ -207,9 +213,12 @@ exports.updateSchool = async (req, res) => {
 exports.resetAdminPassword = async (req, res) => {
     try {
         const schoolId = Number(req.params.id);
+        // Optional adminUserId picks which admin, for when a school has more
+        // than one; it must belong to this school. Default: the first admin.
+        const adminUserId = req.body?.adminUserId ? Number(req.body.adminUserId) : null;
         const [[admin]] = await pool.query(
-            `SELECT id, email FROM users WHERE school_id = ? AND role = 'school_admin' ORDER BY id LIMIT 1`,
-            [schoolId]
+            `SELECT id, email FROM users WHERE school_id = ? AND role = 'school_admin'${adminUserId ? ' AND id = ?' : ''} ORDER BY id LIMIT 1`,
+            adminUserId ? [schoolId, adminUserId] : [schoolId]
         );
         if (!admin) return res.status(404).json({ status: 'error', message: 'No admin account found for that school.' });
 

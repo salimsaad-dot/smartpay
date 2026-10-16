@@ -44,6 +44,8 @@ export default function PublicCheckoutPage({ params }) {
         method: "POST",
         body: { token, invoiceId: selectedInvoice.id, amount: Number(amount), email: email.trim() },
       });
+      // Lets the status page offer "back to my fees" if this payment fails.
+      try { sessionStorage.setItem("smartpay:lastCheckout", token); } catch { /* storage blocked: Go Back falls back to history */ }
       window.location.href = res.data.authorizationUrl;
     } catch (err) {
       setSubmitError(err.message);

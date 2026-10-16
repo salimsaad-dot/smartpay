@@ -13,6 +13,13 @@ const geminiService = require('../utils/geminiService');
 // school via the UNIQUE KEY on financial_insight_cache.school_id,
 // overwritten daily. Mirrors Academia Hub's own CURDATE()-based daily
 // cache for the identical feature.
+// After a failed Gemini call (usually the shared daily quota running out),
+// skip calling again for 30 minutes instead of retrying on every dashboard
+// load of every school, which only burns what's left (2026-10-16).
+const FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
+let lastFailureAt = 0;
+function resetSummaryCooldown() { lastFailureAt = 0; }
+
 async function getOrGenerateSummary(schoolId) {
     const [[cached]] = await pool.query(
         `SELECT summary_json, generated_at FROM financial_insight_cache
@@ -23,10 +30,15 @@ async function getOrGenerateSummary(schoolId) {
         return { ...JSON.parse(cached.summary_json), generatedAt: cached.generated_at, cached: true };
     }
 
+    if (Date.now() - lastFailureAt < FAILURE_COOLDOWN_MS) return { ok: false, reason: 'cooldown' };
+
     const overview = await getFinancialOverview(schoolId);
     const attentionItems = evaluateFinancialAttention(overview);
     const result = await geminiService.interpretFinancialInsight({ overview, attentionItems });
-    if (!result.ok) return { ok: false, reason: result.reason };
+    if (!result.ok) {
+        lastFailureAt = Date.now();
+        return { ok: false, reason: result.reason };
+    }
 
     await pool.query(
         `INSERT INTO financial_insight_cache (school_id, summary_json, generated_at)
@@ -49,3 +61,5 @@ exports.getFinancialSummary = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Server error while loading the financial summary.' });
     }
 };
+
+exports.resetSummaryCooldown = resetSummaryCooldown;

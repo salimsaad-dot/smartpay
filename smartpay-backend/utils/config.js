@@ -36,6 +36,9 @@ function checkConfig(env = process.env) {
         want(SMS_KEYS[provider], `no SMS can be sent through ${provider}`);
     }
 
+    if (deployed && env.DB_SSL === 'true' && !has('DB_CA_CERT')) {
+        warnings.push("DB_CA_CERT is not set: the database connection is encrypted but the server's certificate isn't verified (add Aiven's CA certificate).");
+    }
     if (deployed) {
         need('FRONTEND_URL', 'payment and password-reset links are built from it');
         need('CRON_SECRET', 'the scheduled jobs (Friday reminders, payment reconciliation, backups) authenticate with it');

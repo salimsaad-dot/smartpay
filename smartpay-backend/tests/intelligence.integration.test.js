@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../server');
 const db = require('../db');
 const geminiService = require('../utils/geminiService');
+const intelligence = require('../controllers/intelligenceController');
 
 // jest.spyOn on the real module object intelligenceController.js imports
 // — not a destructured reference — matching the exact convention this
@@ -16,6 +17,10 @@ const geminiService = require('../utils/geminiService');
 const hasRealGeminiKey = Boolean(process.env.GEMINI_API_KEY);
 
 describe('Financial Intelligence — daily-cached AI summary (real DB, real HTTP)', () => {
+    // A simulated Gemini failure starts the 30-minute cooldown; each test
+    // here starts clean.
+    beforeEach(() => intelligence.resetSummaryCooldown());
+
     const MARKER = `CI-INTEL-${Date.now()}`;
     let cookieA, cookieB;
     let schoolIdA, schoolIdB;

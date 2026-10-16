@@ -23,11 +23,17 @@ function decryptOpensslAes256Cbc(buffer, passphrase) {
     const salt = buffer.subarray(8, 16);
     const { key, iv } = deriveKeyIv(passphrase, salt);
     const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    const failure = new Error('Could not decrypt the backup: wrong BACKUP_ENCRYPTION_KEY, or the file is damaged.');
+    let text;
     try {
-        return Buffer.concat([decipher.update(buffer.subarray(16)), decipher.final()]).toString('utf8');
+        text = Buffer.concat([decipher.update(buffer.subarray(16)), decipher.final()]).toString('utf8');
     } catch {
-        throw new Error('Could not decrypt the backup: wrong BACKUP_ENCRYPTION_KEY, or the file is damaged.');
+        throw failure;
     }
+    // About 1 wrong key in 256 passes AES-CBC's padding check and yields
+    // garbage instead of an error, so also check it reads like our backup.
+    if (!text.startsWith('-- SmartPay')) throw failure;
+    return text;
 }
 
 // Same format as openssl's encrypt; used by the tests.

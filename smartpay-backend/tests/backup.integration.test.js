@@ -38,7 +38,7 @@ describe('database backup (real DB)', () => {
     }, 120000);
 
     test('the wrong password is refused, and a cut-off backup is rejected', async () => {
-        const encrypted = encryptOpensslAes256Cbc('-- tiny\nSELECT 1;\n', 'right');
+        const encrypted = encryptOpensslAes256Cbc('-- SmartPay full database backup\nSELECT 1;\n', 'right');
         expect(() => decryptOpensslAes256Cbc(encrypted, 'wrong')).toThrow(/wrong BACKUP_ENCRYPTION_KEY|damaged/);
         expect(() => parseManifest('-- SmartPay full database backup\nDROP TABLE IF EXISTS `x`;\n')).toThrow(/incomplete/);
     });

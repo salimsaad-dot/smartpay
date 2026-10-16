@@ -9,11 +9,23 @@ const pool = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {}),
+    // With DB_CA_CERT (Aiven's CA certificate, PEM text) the server's
+    // certificate is verified; without it the connection is still encrypted
+    // but not verified, which startup warns about (utils/config.js).
+    ...(process.env.DB_SSL === 'true'
+        ? { ssl: process.env.DB_CA_CERT ? { ca: process.env.DB_CA_CERT.replace(/\\n/g, '\n'), rejectUnauthorized: true } : { rejectUnauthorized: false } }
+        : {}),
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
     connectTimeout: 10000
+});
+
+// Every connection uses UTC, so CURDATE()/NOW() (subscription end dates,
+// reminder cycles, reconciliation windows) mean the same thing locally and
+// on Aiven. Ghana is UTC+0, so school dates are unaffected.
+pool.pool.on('connection', (connection) => {
+    connection.query("SET time_zone = '+00:00'");
 });
 
 pool.on('error', (err) => {
