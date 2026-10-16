@@ -1,3 +1,5 @@
+// A stuck provider call must not hold a Friday run open (2026-10-16).
+const SEND_TIMEOUT_MS = 15000;
 const ARKESEL_API_URL = 'https://sms.arkesel.com/api/v2/sms/send';
 const DEFAULT_SENDER_ID = 'SmartPay';
 
@@ -42,6 +44,7 @@ async function sendSms(to, message) {
 
     try {
         const response = await fetch(ARKESEL_API_URL, {
+            signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -79,6 +82,11 @@ async function sendSms(to, message) {
         // mNotify's own response shape.
         return { success: true, providerMessageId: body?.data?.[0]?.id || null, error: null };
     } catch (error) {
+        // A timeout means we never heard back: the SMS may or may not have
+        // been sent, so callers must not resend it automatically.
+        if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+            return { success: false, providerMessageId: null, error: 'Arkesel did not answer within 15 seconds; the SMS may or may not have been sent.', outcomeUnknown: true };
+        }
         return { success: false, providerMessageId: null, error: error.message };
     }
 }

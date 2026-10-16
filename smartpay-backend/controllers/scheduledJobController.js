@@ -48,7 +48,9 @@ exports.runForAllSchools = async (req, res) => {
     try {
         const results = await fridayJob.runFridayJobForAllSchools();
         const crashed = results.filter((r) => r.error);
-        const allFailed = results.filter((r) => r.result && r.result.failure > 0 && r.result.success === 0);
+        // A retry run that re-attempts only the few earlier failures isn't
+        // "every SMS failed"; that alarm is for a school's first run.
+        const allFailed = results.filter((r) => r.result && !r.result.retryRun && r.result.failure > 0 && r.result.success === 0);
         const someFailed = results.filter((r) => r.result && r.result.failure > 0 && r.result.success > 0);
         if (crashed.length || allFailed.length || someFailed.length) {
             const [schools] = await pool.query('SELECT id, name FROM schools WHERE id IN (?)',

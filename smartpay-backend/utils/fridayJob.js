@@ -4,6 +4,7 @@ const { createPaymentLink } = require('./paymentLink');
 const { renderTemplate } = require('./smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('./reminderCore');
 const smsProvider = require('./smsProvider');
+const opsAlert = require('./opsAlert');
 
 // A job that's been 'running' longer than this is treated as abandoned
 // (server crashed mid-run) rather than genuinely in progress, and its
@@ -11,6 +12,52 @@ const smsProvider = require('./smsProvider');
 // minutes even for a large school, so 30 minutes is a generous margin
 // before assuming something went wrong, not a tight race.
 const STALE_LOCK_MINUTES = 30;
+
+// A parent's send is tried at most this many times per Friday (the first run
+// plus retries on later hourly runs the same day). Permanent problems (no
+// template, invalid phone) are never retried.
+const MAX_SEND_ATTEMPTS = 3;
+
+// Per-parent claims (reminder_send_claims, added 2026-10-16). A parent is
+// claimed BEFORE the SMS is sent; the UNIQUE (school, parent, cycle) key
+// means only one run can ever hold the claim, so overlapping runs (a slow
+// run still going when the next hourly run reclaims a stale lock) can't
+// text the same parent twice. Before this the SMS was sent first and only
+// recorded afterwards, leaving a window for duplicates.
+//
+// Returns { claimId, attempt } or null when this parent must be skipped:
+// already sent, outcome unknown, a permanent failure, out of attempts, or
+// another run is sending right now.
+async function claimParent(schoolId, parentId, cycleKey) {
+    try {
+        const [result] = await pool.query(
+            `INSERT INTO reminder_send_claims (school_id, parent_id, cycle_key, status, attempts) VALUES (?, ?, ?, 'sending', 1)`,
+            [schoolId, parentId, cycleKey]
+        );
+        return { claimId: result.insertId, attempt: 1 };
+    } catch (error) {
+        if (error.code !== 'ER_DUP_ENTRY') throw error;
+    }
+    const [[claim]] = await pool.query(
+        'SELECT id, status, attempts, retryable FROM reminder_send_claims WHERE school_id = ? AND parent_id = ? AND cycle_key = ?',
+        [schoolId, parentId, cycleKey]
+    );
+    if (!claim || claim.status !== 'failed' || !claim.retryable || claim.attempts >= MAX_SEND_ATTEMPTS) return null;
+    // Retry: take it back only if no other run did first.
+    const [update] = await pool.query(
+        `UPDATE reminder_send_claims SET status = 'sending', attempts = attempts + 1, last_error = NULL
+         WHERE id = ? AND status = 'failed' AND retryable = 1 AND attempts < ?`,
+        [claim.id, MAX_SEND_ATTEMPTS]
+    );
+    return update.affectedRows ? { claimId: claim.id, attempt: claim.attempts + 1 } : null;
+}
+
+async function settleClaim(claimId, status, { retryable = false, error = null } = {}) {
+    await pool.query(
+        'UPDATE reminder_send_claims SET status = ?, retryable = ?, last_error = ? WHERE id = ?',
+        [status, retryable ? 1 : 0, error ? String(error).slice(0, 255) : null, claimId]
+    );
+}
 
 // The Friday cycle is identified by the actual calendar date being
 // processed, in the school's own timezone — not "today" in server time,
@@ -49,7 +96,7 @@ async function acquireJobLock(schoolId, cycleKey) {
             `INSERT INTO scheduled_jobs (school_id, job_type, cycle_key, status, started_at) VALUES (?, 'friday_reminder', ?, 'running', NOW())`,
             [schoolId, cycleKey]
         );
-        return result.insertId;
+        return { id: result.insertId, retryRun: false };
     } catch (error) {
         if (error.code !== 'ER_DUP_ENTRY') throw error;
 
@@ -62,9 +109,14 @@ async function acquireJobLock(schoolId, cycleKey) {
             const ageMinutes = (Date.now() - new Date(existing.started_at).getTime()) / 60000;
             if (ageMinutes < STALE_LOCK_MINUTES) return null; // genuinely in progress (or another process got here first) — don't double-run
         }
-        // 'failed', or a stale 'running' row — reclaim it.
-        await pool.query(`UPDATE scheduled_jobs SET status = 'running', started_at = NOW(), finished_at = NULL, error_message = NULL WHERE id = ?`, [existing.id]);
-        return existing.id;
+        // 'failed' (including a run left with sends to retry), or a stale
+        // 'running' row: reclaim it, but only if no other run beat us to it.
+        const [update] = await pool.query(
+            `UPDATE scheduled_jobs SET status = 'running', started_at = NOW(), finished_at = NULL, error_message = NULL
+             WHERE id = ? AND (status = 'failed' OR (status = 'running' AND started_at < NOW() - INTERVAL ? MINUTE))`,
+            [existing.id, STALE_LOCK_MINUTES]
+        );
+        return update.affectedRows ? { id: existing.id, retryRun: existing.status === 'failed' } : null;
     }
 }
 
@@ -84,11 +136,27 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
     }
 
     const cycleKey = fridayCycleKey(now, timezone);
-    const jobId = await acquireJobLock(schoolId, cycleKey);
-    if (!jobId) return null;
+    const lock = await acquireJobLock(schoolId, cycleKey);
+    if (!lock) return null;
+    const jobId = lock.id;
 
-    let processed = 0, success = 0, failure = 0;
+    let processed = 0, success = 0, failure = 0, unknown = 0, retryPending = 0;
     try {
+        // A claim still 'sending' from an earlier run means that run stopped
+        // between sending and recording. The SMS may have gone out, so it is
+        // never resent; the owner is told instead.
+        const [stuck] = await pool.query(
+            `UPDATE reminder_send_claims SET status = 'unknown', retryable = 0, last_error = 'The run stopped mid-send; this SMS may or may not have been sent.'
+             WHERE school_id = ? AND cycle_key = ? AND status = 'sending' AND updated_at < NOW() - INTERVAL ? MINUTE`,
+            [schoolId, cycleKey, STALE_LOCK_MINUTES]
+        );
+        if (stuck.affectedRows) {
+            await opsAlert.alertOwner(`friday-unknown:${schoolId}:${cycleKey}`, 'Friday reminders: some sends have an unknown outcome', [
+                `${school.name}: ${stuck.affectedRows} parent(s) may or may not have received this Friday's SMS (a run stopped mid-send).`,
+                'They will not be texted again today, to avoid a duplicate. Check the Reminders page if needed.',
+            ]);
+        }
+
         let sql = `
             SELECT DISTINCT ps.parent_id
             FROM invoices i
@@ -106,6 +174,7 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
 
         for (const { parent_id: parentId } of parentRows) {
             processed += 1;
+            let claim = null;
             try {
                 if (school.reminder_cooldown_days != null) {
                     const [[recent]] = await pool.query(
@@ -131,12 +200,16 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                 const { error, ...scope } = await resolveReminderScope(schoolId, { parentId });
                 if (error) continue; // balance was paid off between the query above and now — nothing to remind about
 
+                claim = await claimParent(schoolId, parentId, cycleKey);
+                if (!claim) continue; // sent, unknown, permanently failed, out of attempts, or being sent by another run
+
                 if (!template) {
                     await pool.query(
                         `INSERT INTO sms_reminders (school_id, parent_id, student_id, cycle_key, phone, message, status, failure_reason)
                          VALUES (?, ?, ?, ?, ?, '', 'failed', 'No active SMS template configured.')`,
                         [schoolId, parentId, scope.studentId, cycleKey, scope.parent.phone]
                     );
+                    await settleClaim(claim.claimId, 'failed', { error: 'No active SMS template configured.' });
                     failure += 1;
                     continue;
                 }
@@ -147,6 +220,7 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                          VALUES (?, ?, ?, ?, ?, '', 'failed', 'Invalid or missing phone number.')`,
                         [schoolId, parentId, scope.studentId, cycleKey, scope.parent.phone || '']
                     );
+                    await settleClaim(claim.claimId, 'failed', { error: 'Invalid or missing phone number.' });
                     failure += 1;
                     continue;
                 }
@@ -169,6 +243,16 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                 const message = renderTemplate(template.body, variables);
 
                 const result = await smsProvider.sendSms(scope.parent.phone, message);
+                // Settle the claim first: once the provider has answered, that
+                // answer must stick even if recording the history row fails.
+                if (result.success) {
+                    await settleClaim(claim.claimId, 'sent');
+                } else if (result.outcomeUnknown) {
+                    await settleClaim(claim.claimId, 'unknown', { error: result.error });
+                } else {
+                    await settleClaim(claim.claimId, 'failed', { retryable: true, error: result.error });
+                }
+                claim.settled = true;
                 await pool.query(
                     `INSERT INTO sms_reminders
                         (school_id, parent_id, student_id, cycle_key, phone, message, payment_link_id, status, provider_message_id, sent_at, failure_reason)
@@ -178,18 +262,35 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                         result.success ? 'sent' : 'failed', result.providerMessageId, result.success ? new Date() : null, result.error,
                     ]
                 );
-                if (result.success) success += 1; else failure += 1;
+                if (result.success) success += 1;
+                else if (result.outcomeUnknown) { unknown += 1; failure += 1; }
+                else failure += 1;
             } catch (perParentError) {
-                // One bad parent must never abort the rest of the cycle.
+                // One bad parent must never abort the rest of the cycle. If
+                // the SMS hadn't been sent yet, the claim is released for a
+                // retry; if it had, the claim already holds the outcome.
                 console.error(`Friday job: error processing parent ${parentId} for school ${schoolId}:`, perParentError);
+                if (claim && !claim.settled) {
+                    await settleClaim(claim.claimId, 'failed', { retryable: true, error: perParentError.message }).catch(() => {});
+                }
                 failure += 1;
             }
         }
 
-        await pool.query(
-            `UPDATE scheduled_jobs SET status = 'completed', finished_at = NOW(), processed_count = ?, success_count = ?, failure_count = ? WHERE id = ?`,
-            [processed, success, failure, jobId]
+        // Sends that can still be retried keep the job open: marked 'failed'
+        // with a note, so the next hourly run reclaims it and retries just
+        // those parents (everyone already sent is skipped by their claim).
+        const [[{ toRetry }]] = await pool.query(
+            `SELECT COUNT(*) AS toRetry FROM reminder_send_claims
+             WHERE school_id = ? AND cycle_key = ? AND status = 'failed' AND retryable = 1 AND attempts < ?`,
+            [schoolId, cycleKey, MAX_SEND_ATTEMPTS]
         );
+        await pool.query(
+            `UPDATE scheduled_jobs SET status = ?, finished_at = NOW(), processed_count = ?, success_count = ?, failure_count = ?, error_message = ? WHERE id = ?`,
+            [toRetry ? 'failed' : 'completed', processed, success, failure,
+                toRetry ? `${toRetry} send(s) to retry on the next run` : null, jobId]
+        );
+        retryPending = Number(toRetry);
     } catch (error) {
         await pool.query(
             `UPDATE scheduled_jobs SET status = 'failed', finished_at = NOW(), processed_count = ?, success_count = ?, failure_count = ?, error_message = ? WHERE id = ?`,
@@ -198,7 +299,7 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
         throw error;
     }
 
-    return { jobId, cycleKey, processed, success, failure };
+    return { jobId, cycleKey, processed, success, failure, unknown, retryPending, retryRun: lock.retryRun };
 }
 
 // Runs the cycle for every school with Friday reminders enabled — what
@@ -227,4 +328,4 @@ async function runFridayJobForAllSchools(options = {}) {
     return results;
 }
 
-module.exports = { runFridayJobForSchool, runFridayJobForAllSchools, fridayCycleKey };
+module.exports = { runFridayJobForSchool, runFridayJobForAllSchools, fridayCycleKey, claimParent, MAX_SEND_ATTEMPTS };

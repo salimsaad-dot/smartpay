@@ -2607,6 +2607,49 @@ being considered done, not just locally.
   - **Verified:** 6 new tests (header cases from the live measurements,
     separate buckets per parent, one parent's 429 not blocking another).
     Full suite 343 passing.
+- **Friday reminders: no double texts, same-day retries, 2026-10-16.**
+  These are items 7 and 8 on the council fix list. They mattered more
+  once the Friday reminders started actually running.
+  - **The bugs:**
+    - The job sent each SMS **before** recording it, so a crash or an
+      overlapping run could text a parent twice.
+    - SMS calls had no timeout, so a stuck call could stretch a run past
+      the 30-minute stale-lock window and let the next hourly run reclaim
+      it mid-send.
+    - The lock reclaim was read-then-unconditional-write.
+    - A run with failures was still marked 'completed', so it was never
+      retried, and a provider hiccup lost the week's reminder.
+  - **What changed:**
+    - New `reminder_send_claims` table, UNIQUE (school, parent, cycle),
+      created by `scripts/migrate-reminder-claims.js`. **Run it on
+      production before deploying.**
+    - `claimParent()` claims a parent before sending. Only one run can
+      hold a claim. A retry re-claims a 'failed' row with a guarded
+      UPDATE.
+    - The claim is settled the moment the provider answers ('sent' /
+      'failed' retryable / 'unknown'), before writing history. If the
+      history write fails, the parent still isn't resent.
+    - Permanent problems (no template, invalid phone) are 'failed' and
+      not retryable. Retryable failures get at most 3 attempts per
+      Friday.
+    - A run ending with retryable failures marks the job 'failed' with
+      "N send(s) to retry", so the next hourly run reclaims it and retries
+      only those parents. With nothing left to retry, it's 'completed'.
+    - Lock reclaim is now a conditional UPDATE (`affectedRows`).
+    - mNotify and Arkesel calls time out after 15s. A timeout returns
+      `outcomeUnknown` (the SMS may have gone out), so the claim becomes
+      'unknown' and is never resent automatically.
+    - A claim left 'sending' by a crashed run becomes 'unknown' and the
+      owner is emailed.
+    - The Friday cron's "every SMS failed" 502 ignores retry runs
+      (`result.retryRun`).
+  - **Verified:**
+    - 10 new tests: claim race (5 simultaneous claims, 1 winner); a
+      temporary failure retried next run while the already-sent parent
+      isn't re-texted; max 3 attempts; a timeout never resent;
+      history-write failure after a send not resent; crashed mid-send
+      flagged, not resent; provider timeout and network-error results.
+    - Full suite 353 passing.
 
 ## Future Work
 

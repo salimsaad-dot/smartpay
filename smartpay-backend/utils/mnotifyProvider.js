@@ -1,3 +1,5 @@
+// A stuck provider call must not hold a Friday run open (2026-10-16).
+const SEND_TIMEOUT_MS = 15000;
 const MNOTIFY_API_URL = 'https://api.mnotify.com/api/sms/quick';
 const DEFAULT_SENDER_ID = 'SmartPay';
 
@@ -32,6 +34,7 @@ async function sendSms(to, message) {
 
     try {
         const response = await fetch(`${MNOTIFY_API_URL}?key=${process.env.MNOTIFY_API_KEY}`, {
+            signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -71,6 +74,11 @@ async function sendSms(to, message) {
         const providerMessageId = body?.summary?.message_id || body?.summary?._id || null;
         return { success: true, providerMessageId, error: null };
     } catch (error) {
+        // A timeout means we never heard back: the SMS may or may not have
+        // been sent, so callers must not resend it automatically.
+        if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+            return { success: false, providerMessageId: null, error: 'mNotify did not answer within 15 seconds; the SMS may or may not have been sent.', outcomeUnknown: true };
+        }
         return { success: false, providerMessageId: null, error: error.message };
     }
 }
