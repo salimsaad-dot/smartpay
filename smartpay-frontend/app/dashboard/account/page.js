@@ -20,7 +20,9 @@ import {
 // out short of waiting out a 24-hour token. Change Password closes that
 // gap for the normal case; Log Out Everywhere is the faster kill-switch
 // for "I think my session or device is compromised right now."
-function ChangePasswordForm({ showToast }) {
+function ChangePasswordForm({ showToast, firstLogin }) {
+  const { refreshUser } = useAuth();
+  const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,6 +43,10 @@ function ChangePasswordForm({ showToast }) {
       setNewPassword("");
       setConfirmPassword("");
       showToast("Password changed. Any other signed-in devices have been logged out.");
+      if (firstLogin) {
+        await refreshUser();
+        router.replace("/dashboard");
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -52,7 +58,7 @@ function ChangePasswordForm({ showToast }) {
     <form onSubmit={handleSubmit} className="space-y-3 rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)]">
       <h2 className="font-semibold text-[var(--ink)]">Change Password</h2>
       <p className="text-sm text-[var(--slate-quiet)]">Changing your password automatically signs out every other device using this account.</p>
-      <Field label="Current Password">
+      <Field label={firstLogin ? "One-time password (from SmartPay)" : "Current Password"}>
         <input
           type="password" required autoComplete="current-password"
           value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
@@ -130,8 +136,17 @@ export default function AccountPage() {
     <DashboardShell>
       <PageHeader title="Account & Security" description={user ? `Signed in as ${user.email}` : undefined} />
 
+      {user?.mustChangePassword && (
+        <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--primary)]/30 bg-[var(--primary-wash)] p-4 text-sm text-[var(--ink)]" role="status">
+          <p className="font-semibold">Welcome to SmartPay. Set your own password to get started.</p>
+          <p className="mt-1 text-[var(--slate)]">
+            You signed in with a one-time password from SmartPay. Choose a new one below; the rest of SmartPay opens as soon as it&apos;s saved.
+          </p>
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChangePasswordForm showToast={showToast} />
+        <ChangePasswordForm showToast={showToast} firstLogin={Boolean(user?.mustChangePassword)} />
         <RevokeSessionsPanel />
       </div>
 

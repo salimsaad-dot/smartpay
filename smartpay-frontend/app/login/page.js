@@ -53,7 +53,7 @@ function LoginForm() {
         {(error || BLOCKED_MESSAGES[blockedReason]) && (
           <div className="mt-4 rounded-lg bg-[var(--danger-wash)] px-3 py-2 text-sm text-[var(--danger)]" role="alert">
             {error || BLOCKED_MESSAGES[blockedReason]}
-            {/suspended|subscription has ended/.test(error || BLOCKED_MESSAGES[blockedReason]) && (
+            {/suspended|subscription has ended|one-time password has expired/.test(error || BLOCKED_MESSAGES[blockedReason]) && (
               <a href={whatsappLink("Hello, I'm contacting you about our school's SmartPay account.")} target="_blank" rel="noopener noreferrer" className="mt-1 block font-semibold underline">
                 WhatsApp SmartPay ({SMARTPAY_CONTACT.phoneDisplay})
               </a>

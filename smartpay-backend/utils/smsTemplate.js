@@ -31,4 +31,11 @@ function formatMoneyForSms(amount, currencyCode) {
     return `${currencyCode} ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-module.exports = { renderTemplate, DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY, formatMoneyForSms };
+// The SMS history (sms_reminders.message) keeps what was sent, minus the
+// payment link's token: storing it would hand working payment pages to
+// anyone who can read the database or a backup (added 2026-10-16).
+function redactPaymentLinks(message) {
+    return String(message || '').replace(/\/pay\/[A-Za-z0-9_-]{20,}/g, '/pay/[link]');
+}
+
+module.exports = { redactPaymentLinks, renderTemplate, DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_BODY, formatMoneyForSms };

@@ -25,6 +25,14 @@ export function AuthProvider({ children }) {
     return res.data;
   }
 
+  // Re-reads the signed-in account (e.g. after setting a new password,
+  // which clears mustChangePassword).
+  async function refreshUser() {
+    const res = await apiRequest("/auth/me");
+    setUser(res.data);
+    return res.data;
+  }
+
   async function logout() {
     setUser(null);
     try {
@@ -35,7 +43,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -68,7 +68,7 @@ function CopyBlock({ text }) {
 
 function loginDetails({ schoolName, adminEmail, tempPassword }) {
   const loginUrl = typeof window !== "undefined" ? `${window.location.origin}/login` : "/login";
-  return `SmartPay login for ${schoolName}\nLink: ${loginUrl}\nEmail: ${adminEmail}\nPassword: ${tempPassword}\n\nPlease change the password after logging in (Account page).`;
+  return `SmartPay login for ${schoolName}\nLink: ${loginUrl}\nEmail: ${adminEmail}\nPassword: ${tempPassword}\n\nThis password works for 72 hours. You'll be asked to set your own the first time you log in.`;
 }
 
 function AddSchoolModal({ onClose, onCreated }) {

@@ -12,6 +12,12 @@ const { logAction, logAuthEvent } = require('../utils/auditLog');
 // once with SMS provider testing (see smartpay/DESIGN.md's Decisions
 // Log) — same fix, applied here before it could repeat the same way.
 const emailSender = require('../utils/emailSender');
+const loginThrottle = require('../utils/loginThrottle');
+const { clientIp } = require('../utils/clientIp');
+
+// Compared against when the email is unknown, so a wrong email takes as long
+// as a wrong password and response time can't reveal which emails exist.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('not-a-real-password-placeholder', 10);
 
 // Same proven shape as Academia Hub's own forgot/reset-password flow —
 // a single admin per school with no recovery path at all was a real,
@@ -46,14 +52,9 @@ function signToken(user) {
     );
 }
 
-// Per-account lockout, added alongside the existing per-IP login rate
-// limit — a credential-stuffing run spread across many IPs, or a slow
-// brute-force within the (deliberately generous) per-IP budget, wasn't
-// mitigated by the IP limit alone. 5 wrong passwords locks the account
-// for 15 minutes regardless of source IP; a correct login always clears
-// both counters.
-const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+// Failed logins lock per (account, visitor address) since 2026-10-16
+// (utils/loginThrottle.js). The earlier account-wide lock let anyone keep
+// a school's only admin locked out from anywhere.
 
 // Test-only since 2026-10-15: schools are created by the platform owner in
 // the console (platformController.createSchool), never by public sign-up.
@@ -88,29 +89,35 @@ exports.login = async (req, res) => {
 
         const [[user]] = await pool.query('SELECT * FROM users WHERE email = ?', [email.trim().toLowerCase()]);
         if (!user) {
+            await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
             return res.status(401).json({ status: 'error', message: 'Invalid email or password.' });
         }
-        if (user.status !== 'active') {
-            return res.status(403).json({ status: 'error', message: 'Account is deactivated. Contact your administrator.' });
-        }
-        if (user.locked_until && new Date(user.locked_until) > new Date()) {
+
+        // Lockout is per (account, visitor address): see utils/loginThrottle.js.
+        const ip = clientIp(req);
+        if (await loginThrottle.isLocked('school', user.id, ip)) {
             await logAuthEvent(req, { schoolId: user.school_id, userId: user.id, action: 'auth.login_blocked' });
-            return res.status(423).json({ status: 'error', message: 'Too many failed attempts. Try again in a few minutes.' });
+            return res.status(423).json({ status: 'error', message: 'Too many failed attempts from this device. Try again in a few minutes.' });
         }
 
         const isPasswordValid = await bcrypt.compare(password, user.password_hash);
         if (!isPasswordValid) {
-            const attempts = user.failed_login_attempts + 1;
-            const lockedUntil = attempts >= MAX_FAILED_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
-            await pool.query(
-                'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE id = ?',
-                [lockedUntil ? 0 : attempts, lockedUntil, user.id]
-            );
+            await pool.query('UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = ?', [user.id]);
             await logAuthEvent(req, { schoolId: user.school_id, userId: user.id, action: 'auth.login_failed' });
-            if (lockedUntil) {
+            if (await loginThrottle.recordFailure('school', user.id, ip, { label: user.email })) {
                 await logAuthEvent(req, { schoolId: user.school_id, userId: user.id, action: 'auth.account_locked' });
             }
             return res.status(401).json({ status: 'error', message: 'Invalid email or password.' });
+        }
+        await loginThrottle.clearFailures('school', user.id, ip);
+
+        // Only revealed to someone who knows the password.
+        if (user.status !== 'active') {
+            return res.status(403).json({ status: 'error', message: 'Account is deactivated. Contact your administrator.' });
+        }
+        // A one-time password from the SmartPay owner works for 72 hours.
+        if (user.must_change_password && user.temp_password_expires_at && new Date(user.temp_password_expires_at) < new Date()) {
+            return res.status(403).json({ status: 'error', code: 'TEMP_PASSWORD_EXPIRED', message: 'This one-time password has expired. Ask SmartPay for a new one.' });
         }
 
         // Checked only after the password is right, so a stranger can't
@@ -142,6 +149,7 @@ exports.login = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                mustChangePassword: Boolean(user.must_change_password),
                 school: { id: school.id, name: school.name, code: school.code, currency: school.currency, billing: billingSummary(school) },
             },
         });
@@ -221,7 +229,7 @@ exports.resetPasswordWithToken = async (req, res) => {
         }
 
         const newHash = await bcrypt.hash(newPassword, 10);
-        await pool.query('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [newHash, resetRow.user_id]);
+        await pool.query('UPDATE users SET password_hash = ?, token_version = token_version + 1, must_change_password = 0, temp_password_expires_at = NULL WHERE id = ?', [newHash, resetRow.user_id]);
         await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE reset_token_id = ?', [resetRow.reset_token_id]);
 
         const [[user]] = await pool.query('SELECT school_id FROM users WHERE id = ?', [resetRow.user_id]);
@@ -239,7 +247,7 @@ exports.resetPasswordWithToken = async (req, res) => {
 // never read the cookie itself.
 exports.getMe = async (req, res) => {
     try {
-        const [[user]] = await pool.query('SELECT id, school_id, name, email, role FROM users WHERE id = ?', [req.user.userId]);
+        const [[user]] = await pool.query('SELECT id, school_id, name, email, role, must_change_password FROM users WHERE id = ?', [req.user.userId]);
         if (!user) {
             return res.status(404).json({ status: 'error', message: 'Account not found.' });
         }
@@ -255,6 +263,7 @@ exports.getMe = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                mustChangePassword: Boolean(user.must_change_password),
                 school: { id: school.id, name: school.name, code: school.code, currency: school.currency, billing: billingSummary(school) },
             },
         });
@@ -290,7 +299,7 @@ exports.changePassword = async (req, res) => {
         const newHash = await bcrypt.hash(newPassword, 10);
         const newTokenVersion = user.token_version + 1;
         await pool.query(
-            'UPDATE users SET password_hash = ?, token_version = ? WHERE id = ?',
+            'UPDATE users SET password_hash = ?, token_version = ?, must_change_password = 0, temp_password_expires_at = NULL WHERE id = ?',
             [newHash, newTokenVersion, user.id]
         );
 

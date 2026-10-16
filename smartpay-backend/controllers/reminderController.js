@@ -1,6 +1,6 @@
 const pool = require('../db');
 const { createPaymentLink } = require('../utils/paymentLink');
-const { renderTemplate } = require('../utils/smsTemplate');
+const { renderTemplate, redactPaymentLinks } = require('../utils/smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('../utils/reminderCore');
 const smsProvider = require('../utils/smsProvider');
 const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
@@ -96,7 +96,7 @@ exports.send = async (req, res) => {
                 (school_id, parent_id, student_id, invoice_id, cycle_key, phone, message, payment_link_id, status, provider_message_id, sent_at, failure_reason, created_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                req.user.schoolId, parentId, scope.studentId, invoiceId || null, cycleKey, scope.parent.phone, message, linkRow.id,
+                req.user.schoolId, parentId, scope.studentId, invoiceId || null, cycleKey, scope.parent.phone, redactPaymentLinks(message), linkRow.id,
                 result.success ? 'sent' : 'failed', result.providerMessageId, result.success ? new Date() : null, result.error, req.user.userId,
             ]
         );

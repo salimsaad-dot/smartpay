@@ -29,6 +29,8 @@ const MIGRATIONS = [
     'migrate-payment-idempotency',
     'migrate-payment-refunded',
     'migrate-reminder-claims',
+    'migrate-redact-sms-links',
+    'migrate-login-hardening',
 ];
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');

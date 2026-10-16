@@ -81,7 +81,24 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
         const login = await schoolLogin();
         expect(login.status).toBe(200);
         expect(login.body.data.school.billing).toMatchObject({ paidUntil: null, daysLeft: null, renewalDue: false });
+        expect(login.body.data.mustChangePassword).toBe(true);
         schoolCookie = cookieFrom(login);
+    });
+
+    test('a one-time password allows nothing but setting a password of your own', async () => {
+        const blocked = await request(app).get('/api/students').set('Cookie', schoolCookie);
+        expect(blocked.status).toBe(403);
+        expect(blocked.body.code).toBe('PASSWORD_CHANGE_REQUIRED');
+        expect((await request(app).get('/api/auth/me').set('Cookie', schoolCookie)).status).toBe(200);
+
+        const changed = await request(app).post('/api/auth/change-password').set('Cookie', schoolCookie)
+            .send({ currentPassword: tempPassword, newPassword: 'MyOwnPass123' });
+        expect(changed.status).toBe(200);
+        schoolCookie = cookieFrom(changed);
+        tempPassword = 'MyOwnPass123';
+        const me = await request(app).get('/api/auth/me').set('Cookie', schoolCookie);
+        expect(me.body.data.mustChangePassword).toBe(false);
+        expect((await request(app).get('/api/students').set('Cookie', schoolCookie)).status).toBe(200);
     });
 
     test('a school login cannot use the console, and a console login cannot act as a school', async () => {
@@ -153,6 +170,16 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
         expect((await request(app).get('/api/auth/me').set('Cookie', schoolCookie)).status).toBe(401);
         expect((await schoolLogin(tempPassword)).status).toBe(401);
         expect((await schoolLogin(res.body.data.tempPassword)).status).toBe(200);
+        tempPassword = res.body.data.tempPassword;
+    });
+
+    test('a one-time password stops working after 72 hours', async () => {
+        await db.query("UPDATE users SET temp_password_expires_at = NOW() - INTERVAL 1 HOUR WHERE email = ?", [adminEmail]);
+        const [[row]] = await db.query('SELECT must_change_password FROM users WHERE email = ?', [adminEmail]);
+        expect(row.must_change_password).toBe(1); // set again by the reset above
+        const res = await schoolLogin();
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('TEMP_PASSWORD_EXPIRED');
     });
 
     test("owner actions are recorded in the school's audit log", async () => {

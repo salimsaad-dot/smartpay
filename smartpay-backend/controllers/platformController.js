@@ -3,6 +3,9 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { clientIp } = require('../utils/clientIp');
+const loginThrottle = require('../utils/loginThrottle');
+
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('not-a-real-password-placeholder', 10);
 const { PLATFORM_COOKIE } = require('../middleware/platformAuth');
 const { createSchoolWithAdmin } = require('../utils/schoolProvisioning');
 const { ACCESS_COLUMNS_SQL, describeAccess, billingSummary } = require('../utils/schoolAccess');
@@ -12,8 +15,6 @@ const { ACCESS_COLUMNS_SQL, describeAccess, billingSummary } = require('../utils
 // and resets a school admin's password. Nothing here is reachable with a
 // school login; see middleware/platformAuth.js.
 
-const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 
 function cookieOptions() {
@@ -44,6 +45,17 @@ async function logPlatformAction(req, schoolId, action, oldValues, newValues) {
     }
 }
 
+// Passwords the owner hands out (new school, admin reset) travel by
+// WhatsApp or phone, so they work for 72 hours and must be replaced at
+// first login (verifyToken allows nothing else until then).
+const ONE_TIME_PASSWORD_HOURS = 72;
+async function markOneTimePassword(userId) {
+    await pool.query(
+        'UPDATE users SET must_change_password = 1, temp_password_expires_at = NOW() + INTERVAL ? HOUR WHERE id = ?',
+        [ONE_TIME_PASSWORD_HOURS, userId]
+    );
+}
+
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body || {};
@@ -52,17 +64,20 @@ exports.login = async (req, res) => {
         }
         const [[admin]] = await pool.query('SELECT * FROM platform_admins WHERE email = ?', [String(email).trim().toLowerCase()]);
         if (!admin) {
+            await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
             return res.status(401).json({ status: 'error', message: 'Invalid email or password.' });
         }
-        if (admin.locked_until && new Date(admin.locked_until) > new Date()) {
-            return res.status(423).json({ status: 'error', message: 'Too many failed attempts. Try again in a few minutes.' });
+        // Per (account, visitor address), so nobody can lock the owner out
+        // from elsewhere (utils/loginThrottle.js).
+        const ip = clientIp(req);
+        if (await loginThrottle.isLocked('platform', admin.id, ip)) {
+            return res.status(423).json({ status: 'error', message: 'Too many failed attempts from this device. Try again in a few minutes.' });
         }
         if (!(await bcrypt.compare(password, admin.password_hash))) {
-            const attempts = admin.failed_login_attempts + 1;
-            const lockedUntil = attempts >= MAX_FAILED_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
-            await pool.query('UPDATE platform_admins SET failed_login_attempts = ?, locked_until = ? WHERE id = ?', [lockedUntil ? 0 : attempts, lockedUntil, admin.id]);
+            await loginThrottle.recordFailure('platform', admin.id, ip, { label: `SmartPay console (${admin.email})` });
             return res.status(401).json({ status: 'error', message: 'Invalid email or password.' });
         }
+        await loginThrottle.clearFailures('platform', admin.id, ip);
         await pool.query('UPDATE platform_admins SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = ?', [admin.id]);
 
         const token = jwt.sign({ kind: 'platform', platformAdminId: admin.id, tokenVersion: admin.token_version }, process.env.JWT_SECRET, { expiresIn: '12h' });
@@ -126,6 +141,7 @@ exports.createSchool = async (req, res) => {
         const paidUntil = req.body?.paidUntil || null;
         const tempPassword = generateTempPassword();
         const created = await createSchoolWithAdmin({ schoolName, code, adminName, email, password: tempPassword, paidUntil });
+        await markOneTimePassword(created.userId);
         await logPlatformAction(req, created.schoolId, 'platform.school_created', null, { paidUntil });
         res.status(201).json({
             status: 'success',
@@ -203,6 +219,8 @@ exports.resetAdminPassword = async (req, res) => {
             'UPDATE users SET password_hash = ?, token_version = token_version + 1, failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
             [hash, admin.id]
         );
+        await markOneTimePassword(admin.id);
+        await pool.query("DELETE FROM login_attempts WHERE scope = 'school' AND account_id = ?", [admin.id]);
         await logPlatformAction(req, schoolId, 'platform.admin_password_reset', null, { adminEmail: admin.email });
         res.status(200).json({ status: 'success', data: { adminEmail: admin.email, tempPassword } });
     } catch (error) {

@@ -35,6 +35,12 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
       // flash an error or leave an unhandled rejection on the way out.
       return new Promise(() => {});
     }
+    // Signed in with a one-time password from SmartPay: nothing works until
+    // the admin sets their own (the backend allows only that).
+    if (data.code === "PASSWORD_CHANGE_REQUIRED" && typeof window !== "undefined" && window.location.pathname !== "/dashboard/account") {
+      window.location.assign("/dashboard/account");
+      return new Promise(() => {});
+    }
     throw new Error(data.message || "Something went wrong. Please try again.");
   }
 

@@ -173,7 +173,9 @@ export default function DashboardShell({ children }) {
 
   useEffect(() => {
     if (!isLoading && !user) router.replace("/login");
-  }, [user, isLoading, router]);
+    // A one-time password must be replaced before anything else.
+    if (user?.mustChangePassword && pathname !== "/dashboard/account") router.replace("/dashboard/account");
+  }, [user, isLoading, router, pathname]);
 
   useEffect(() => {
     setMobileNavOpen(false);

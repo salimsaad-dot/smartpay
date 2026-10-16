@@ -39,6 +39,7 @@ describe('auth flow (real DB, real HTTP)', () => {
         await db.query('DELETE FROM audit_logs WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM fee_types WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM sms_templates WHERE school_id IN (SELECT id FROM schools WHERE code LIKE ?)', [`${MARKER.toLowerCase()}%`]);
+        await db.query("DELETE FROM login_attempts WHERE scope = 'school' AND account_id IN (SELECT id FROM users WHERE email LIKE ?)", [`${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM users WHERE email LIKE ?', [`${MARKER.toLowerCase()}%`]);
         await db.query('DELETE FROM schools WHERE code LIKE ?', [`${MARKER.toLowerCase()}%`]);
         await db.end();
@@ -113,26 +114,37 @@ describe('auth flow (real DB, real HTTP)', () => {
             await createTestUser(lockoutEmail);
         });
 
-        test('5 wrong passwords lock the account regardless of which IP sent them; a 6th attempt is locked even with the correct password', async () => {
+        // Since 2026-10-16 the lock is per (account, visitor address), so a
+        // stranger can't keep the school's only admin locked out.
+        const from = (ip) => request(app).post('/api/auth/login').set('x-vercel-proxied-for', ip);
+
+        test('5 wrong passwords from one address lock that address out, even with the correct password', async () => {
             for (let i = 0; i < 5; i++) {
-                const res = await request(app).post('/api/auth/login').send({ email: lockoutEmail, password: 'WrongPass123' });
+                const res = await from('203.0.113.7').send({ email: lockoutEmail, password: 'WrongPass123' });
                 expect(res.status).toBe(401);
             }
-            const lockedOut = await request(app).post('/api/auth/login').send({ email: lockoutEmail, password });
+            const lockedOut = await from('203.0.113.7').send({ email: lockoutEmail, password });
             expect(lockedOut.status).toBe(423);
         });
 
-        test('a correct login clears the lockout counters so a later mistake starts counting from zero again', async () => {
-            await db.query(
-                'UPDATE users SET locked_until = NULL, failed_login_attempts = 0 WHERE email = ?',
-                [lockoutEmail]
-            );
-            const goodLogin = await request(app).post('/api/auth/login').send({ email: lockoutEmail, password });
+        test('the real admin, logging in from a different address, is not locked out by that stranger', async () => {
+            const res = await from('198.51.100.20').send({ email: lockoutEmail, password });
+            expect(res.status).toBe(200);
+        });
+
+        test('a correct login clears that address\'s failures so a later mistake starts counting from zero again', async () => {
+            await from('192.0.2.44').send({ email: lockoutEmail, password: 'WrongPass123' });
+            await from('192.0.2.44').send({ email: lockoutEmail, password: 'WrongPass123' });
+            const goodLogin = await from('192.0.2.44').send({ email: lockoutEmail, password });
             expect(goodLogin.status).toBe(200);
 
-            const [[row]] = await db.query('SELECT failed_login_attempts, locked_until FROM users WHERE email = ?', [lockoutEmail]);
+            const [[row]] = await db.query('SELECT failed_login_attempts FROM users WHERE email = ?', [lockoutEmail]);
             expect(row.failed_login_attempts).toBe(0);
-            expect(row.locked_until).toBeNull();
+            const [left] = await db.query(
+                "SELECT id FROM login_attempts WHERE scope = 'school' AND ip = '192.0.2.44' AND account_id = (SELECT id FROM users WHERE email = ?)",
+                [lockoutEmail]
+            );
+            expect(left).toHaveLength(0);
         });
     });
 
@@ -269,10 +281,10 @@ describe('auth flow (real DB, real HTTP)', () => {
             const blockedEmail = `${MARKER.toLowerCase()}-auditblocked@example.com`;
             const blockedUserId = await createTestUser(blockedEmail);
             await db.query(
-                'UPDATE users SET locked_until = ? WHERE id = ?',
-                [new Date(Date.now() + 15 * 60 * 1000), blockedUserId]
+                "INSERT INTO login_attempts (scope, account_id, ip, failures, locked_until) VALUES ('school', ?, '203.0.113.99', 0, NOW() + INTERVAL 15 MINUTE)",
+                [blockedUserId]
             );
-            await request(app).post('/api/auth/login').send({ email: blockedEmail, password });
+            await request(app).post('/api/auth/login').set('x-vercel-proxied-for', '203.0.113.99').send({ email: blockedEmail, password });
             expect(await latestAuditAction(blockedUserId)).toBe('auth.login_blocked');
         });
 

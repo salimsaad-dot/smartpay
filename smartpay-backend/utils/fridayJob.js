@@ -1,7 +1,7 @@
 const pool = require('../db');
 const { SCHOOL_IS_OPEN_SQL } = require('./schoolAccess');
 const { createPaymentLink } = require('./paymentLink');
-const { renderTemplate } = require('./smsTemplate');
+const { renderTemplate, redactPaymentLinks } = require('./smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('./reminderCore');
 const smsProvider = require('./smsProvider');
 const opsAlert = require('./opsAlert');
@@ -258,7 +258,7 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                         (school_id, parent_id, student_id, cycle_key, phone, message, payment_link_id, status, provider_message_id, sent_at, failure_reason)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
-                        schoolId, parentId, scope.studentId, cycleKey, scope.parent.phone, message, linkRow.id,
+                        schoolId, parentId, scope.studentId, cycleKey, scope.parent.phone, redactPaymentLinks(message), linkRow.id,
                         result.success ? 'sent' : 'failed', result.providerMessageId, result.success ? new Date() : null, result.error,
                     ]
                 );

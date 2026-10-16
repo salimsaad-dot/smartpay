@@ -2710,6 +2710,47 @@ being considered done, not just locally.
     - Full suite 358 passing.
   - **Still on the list (Medium):** live links are stored in plain text
     in `sms_reminders.message`.
+- **Three medium fixes from the council list, 2026-10-16.**
+  - **Payment links no longer stored in SMS history.**
+    `sms_reminders.message` held the full SMS, including each link's raw
+    token. Anyone reading the database or a backup got working payment
+    pages, which undid hashing tokens in `payment_links`.
+    - New `redactPaymentLinks()` in `utils/smsTemplate.js` stores
+      `/pay/[link]` (Friday job and manual send). The parent still
+      receives the real link.
+    - The migration `migrate-redact-sms-links` cleans old rows with
+      `REGEXP_REPLACE`.
+  - **One-time passwords expire and must be replaced.** Passwords the
+    owner issues (new school, admin reset) travel by WhatsApp.
+    - New columns `users.must_change_password` and
+      `users.temp_password_expires_at`, set to 72 hours.
+    - Login refuses an expired one with `TEMP_PASSWORD_EXPIRED`.
+    - `verifyToken` allows only `/auth/me`, `/auth/change-password` and
+      `/auth/logout` until it's replaced (`PASSWORD_CHANGE_REQUIRED`).
+    - The frontend sends the admin to Account with a welcome banner, then
+      on to the Dashboard. Changing the password, or resetting it by
+      email, clears the flags.
+  - **Lockout can't be used to lock someone else out.** 5 wrong passwords
+    from anywhere used to lock the account for everyone, checked before
+    the password. So anyone who knew a school's admin email (often
+    public), or the owner's, could keep them locked out indefinitely.
+    - New `utils/loginThrottle.js` with a `login_attempts` table: the lock
+      is per (account, visitor address), 5 failures then 15 minutes, for
+      both school and console logins.
+    - 30 failures across all addresses in an hour emails the owner,
+      without locking.
+    - Unknown emails now take as long as wrong passwords (a dummy bcrypt
+      compare).
+    - "Deactivated" is only revealed after the right password.
+  - Both migrations were added to `MIGRATIONS`, so they apply on deploy.
+  - **Verified:**
+    - Tests cover a stranger locked out while the real admin logs in
+      elsewhere, failures cleared on success, one-time password gating
+      and expiry, and stored SMS without a live token.
+    - Full suite 362 passing.
+    - Real browser: a new admin's one-time login lands on Account, can't
+      reach other pages, sets a password, reaches the Dashboard, and the
+      flags are cleared. 0 page errors.
 
 ## Future Work
 

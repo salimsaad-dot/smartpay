@@ -75,6 +75,20 @@ describe('Friday job: claim before send, same-day retries (real DB)', () => {
 
     afterEach(() => jest.restoreAllMocks());
 
+    test('the SMS history stores the message without the live payment-link token', async () => {
+        const now = nextFriday();
+        scriptSends();
+        await runFridayJobForSchool(schoolId, { now });
+        const sentText = sendSpy.mock.calls[0][1];
+        expect(sentText).toMatch(/\/pay\/[A-Za-z0-9_-]{20,}/); // the parent gets a working link
+        const [rows] = await db.query('SELECT message FROM sms_reminders WHERE school_id = ? AND cycle_key = ?', [schoolId, fridayCycleKey(now, 'Africa/Accra')]);
+        expect(rows.length).toBeGreaterThan(0);
+        for (const { message } of rows) {
+            expect(message).not.toMatch(/\/pay\/[A-Za-z0-9_-]{20,}/);
+            expect(message).toContain('/pay/[link]');
+        }
+    });
+
     test('five simultaneous claims for one parent: exactly one run gets to send', async () => {
         const claims = await Promise.all(Array.from({ length: 5 }, () => claimParent(schoolId, parents.steady.id, 'friday-claim-race')));
         expect(claims.filter(Boolean)).toHaveLength(1);

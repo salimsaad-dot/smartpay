@@ -36,7 +36,7 @@ exports.verifyToken = async (req, res, next) => {
         }
 
         const [[user]] = await pool.query(
-            `SELECT u.school_id, u.status, u.token_version, ${ACCESS_COLUMNS_SQL}
+            `SELECT u.school_id, u.status, u.token_version, u.must_change_password, ${ACCESS_COLUMNS_SQL}
              FROM users u JOIN schools s ON s.id = u.school_id WHERE u.id = ?`,
             [decoded.userId]
         );
@@ -52,6 +52,16 @@ exports.verifyToken = async (req, res, next) => {
         const access = describeAccess(user);
         if (access.blocked) {
             return res.status(403).json({ status: 'error', code: 'SCHOOL_BLOCKED', reason: access.reason, message: access.message });
+        }
+
+        // Logged in with a one-time password from the SmartPay owner: only
+        // reading your own account, changing the password and logging out
+        // are allowed until a password of your own is set.
+        if (user.must_change_password) {
+            const allowed = ['/api/auth/me', '/api/auth/change-password', '/api/auth/logout'];
+            if (!allowed.includes(req.originalUrl.split('?')[0])) {
+                return res.status(403).json({ status: 'error', code: 'PASSWORD_CHANGE_REQUIRED', message: 'Please set your own password to continue.' });
+            }
         }
 
         // userId/role come from the verified token; schoolId comes from
