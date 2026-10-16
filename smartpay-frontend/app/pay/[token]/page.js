@@ -19,7 +19,7 @@ export default function PublicCheckoutPage({ params }) {
     apiRequest(`/public/checkout/${token}`)
       .then((res) => {
         setData(res.data);
-        setEmail(res.data.parentEmail || "");
+
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -34,7 +34,7 @@ export default function PublicCheckoutPage({ params }) {
   async function handlePay(e) {
     e.preventDefault();
     setSubmitError("");
-    if (!email.trim()) {
+    if (!email.trim() && !data.hasEmailOnFile) {
       setSubmitError("Please enter an email to proceed with payment.");
       return;
     }
@@ -63,7 +63,7 @@ export default function PublicCheckoutPage({ params }) {
     <div className="mx-auto min-h-screen max-w-lg px-4 py-8">
       <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
         <h1 className="text-xl font-semibold text-[var(--ink)]">{data.schoolName}</h1>
-        <p className="mt-1 text-sm text-[var(--slate-quiet)]">Dear {data.parentName}, here are your children&apos;s outstanding balances.</p>
+        <p className="mt-1 text-sm text-[var(--slate-quiet)]">Here are the outstanding fees for your child{data.children.length === 1 ? "" : "ren"}.</p>
 
         {data.children.length === 0 ? (
           <p className="mt-6 rounded-lg bg-[var(--success-wash)] p-4 text-sm text-[var(--success)]">
@@ -116,10 +116,13 @@ export default function PublicCheckoutPage({ params }) {
               <p className="mt-1 text-xs text-[var(--slate-quiet)]">Paying for: {selectedInvoice.feeTypeName}. Outstanding balance: {formatMoney(selectedInvoice.balance, data.currency)}. You may pay part of this amount.</p>
             </div>
             <div>
-              <label htmlFor="pay-email" className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">Email (for your payment receipt)</label>
+              <label htmlFor="pay-email" className="mb-1 block text-xs font-medium text-[var(--slate-quiet)]">
+                Email (for your payment receipt){data.hasEmailOnFile ? " (optional)" : ""}
+              </label>
               <input
                 id="pay-email"
-                required
+                required={!data.hasEmailOnFile}
+                placeholder={data.hasEmailOnFile ? "Leave blank to use the one on file" : ""}
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -136,6 +139,7 @@ export default function PublicCheckoutPage({ params }) {
             </button>
           </form>
         )}
+        <p className="mt-5 text-center text-xs text-[var(--slate-quiet)]">This link is for your family only. Please don&apos;t forward it.</p>
       </div>
     </div>
   );

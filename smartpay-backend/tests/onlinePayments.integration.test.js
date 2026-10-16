@@ -141,9 +141,12 @@ describe('online payments — secure payment links, public checkout, and Paystac
     test('public checkout resolves the token to the correct parent and child, with no auth required', async () => {
         const res = await request(app).get(`/api/public/checkout/${rawToken}`);
         expect(res.status).toBe(200);
-        expect(res.body.data.parentName).toBe('Mrs Mensah');
+        // Privacy (2026-10-16): no parent name or email, child shortened.
+        expect(res.body.data.parentName).toBeUndefined();
+        expect(res.body.data.parentEmail).toBeUndefined();
+        expect(res.body.data.hasEmailOnFile).toBe(true);
         expect(res.body.data.children).toHaveLength(1);
-        expect(res.body.data.children[0].name).toBe('Kofi Mensah');
+        expect(res.body.data.children[0].name).toBe('Kofi M.');
         expect(res.body.data.children[0].invoices).toHaveLength(1);
         expect(Number(res.body.data.children[0].invoices[0].balance)).toBe(500);
         // fee-management Phase 5: the public checkout page must make it
@@ -154,6 +157,12 @@ describe('online payments — secure payment links, public checkout, and Paystac
     test('an invalid/garbage token returns 404, not a crash', async () => {
         const res = await request(app).get('/api/public/checkout/not-a-real-token');
         expect(res.status).toBe(404);
+    });
+
+    test('a new payment link expires after 10 days, not 30 (limits a forwarded SMS)', async () => {
+        const [[row]] = await db.query("SELECT TIMESTAMPDIFF(HOUR, created_at, expires_at) AS h FROM payment_links WHERE parent_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [parentIdA]);
+        expect(Number(row.h)).toBeGreaterThanOrEqual(239);
+        expect(Number(row.h)).toBeLessThanOrEqual(241);
     });
 
     test('a revoked link is rejected with 410', async () => {

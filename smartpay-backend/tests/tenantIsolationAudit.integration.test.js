@@ -265,7 +265,8 @@ describe('Cross-tenant isolation audit — every resource type, real DB, real HT
         if (!ids.paymentLinkToken) return; // link generation may have failed upstream; not this test's concern
         const res = await request(app).get(`/api/public/checkout/${ids.paymentLinkToken}`);
         expect(res.status).toBe(200);
-        expect(res.body.data.parentName).toBe('Mrs Secret');
+        expect(res.body.data.schoolName).toBeDefined();
+        expect(res.body.data.parentName).toBeUndefined(); // never sent to the public page
     });
 
     test('a nonexistent/garbage public token is rejected cleanly, not with a 500 or data leak', async () => {

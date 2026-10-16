@@ -28,7 +28,9 @@ async function resolveLink(connection, token) {
     if (describeAccess(link).blocked) {
         return { error: { status: 410, message: 'Online payment for this school is unavailable right now. Please contact the school.' } };
     }
-    if (link.status !== 'active') return { error: { status: 410, message: 'This payment link has been revoked.' } };
+    // Usually a newer reminder replaced this link (each one revokes the
+    // last). Worded so it doesn't read like fraud to a parent.
+    if (link.status !== 'active') return { error: { status: 410, message: 'This payment link is no longer active. Please use the most recent payment SMS from the school, or contact the school.' } };
     if (link.expires_at && new Date(link.expires_at) < new Date()) {
         return { error: { status: 410, message: 'This payment link has expired. Please contact the school for a new one.' } };
     }
@@ -64,7 +66,10 @@ exports.getCheckout = async (req, res) => {
         const children = {};
         for (const inv of invoices) {
             if (!children[inv.student_id]) {
-                children[inv.student_id] = { studentId: inv.student_id, name: `${inv.first_name} ${inv.last_name}`, className: inv.class_name, invoices: [] };
+                // First name + last initial: enough for the parent to
+                // recognise their child, less exposure when an SMS link is
+                // forwarded (Ghana's Data Protection Act 843: minimise).
+                children[inv.student_id] = { studentId: inv.student_id, name: `${inv.first_name} ${String(inv.last_name || '').charAt(0)}.`.trim(), className: inv.class_name, invoices: [] };
             }
             children[inv.student_id].invoices.push({
                 id: inv.id, invoiceNo: inv.invoice_no, termName: inv.term_name, feeTypeName: inv.fee_type_name,
@@ -77,8 +82,11 @@ exports.getCheckout = async (req, res) => {
             data: {
                 schoolName: link.school_name,
                 currency: link.currency,
-                parentName: link.parent_name,
-                parentEmail: link.parent_email,
+                // The parent's name and email are never sent to the page
+                // (2026-10-16): anyone holding a forwarded link could read
+                // them. If an email is on file, initializePayment uses it
+                // when the parent leaves the box empty.
+                hasEmailOnFile: Boolean(link.parent_email),
                 children: Object.values(children),
             },
         });

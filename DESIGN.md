@@ -2682,6 +2682,34 @@ being considered done, not just locally.
     - A real `node server.js` boot applied a deliberately un-recorded
       migration, then served.
     - Full suite 357 passing.
+- **Forwarded payment links reveal less, 2026-10-16.** This is item 10,
+  the last high-priority item on the council fix list. In Ghana a family
+  often shares one phone and SMS get forwarded. A payment link is a bearer
+  token, and the checkout page showed every child's full name and class,
+  the parent's name, and the parent's email (pre-filled) for 30 days.
+  That's an Act 843 minimisation issue.
+  - **What changed:**
+    - `getCheckout` no longer returns `parentName` or `parentEmail`. It
+      returns `hasEmailOnFile`, and children appear as first name plus
+      last initial ("Kofi M.").
+    - The page greets generically. The email box is optional when an
+      email is on file, and `initializePayment` already falls back to the
+      stored email, which is never displayed.
+    - Link life is 10 days (was 30). Friday sends a fresh link weekly
+      anyway.
+    - A superseded or revoked link now says "no longer active, please use
+      the most recent payment SMS" instead of "revoked", which read like
+      fraud.
+    - A "This link is for your family only" note is shown.
+  - **Verified:**
+    - A test for the 10-day expiry. The checkout and tenant-isolation
+      tests now assert no name or email is sent.
+    - Real browser on a phone: the surname, parent name and email appear
+      neither on the page nor in the API response. The email box is
+      optional with no page errors.
+    - Full suite 358 passing.
+  - **Still on the list (Medium):** live links are stored in plain text
+    in `sms_reminders.message`.
 
 ## Future Work
 

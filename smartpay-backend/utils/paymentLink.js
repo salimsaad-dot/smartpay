@@ -14,7 +14,9 @@ function hashToken(token) {
     return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-const DEFAULT_EXPIRY_DAYS = 30;
+// 10 days, not 30 (2026-10-16): Friday reminders send a fresh link every
+// week anyway; a shorter life limits how long a forwarded SMS stays usable.
+const DEFAULT_EXPIRY_DAYS = 10;
 
 function defaultExpiry() {
     return new Date(Date.now() + DEFAULT_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
