@@ -95,4 +95,17 @@ async function sendDemoRequestEmail(toEmail, request) {
     });
 }
 
-module.exports = { sendPasswordResetEmail, sendDemoRequestEmail, isEmailDeliveryConfigured };
+// Problem alerts for the platform owner (utils/opsAlert.js decides when).
+async function sendOpsAlertEmail(toEmail, subject, lines) {
+    return sendEmail({
+        to: toEmail,
+        subject: `SmartPay alert: ${subject}`,
+        html: `
+            <p><strong>${escapeHtml(subject)}</strong></p>
+            <ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+            <p style="color:#64748b">Sent automatically by SmartPay. Similar alerts are held back for an hour.</p>
+        `,
+    });
+}
+
+module.exports = { sendPasswordResetEmail, sendDemoRequestEmail, sendOpsAlertEmail, isEmailDeliveryConfigured };

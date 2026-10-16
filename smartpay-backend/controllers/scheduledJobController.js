@@ -1,6 +1,9 @@
 const pool = require('../db');
-const { runFridayJobForSchool, runFridayJobForAllSchools } = require('../utils/fridayJob');
+// Through the module object (not destructured) so tests can stub the job.
+const fridayJob = require('../utils/fridayJob');
 const { reconcileOnlinePayments } = require('../utils/paymentReconciler');
+// Module object, not destructured, so tests can intercept alerts.
+const opsAlert = require('../utils/opsAlert');
 
 exports.list = async (req, res) => {
     try {
@@ -22,7 +25,7 @@ exports.list = async (req, res) => {
 // Scoped to only the caller's own school, unlike the cron endpoint below.
 exports.manualRun = async (req, res) => {
     try {
-        const result = await runFridayJobForSchool(req.user.schoolId);
+        const result = await fridayJob.runFridayJobForSchool(req.user.schoolId);
         if (!result) {
             return res.status(200).json({ status: 'success', message: 'This cycle was already run (or is currently running) — nothing more to do.', data: null });
         }
@@ -37,10 +40,28 @@ exports.manualRun = async (req, res) => {
 // scheduler), never by a logged-in admin — see routes/cronRoutes.js for
 // the secret-header guard. Runs every active, Friday-enabled school's
 // cycle in one call, each isolated from the others' failures.
+// Loud on failure (2026-10-16): a school whose run crashed, or whose every
+// SMS failed (provider down or out of credit), makes this return 502, so
+// the workflow fails and GitHub emails the owner. Partial failures (a few
+// bad phone numbers) don't fail the run but are emailed with the counts.
 exports.runForAllSchools = async (req, res) => {
     try {
-        const results = await runFridayJobForAllSchools();
-        res.status(200).json({ status: 'success', data: results });
+        const results = await fridayJob.runFridayJobForAllSchools();
+        const crashed = results.filter((r) => r.error);
+        const allFailed = results.filter((r) => r.result && r.result.failure > 0 && r.result.success === 0);
+        const someFailed = results.filter((r) => r.result && r.result.failure > 0 && r.result.success > 0);
+        if (crashed.length || allFailed.length || someFailed.length) {
+            const [schools] = await pool.query('SELECT id, name FROM schools WHERE id IN (?)',
+                [[...crashed, ...allFailed, ...someFailed].map((r) => r.schoolId)]);
+            const name = (id) => schools.find((s) => s.id === id)?.name || `school ${id}`;
+            await opsAlert.alertOwner(`friday:${new Date().toISOString().slice(0, 13)}`, 'Friday reminders had problems', [
+                ...crashed.map((r) => `${name(r.schoolId)}: the run crashed (${r.error})`),
+                ...allFailed.map((r) => `${name(r.schoolId)}: all ${r.result.failure} SMS failed (provider down or out of credit?)`),
+                ...someFailed.map((r) => `${name(r.schoolId)}: ${r.result.failure} of ${r.result.processed} SMS failed (check those parents' phone numbers)`),
+            ]);
+        }
+        const loud = crashed.length > 0 || allFailed.length > 0;
+        res.status(loud ? 502 : 200).json({ status: loud ? 'error' : 'success', data: results });
     } catch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while running the Friday job.' });
@@ -54,7 +75,12 @@ exports.runForAllSchools = async (req, res) => {
 exports.reconcilePayments = async (req, res) => {
     try {
         const summary = await reconcileOnlinePayments();
-        if (summary.credited) console.log(`Payment reconciliation credited ${summary.credited} payment(s) that had not been settled.`);
+        if (summary.credited) {
+            await opsAlert.alertOwner(`reconcile-credited:${new Date().toISOString().slice(0, 13)}`, `Reconciliation credited ${summary.credited} payment(s) the webhook missed`, [
+                'Parents paid and are now credited; nothing to fix for them.',
+                'If this keeps happening, Paystack webhooks are not reaching SmartPay: check the webhook URL in the Paystack dashboard.',
+            ]);
+        }
         res.status(summary.errors.length ? 502 : 200).json({ status: summary.errors.length ? 'error' : 'success', data: summary });
     } catch (error) {
         console.error('Payment reconciliation failed:', error);

@@ -2547,6 +2547,30 @@ being considered done, not just locally.
        (`mysql -h HOST -u USER -p DBNAME < FILE.sql`).
     3. Point Render's DB_* variables at it.
   - Full suite 326 passing.
+- **Failures are loud, 2026-10-16.** This is item 5 on the council fix
+  list. Problems used to reach only `console.error` in Render's logs.
+  - **Emails to the owner:** new `utils/opsAlert.js` `alertOwner(key,
+    subject, lines)` goes to `OPS_ALERT_EMAIL`, falling back to
+    `DEMO_NOTIFY_EMAIL`, which is already set and delivering. Each key is
+    sent at most once an hour, it never throws, and it never sends from
+    the test suite unless a test opts in. It is wired to:
+    1. Money received but not credited (amount/currency mismatch).
+    2. Paystack confirming a payment voided in SmartPay.
+    3. A partial refund.
+    4. A webhook processing failure.
+    5. Reconciliation crediting payments the webhook missed, which is a
+       sign webhooks aren't arriving.
+    6. Friday SMS failures, with per-school counts.
+  - **GitHub-visible failures:** `POST /api/cron/friday-reminders`
+    returns 502 when any school's run crashed or every SMS for a school
+    failed (provider down or out of credit), so the workflow fails and
+    GitHub emails the owner. A few bad numbers return 200 with an email
+    alert. Reconcile and backup already fail loudly.
+  - Controllers and the finalizer call `opsAlert`/`fridayJob` through the
+    module object so tests can intercept them.
+  - **Verified:** 11 new tests (alert helper incl. cooldown, fallback,
+    escaping, test guard; Friday endpoint 200/502 cases; mismatch alert).
+    Full suite 337 passing.
 
 ## Future Work
 

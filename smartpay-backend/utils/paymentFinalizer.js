@@ -1,5 +1,6 @@
 const pool = require('../db');
 const { recalculateInvoiceBalance, lockInvoice } = require('./invoiceRules');
+const opsAlert = require('./opsAlert');
 
 // The one place an online payment's status ever changes after it starts.
 // Called from the Paystack webhook, the parent's status page, and the
@@ -49,7 +50,11 @@ async function finalizePaymentEvent(payment, result, source) {
     if (payment.status === 'success' || payment.status === 'refunded') return payment.status;
     if (payment.status === 'void') {
         if (result.status === 'success') {
-            console.error('Payment finalize: Paystack confirmed a payment that was voided in SmartPay; needs manual review:', result.reference);
+            await opsAlert.alertOwner(`void-paid:${result.reference}`, 'Paystack confirmed a payment that is voided in SmartPay', [
+                `Reference: ${result.reference}`,
+                `Amount: GHS ${result.amountGhs}`,
+                'The parent paid but SmartPay does not count it. Check with the school, then refund the parent or record the payment.',
+            ]);
         }
         return 'void';
     }
@@ -69,8 +74,12 @@ async function finalizePaymentEvent(payment, result, source) {
     const amountMatches = Math.abs(Number(result.amountGhs) - Number(payment.amount)) <= 0.01;
     const currencyMatches = !result.currency || result.currency === EXPECTED_CURRENCY;
     if (!amountMatches || !currencyMatches) {
-        console.error('Payment finalize: amount/currency mismatch for', result.reference,
-            'expected', payment.amount, EXPECTED_CURRENCY, 'got', result.amountGhs, result.currency);
+        await opsAlert.alertOwner(`mismatch:${result.reference}`, 'Money received but not credited (amount or currency mismatch)', [
+            `Reference: ${result.reference}`,
+            `Expected: ${EXPECTED_CURRENCY} ${payment.amount}`,
+            `Paystack reported: ${result.currency || EXPECTED_CURRENCY} ${result.amountGhs}`,
+            'SmartPay marked it failed. Check it on the Paystack dashboard and credit or refund the parent by hand.',
+        ]);
         const [update] = await pool.query(
             `UPDATE payments SET status = 'failed' WHERE id = ? AND status IN ('initiated', 'pending')`,
             [payment.id]

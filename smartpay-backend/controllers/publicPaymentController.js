@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const pool = require('../db');
 const { hashToken } = require('../utils/paymentLink');
 const { finalizePaymentEvent } = require('../utils/paymentFinalizer');
+const opsAlert = require('../utils/opsAlert');
 const paystackGateway = require('../utils/paystackGateway');
 const { ACCESS_COLUMNS_SQL, describeAccess } = require('../utils/schoolAccess');
 
@@ -240,12 +241,15 @@ exports.webhook = async (req, res) => {
                 if (live.status === 'refunded') {
                     await finalizePaymentEvent(payment, { ...live, reference: refund.reference }, 'refund_webhook');
                 } else {
-                    console.error('Paystack refund event for a transaction not fully reversed (partial refund?); check by hand:', refund.reference);
+                    await opsAlert.alertOwner(`partial-refund:${refund.reference}`, 'Paystack refund that is not a full reversal', [
+                        `Reference: ${refund.reference}`,
+                        'Probably a partial refund. SmartPay still counts the full payment; adjust it by hand if needed.',
+                    ]);
                 }
             }
             return res.status(200).json({ status: 'success' });
         } catch (error) {
-            console.error('Paystack refund webhook processing failed (Paystack will retry):', error);
+            await opsAlert.alertOwner('webhook-failure', 'Paystack webhook failed to process (Paystack will retry)', [String(error.message || error)]);
             return res.status(500).json({ status: 'error' });
         }
     }
@@ -265,7 +269,10 @@ exports.webhook = async (req, res) => {
         await finalizePaymentEvent(payment, event, 'webhook');
         res.status(200).json({ status: 'success' });
     } catch (error) {
-        console.error('Paystack webhook processing failed (Paystack will retry):', error);
+        await opsAlert.alertOwner('webhook-failure', 'Paystack webhook failed to process (Paystack will retry)', [
+            String(error.message || error),
+            'If this repeats, check the database (Aiven) and Render. The 30-minute reconciliation will catch any payment missed.',
+        ]);
         res.status(500).json({ status: 'error' });
     }
 };

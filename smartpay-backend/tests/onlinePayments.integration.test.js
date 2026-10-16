@@ -482,6 +482,15 @@ describe('online payments — secure payment links, public checkout, and Paystac
             expect(await balance()).toBe(before);
         });
 
+        test('money received but not credited (amount mismatch) alerts the owner', async () => {
+            const opsAlert = require('../utils/opsAlert');
+            const alertSpy = jest.spyOn(opsAlert, 'alertOwner').mockResolvedValue({ sent: true });
+            const ref = await insertPayment(6, 'initiated');
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 600 }));
+            expect(await statusOf(ref)).toBe('failed');
+            expect(alertSpy).toHaveBeenCalledWith(`mismatch:${ref}`, expect.stringMatching(/not credited/), expect.any(Array));
+        });
+
         test('a success in the wrong currency is not credited', async () => {
             const ref = await insertPayment(9, 'initiated');
             const before = await balance();
