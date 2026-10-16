@@ -1,5 +1,6 @@
 const pool = require('../db');
 const { runFridayJobForSchool, runFridayJobForAllSchools } = require('../utils/fridayJob');
+const { reconcileOnlinePayments } = require('../utils/paymentReconciler');
 
 exports.list = async (req, res) => {
     try {
@@ -43,5 +44,20 @@ exports.runForAllSchools = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while running the Friday job.' });
+    }
+};
+
+// Called by the reconcile-payments GitHub Actions workflow every 30 minutes
+// (cron-secret protected, no login). Returns 502 when any check failed, so
+// the workflow's curl -f fails and GitHub emails the owner instead of the
+// problem staying silent.
+exports.reconcilePayments = async (req, res) => {
+    try {
+        const summary = await reconcileOnlinePayments();
+        if (summary.credited) console.log(`Payment reconciliation credited ${summary.credited} payment(s) that had not been settled.`);
+        res.status(summary.errors.length ? 502 : 200).json({ status: summary.errors.length ? 'error' : 'success', data: summary });
+    } catch (error) {
+        console.error('Payment reconciliation failed:', error);
+        res.status(500).json({ status: 'error', message: 'Server error while reconciling payments.' });
     }
 };

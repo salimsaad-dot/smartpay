@@ -406,4 +406,144 @@ describe('online payments — secure payment links, public checkout, and Paystac
         const res = await request(app).get('/api/public/payments/totally-unknown/status');
         expect(res.status).toBe(404);
     });
+
+    // Reconciliation fixes (2026-10-16). Each test reproduces a way a parent
+    // could pay and never be credited, or be credited wrongly, before the fix.
+    describe('payment reconciliation', () => {
+        const { reconcileOnlinePayments } = require('../utils/paymentReconciler');
+        const { recalculateInvoiceBalance } = require('../utils/invoiceRules');
+
+        async function insertPayment(amount, status, minutesAgo = 0) {
+            const reference = `sp_${schoolIdA}_${crypto.randomBytes(12).toString('hex')}`;
+            await db.query(
+                `INSERT INTO payments (school_id, invoice_id, student_id, amount, source, status, internal_reference, provider, created_at)
+                 VALUES (?, ?, ?, ?, 'online', ?, ?, 'paystack', NOW() - INTERVAL ? MINUTE)`,
+                [schoolIdA, invoiceId, student1Id, amount, status, reference, minutesAgo]
+            );
+            return reference;
+        }
+        const statusOf = async (reference) => (await db.query('SELECT status FROM payments WHERE internal_reference = ?', [reference]))[0][0].status;
+        const balance = async () => Number((await request(app).get(`/api/invoices/${invoiceId}`).set('Cookie', cookieA)).body.data.balance);
+        const sendWebhook = (payload) => {
+            const { rawBody, signature } = signWebhook(payload);
+            return request(app).post('/api/payments/webhook').set('Content-Type', 'application/json').set('x-paystack-signature', signature).send(rawBody);
+        };
+        // Answers Paystack's verify call per reference; anything else is "pending".
+        const mockVerify = (answers) => jest.spyOn(paystackGateway, 'verifyTransaction').mockImplementation(async (ref) => {
+            const answer = answers[ref];
+            if (answer instanceof Error) throw answer;
+            return { status: 'pending', amountGhs: 0, channel: 'other', paidAt: null, providerReference: ref, ...(answer || {}) };
+        });
+
+        // Earlier tests insert payment rows directly without recalculating
+        // the invoice, so bring its stored balance up to date first.
+        beforeAll(async () => {
+            await recalculateInvoiceBalance(db, invoiceId);
+        });
+        afterEach(() => jest.restoreAllMocks());
+
+        test('an "abandoned" answer while the MoMo prompt is pending no longer cancels the payment, so the later success is credited', async () => {
+            const ref = await insertPayment(20, 'initiated');
+            const before = await balance();
+            mockVerify({ [ref]: { status: 'cancelled' } });
+            const poll = await request(app).get(`/api/public/payments/${ref}/status`);
+            expect(poll.body.data.status).toBe('initiated');
+            expect(await statusOf(ref)).toBe('initiated');
+
+            expect((await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 20 }))).status).toBe(200);
+            expect(await statusOf(ref)).toBe('success');
+            expect(await balance()).toBe(before - 20);
+        });
+
+        test('a success after a declined attempt on the same checkout wins over "failed"', async () => {
+            const ref = await insertPayment(15, 'initiated');
+            const before = await balance();
+            await sendWebhook({ event: 'charge.failed', data: { reference: ref, amount: 1500, status: 'failed', channel: 'card' } });
+            expect(await statusOf(ref)).toBe('failed');
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 15 }));
+            expect(await statusOf(ref)).toBe('success');
+            expect(await balance()).toBe(before - 15);
+        });
+
+        test('a payment already wrongly marked "cancelled" (old behaviour) is credited when Paystack confirms it', async () => {
+            const ref = await insertPayment(12, 'cancelled');
+            const before = await balance();
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 12 }));
+            expect(await statusOf(ref)).toBe('success');
+            expect(await balance()).toBe(before - 12);
+        });
+
+        test('a voided payment is never brought back to life by a late success', async () => {
+            const ref = await insertPayment(11, 'void');
+            const before = await balance();
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 11 }));
+            expect(await statusOf(ref)).toBe('void');
+            expect(await balance()).toBe(before);
+        });
+
+        test('a success in the wrong currency is not credited', async () => {
+            const ref = await insertPayment(9, 'initiated');
+            const before = await balance();
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            const payload = chargeSuccessPayload({ reference: ref, amountGhs: 9 });
+            payload.data.currency = 'NGN';
+            await sendWebhook(payload);
+            expect(await statusOf(ref)).toBe('failed');
+            expect(await balance()).toBe(before);
+        });
+
+        test('a webhook that fails to process (e.g. database paused) returns 500 so Paystack retries, and the retry credits it', async () => {
+            const ref = await insertPayment(8, 'initiated');
+            const before = await balance();
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            // Fail only the webhook's own payment lookup, once. A blanket
+            // mockRejectedValueOnce could be swallowed by an unrelated
+            // background query and make this test flaky.
+            const realQuery = db.query.bind(db);
+            let failed = false;
+            jest.spyOn(db, 'query').mockImplementation((sql, ...args) => {
+                if (!failed && typeof sql === 'string' && sql.includes('FROM payments WHERE internal_reference')) {
+                    failed = true;
+                    return Promise.reject(new Error('database paused'));
+                }
+                return realQuery(sql, ...args);
+            });
+            expect((await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 8 }))).status).toBe(500);
+            expect(await statusOf(ref)).toBe('initiated');
+
+            expect((await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 8 }))).status).toBe(200);
+            expect(await statusOf(ref)).toBe('success');
+            expect(await balance()).toBe(before - 8);
+        });
+
+        test('the reconciliation job credits a payment nothing else settled, leaves fresh ones alone, and gives up on very old ones', async () => {
+            const lost = await insertPayment(7, 'initiated', 20);
+            const fresh = await insertPayment(6, 'initiated', 2);
+            const ancient = await insertPayment(5, 'initiated', 49 * 60);
+            const before = await balance();
+            const verify = mockVerify({
+                [lost]: { status: 'success', amountGhs: 7, channel: 'mobile_money', paidAt: new Date(), currency: 'GHS' },
+                [ancient]: { status: 'cancelled' },
+            });
+
+            const summary = await reconcileOnlinePayments();
+            expect(summary.credited).toBeGreaterThanOrEqual(1);
+            expect(await statusOf(lost)).toBe('success');
+            expect(await statusOf(fresh)).toBe('initiated');
+            expect(verify.mock.calls.map((c) => c[0])).not.toContain(fresh);
+            expect(await statusOf(ancient)).toBe('cancelled');
+            expect(await balance()).toBe(before - 7);
+        });
+
+        test('the cron endpoint needs the secret, and reports a failed check with 502 so the scheduler alerts', async () => {
+            expect((await request(app).post('/api/cron/reconcile-payments')).status).toBe(401);
+            const broken = await insertPayment(4, 'initiated', 20);
+            mockVerify({ [broken]: new Error('Paystack timeout') });
+            const res = await request(app).post('/api/cron/reconcile-payments').set('x-cron-secret', process.env.CRON_SECRET);
+            expect(res.status).toBe(502);
+            expect(res.body.data.errors.map((e) => e.reference)).toContain(broken);
+            expect(await statusOf(broken)).toBe('initiated');
+        });
+    });
 });

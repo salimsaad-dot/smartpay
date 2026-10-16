@@ -1,0 +1,21 @@
+name: Reconcile Online Payments
+
+on:
+  schedule:
+    # Every 30 minutes. Asks Paystack about any online payment SmartPay
+    # hasn't settled after 10 minutes (lost webhook, parent closed the tab)
+    # and credits the ones that went through. See
+    # smartpay-backend/utils/paymentReconciler.js. A failed run (any check
+    # erroring) makes curl fail, so GitHub emails the repo owner.
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reconcile online payments
+        run: |
+          curl -sf --max-time 120 --retry 2 --retry-delay 20 \
+            -X POST "${{ secrets.SMARTPAY_BACKEND_URL }}/api/cron/reconcile-payments" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

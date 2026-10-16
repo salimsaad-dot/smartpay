@@ -11,12 +11,13 @@ import { formatMoney } from "@/lib/format";
 // and keeps polling for a few seconds in case the webhook is still in
 // flight ("redirect succeeds but webhook arrives later" is a known edge
 // case, not a bug to paper over with a fake instant success message).
-const POLL_INTERVAL_MS = 2000;
-const MAX_POLLS = 10;
+const POLL_INTERVAL_MS = 4000;
+const MAX_POLLS = 15;
 
 export default function PaymentStatusPage({ params }) {
   const { reference } = use(params);
   const [status, setStatus] = useState(null);
+  const [gaveUp, setGaveUp] = useState(false);
   const [amount, setAmount] = useState(null);
   const [currency, setCurrency] = useState(null);
   const [error, setError] = useState("");
@@ -35,8 +36,9 @@ export default function PaymentStatusPage({ params }) {
         setCurrency(res.data.currency);
 
         pollCount.current += 1;
-        if ((res.data.status === "initiated" || res.data.status === "pending") && pollCount.current < MAX_POLLS) {
-          timer = setTimeout(poll, POLL_INTERVAL_MS);
+        if (res.data.status === "initiated" || res.data.status === "pending") {
+          if (pollCount.current < MAX_POLLS) timer = setTimeout(poll, POLL_INTERVAL_MS);
+          else setGaveUp(true);
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -66,10 +68,23 @@ export default function PaymentStatusPage({ params }) {
             <p className="mt-3 text-xs text-[var(--slate-quiet)]">Reference: <span className="font-mono">{reference}</span></p>
           </>
         )}
-        {!error && (status === "initiated" || status === "pending") && (
+        {!error && (status === "initiated" || status === "pending") && !gaveUp && (
           <>
             <h1 className="text-lg font-semibold text-[var(--ink)]">Confirming your payment...</h1>
             <p className="mt-1 text-sm text-[var(--slate-quiet)]">This usually takes a few seconds. Please don&apos;t close this page.</p>
+          </>
+        )}
+        {/* Polling stopped without a final answer, e.g. a Mobile Money
+            prompt the parent hasn't approved yet. The backend keeps checking
+            with Paystack (reconciliation job), so this is honest. */}
+        {!error && (status === "initiated" || status === "pending") && gaveUp && (
+          <>
+            <h1 className="text-lg font-semibold text-[var(--ink)]">Still waiting for confirmation</h1>
+            <p className="mt-1 text-sm text-[var(--slate-quiet)]">
+              If you approved the payment, you don&apos;t need to pay again. We keep checking, and it will be added to your
+              child&apos;s account automatically, usually within 30 minutes.
+            </p>
+            <p className="mt-3 text-xs text-[var(--slate-quiet)]">Reference: <span className="font-mono">{reference}</span></p>
           </>
         )}
         {!error && (status === "failed" || status === "cancelled") && (

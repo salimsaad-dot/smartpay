@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const pool = require('../db');
 const { hashToken } = require('../utils/paymentLink');
-const { recalculateInvoiceBalance } = require('../utils/invoiceRules');
+const { finalizePaymentEvent } = require('../utils/paymentFinalizer');
 const paystackGateway = require('../utils/paystackGateway');
 const { ACCESS_COLUMNS_SQL, describeAccess } = require('../utils/schoolAccess');
 
@@ -167,60 +167,6 @@ exports.initializePayment = async (req, res) => {
     }
 };
 
-// The one place a payment ever gets finalized, called from BOTH the
-// webhook handler and the status-poll fallback below — so a payment
-// whose webhook is delayed, lost, or never arrives at all still gets
-// correctly credited the moment anything (webhook delivery or a parent
-// checking their status page) independently confirms it with Paystack.
-// Always logs to payment_attempts regardless of outcome, is idempotent
-// against an already-finalized payment, and never marks a payment
-// successful on amount mismatch. Returns the resulting status.
-async function finalizePaymentEvent(payment, result, source) {
-    await pool.query(
-        `INSERT INTO payment_attempts (payment_id, provider_reference, status, response_metadata_json) VALUES (?, ?, ?, ?)`,
-        [payment.id, result.reference, result.status, JSON.stringify({ source, channel: result.channel, amountGhs: result.amountGhs })]
-    );
-
-    // Idempotency: this can be called twice for the same payment (a
-    // redelivered webhook, or a status poll racing a webhook that just
-    // landed) — a second finalize of an already-finalized payment must
-    // never be reprocessed (an already-success payment credited twice, or
-    // an already-failed one flipped back).
-    if (payment.status === 'success' || payment.status === 'failed' || payment.status === 'cancelled') {
-        return payment.status;
-    }
-
-    if (result.status !== 'success') {
-        if (result.status === 'initiated' || result.status === 'pending') return result.status;
-        await pool.query('UPDATE payments SET status = ? WHERE id = ?', [result.status, payment.id]);
-        return result.status;
-    }
-
-    if (Math.abs(Number(result.amountGhs) - Number(payment.amount)) > 0.01) {
-        console.error('Payment finalize: amount mismatch for', result.reference, 'expected', payment.amount, 'got', result.amountGhs);
-        await pool.query(`UPDATE payments SET status = 'failed' WHERE id = ?`, [payment.id]);
-        return 'failed';
-    }
-
-    const connection = await pool.getConnection();
-    try {
-        await connection.beginTransaction();
-        await connection.query(
-            `UPDATE payments SET status = 'success', method = ?, provider_reference = ?, paid_at = ? WHERE id = ?`,
-            [result.channel, result.reference, result.paidAt, payment.id]
-        );
-        await recalculateInvoiceBalance(connection, payment.invoice_id);
-        await connection.commit();
-    } catch (err) {
-        await connection.rollback();
-        throw err;
-    } finally {
-        connection.release();
-    }
-
-    return 'success';
-}
-
 // Lets the success/pending page show an honest status even if Paystack's
 // webhook hasn't arrived yet ("Payment redirect succeeds but webhook
 // arrives later" — a spec-listed edge case). Falls back to a live
@@ -242,11 +188,16 @@ exports.getPaymentStatus = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Payment not found.' });
         }
 
+        // Ask Paystack directly while our copy is still open. A 'cancelled'
+        // ("abandoned") answer leaves the payment open, so the page keeps
+        // showing "Confirming" while a Mobile Money prompt is still pending.
         let status = payment.status;
-        if (status === 'initiated' || status === 'pending') {
+        if (status === 'initiated' || status === 'pending' || status === 'failed') {
             try {
                 const live = await paystackGateway.verifyTransaction(req.params.reference);
-                if (live.status !== status) {
+                // Only a settled answer changes anything; skipping the rest
+                // keeps every 3-second poll from writing an attempt row.
+                if (live.status === 'success' || (live.status === 'failed' && status !== 'failed')) {
                     status = await finalizePaymentEvent(payment, { ...live, reference: req.params.reference }, 'status_poll');
                 }
             } catch {
@@ -264,10 +215,12 @@ exports.getPaymentStatus = async (req, res) => {
 
 // Paystack's server-to-server confirmation — public (no verifyToken; a
 // webhook has no logged-in session), authenticated instead by the
-// signature check below. Always responds 200 once the signature check
-// passes, even for event types/references we don't act on — Paystack
-// retries on non-2xx, and retrying an event we deliberately ignore would
-// just spam this endpoint forever.
+// signature check below. Responds 200 for event types/references we
+// deliberately don't act on (Paystack retries on non-2xx, and retrying an
+// ignored event would spam this endpoint forever), but 500 when we failed
+// to process a real one (e.g. the database was paused), so Paystack
+// retries it. finalizePaymentEvent is safe to run again for the same
+// payment, and the reconciliation job catches anything retries miss.
 exports.webhook = async (req, res) => {
     const signature = req.headers['x-paystack-signature'];
     if (!paystackGateway.validateWebhookSignature(req.rawBody, signature)) {
@@ -290,9 +243,7 @@ exports.webhook = async (req, res) => {
         await finalizePaymentEvent(payment, event, 'webhook');
         res.status(200).json({ status: 'success' });
     } catch (error) {
-        console.error('Paystack webhook processing failed:', error);
-        // Still 200: this is now a "we have a bug" case needing a human to
-        // reconcile, not something Paystack retrying will fix on its own.
-        res.status(200).json({ status: 'error' });
+        console.error('Paystack webhook processing failed (Paystack will retry):', error);
+        res.status(500).json({ status: 'error' });
     }
 };

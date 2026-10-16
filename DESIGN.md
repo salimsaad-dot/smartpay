@@ -2373,6 +2373,48 @@ being considered done, not just locally.
         login with the reason.
     - **Still open:** Paystack subaccounts (Future Work), so each school's
       online payments settle to that school.
+- **Payment reconciliation, 2026-10-16.** A council security audit (5
+  advisors plus peer review, every claim checked in code) ranked this the
+  top risk: a parent could pay and never be credited.
+  - **The bugs:**
+    - Paystack answers "abandoned" for any unfinished transaction,
+      including a MoMo prompt still waiting on the phone. The status page
+      recorded that as a final 'cancelled', so the later `charge.success`
+      was ignored.
+    - The webhook answered 200 even when processing failed (e.g. Aiven
+      paused), so Paystack never retried.
+    - Nothing ever went back to Paystack for payments left open.
+    - A late success could also flip a **voided** payment back to success,
+      because the update had no status guard.
+  - **What changed:**
+    - New `utils/paymentFinalizer.js` is the single place status changes.
+      Only success/void are final, and success wins over failed/cancelled.
+    - 'cancelled' is never written from a Paystack answer.
+    - Every update is guarded (`WHERE status IN ...`, `affectedRows`),
+      so races and voided rows can't double-process.
+    - Amount and currency must both match before money is credited.
+    - The webhook returns 500 on a processing error, so Paystack retries.
+    - New `utils/paymentReconciler.js` runs from
+      `POST /api/cron/reconcile-payments`, called by a new GitHub Actions
+      workflow every 30 minutes. It verifies online payments still open
+      after 10 minutes, gives up after 48 hours, and returns 502 if any
+      check errors, so GitHub emails the owner.
+    - `verifyTransaction` now has a 15s timeout.
+    - The status page polls for 60s (was 20s). If still unsettled, it says
+      "you don't need to pay again, it will be added automatically"
+      instead of "Confirming..." forever.
+    - `scripts/audit-past-online-payments.js` checks past
+      cancelled/failed online payments against Paystack (report only;
+      `--fix` credits them) for anyone already affected.
+  - **Verified:** 8 new tests reproduce each failure (abandoned then
+    success, declined then success, legacy cancelled, void not
+    resurrected, wrong currency, webhook DB failure then retry, the job's
+    credit/skip/give-up rules, the endpoint's auth and 502). Full suite
+    313 passing.
+    - The one pre-existing test that calls Paystack's real API
+      ("initializing a valid payment returns a real Paystack authorization
+      URL") fails occasionally on network timing, untouched by this change.
+  - No migration needed.
 
 ## Future Work
 
@@ -2539,3 +2581,4 @@ being considered done, not just locally.
 | 2026-10-09 | Switched `SMS_PROVIDER` back from `arkesel` to `mnotify` in production. | Two real, independent reasons from the user's own live usage: (1) ~200+ already-paid mNotify credits sitting unused in the wallet vs. ~5 remaining on Arkesel — a sunk-cost/budget reason, not a technical one. (2) A real delivery-speed comparison, same message type, same conditions: mNotify delivered in ~30 seconds, Arkesel took ~45 minutes. A 45-minute delay is a serious reliability problem for a fee-reminder product (a parent clicking a link 45 minutes after the admin meant to nudge them is a materially worse experience than the product's own premise promises). Arkesel stays available as the documented fallback (see the 2026-10-07 entries above) if mNotify's account issue recurs, but is no longer the default live path. No code change — purely the existing `SMS_PROVIDER` env var on Render. |
 | 2026-10-14 | MoMo-only reminders are a per-school template choice, not a product-wide mode: the payment link stays available as a variable, and Eagle Vision simply stops using it. | Only one school asked for it, and the link is still the better path for parents who can use it. A per-school template edit needs no new setting or branching code; the one real code gap it exposed (the breakdown's "see link" suffix) is fixed by checking the template body itself, so a link-less template can never point to a link. |
 | 2026-10-15 | Owner-created schools only (no public sign-up); a school is blocked when suspended or past `paid_until`, derived at query time with `CURDATE()`, not by a scheduled job. NULL `paid_until` = no expiry. | Expiry needs no cron that could fail silently: the date check runs wherever access is checked. NULL-means-open keeps every pre-existing pilot school working without a data backfill. The register route survives only under `NODE_ENV=test`, so 22 test files keep their setup unchanged while production has no sign-up path. |
+| 2026-10-16 | Online payment state follows Paystack: only success/void are final, success overrides failed/cancelled, and a scheduled job pulls the status of anything left open, instead of relying on webhooks alone. | Paystack holds the real record of money moving; SmartPay is a copy. A copy fed only by pushes can miss one (lost webhook, paused DB, closed tab) and never notice. Pull-based reconciliation every 30 minutes bounds that to half an hour, and making success win means no stale local status can ever outvote a confirmed payment. |

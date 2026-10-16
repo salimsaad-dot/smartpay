@@ -91,6 +91,7 @@ function parseWebhookEvent(rawBody) {
         reference: event.data.reference,
         status: statusMap[event.data.status] || 'pending',
         amountGhs: Number(event.data.amount) / 100,
+        currency: event.data.currency || null,
         channel: mapChannel(event.data.channel),
         paidAt: event.data.paid_at ? new Date(event.data.paid_at) : new Date(),
     };
@@ -106,8 +107,10 @@ async function verifyTransaction(reference) {
         throw { status: 500, message: 'Payment gateway is not configured.' };
     }
 
+    // A hung call must not stall the status page or the reconciliation job.
     const response = await fetch(`${PAYSTACK_API_URL}/transaction/verify/${encodeURIComponent(reference)}`, {
         headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(15000),
     });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.status) {
@@ -119,6 +122,7 @@ async function verifyTransaction(reference) {
     return {
         status: statusMap[data.status] || 'pending',
         amountGhs: Number(data.amount) / 100,
+        currency: data.currency || null,
         channel: mapChannel(data.channel),
         paidAt: data.paid_at ? new Date(data.paid_at) : null,
         providerReference: data.reference,
