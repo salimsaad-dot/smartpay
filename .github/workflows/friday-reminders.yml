@@ -10,6 +10,11 @@ on:
     - cron: '0 6-20 * * 5'
   workflow_dispatch: {}
 
+# One run at a time: an hourly run waits for the previous one to finish.
+concurrency:
+  group: friday-reminders
+  cancel-in-progress: false
+
 jobs:
   trigger:
     runs-on: ubuntu-latest
@@ -29,6 +34,21 @@ jobs:
             echo "::error::SMARTPAY_BACKEND_URL or CRON_SECRET is missing in repo Settings > Secrets and variables > Actions."
             exit 1
           fi
-          curl -sSf --max-time 60 --retry 3 --retry-delay 10 \
-            -X POST "$url/api/cron/friday-reminders" \
-            -H "x-cron-secret: $secret"
+          # Each call is one ~45-second slice (utils/fridayJob.js); "more": true
+          # means a school paused or wasn't reached yet, so call again. Capped
+          # so a stuck run can't loop forever; the next hourly run resumes.
+          failed=0
+          for i in $(seq 1 40); do
+            code=$(curl -sS --max-time 120 --retry 2 --retry-delay 10 -o response.json -w '%{http_code}'               -X POST "$url/api/cron/friday-reminders"               -H "x-cron-secret: $secret") || { echo "::error::Request failed"; exit 1; }
+            echo "Call $i: HTTP $code"
+            if [ "$code" = "502" ]; then
+              failed=1
+            elif [ "$code" != "200" ]; then
+              cat response.json; echo "::error::Unexpected HTTP $code"; exit 1
+            fi
+            [ "$(jq -r '.more' response.json)" = "true" ] || break
+          done
+          if [ "$failed" = "1" ]; then
+            echo "::error::Some schools' reminders failed (the owner was emailed details)."
+            exit 1
+          fi

@@ -232,8 +232,18 @@ function FridayAutomationPanel({ templates, showToast }) {
     setRunResult(null);
     setError("");
     try {
-      const res = await apiRequest("/scheduled-jobs/friday/run", { method: "POST" });
-      setRunResult(res.data);
+      // The server works in ~20-second slices; a big school comes back
+      // paused, so keep calling until it's done, adding up as we go.
+      const total = { processed: 0, success: 0, failure: 0 };
+      for (let call = 0; call < 100; call += 1) {
+        const res = await apiRequest("/scheduled-jobs/friday/run", { method: "POST" });
+        if (!res.data) break;
+        total.processed += res.data.processed;
+        total.success += res.data.success;
+        total.failure += res.data.failure;
+        setRunResult({ ...total, more: res.data.paused });
+        if (!res.data.paused) break;
+      }
       load();
     } catch (err) {
       setError(err.message);
@@ -294,7 +304,7 @@ function FridayAutomationPanel({ templates, showToast }) {
       </div>
       {runResult && (
         <p className="mt-2 text-sm text-[var(--slate)]">
-          Processed {runResult.processed}, sent {runResult.success}, failed {runResult.failure}.
+          {runResult.more ? "Still sending: " : ""}Processed {runResult.processed}, sent {runResult.success}, failed {runResult.failure}.
         </p>
       )}
 

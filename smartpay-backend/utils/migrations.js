@@ -34,6 +34,7 @@ const MIGRATIONS = [
     'migrate-sms-reminder-index',
     'migrate-sms-allowance',
     'migrate-console-2fa',
+    'migrate-friday-paused',
 ];
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');

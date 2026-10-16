@@ -23,13 +23,17 @@ exports.list = async (req, res) => {
 // own Friday cycle on demand (to test their template/settings, or to
 // manually catch up a cycle) without needing the real weekly scheduler.
 // Scoped to only the caller's own school, unlike the cron endpoint below.
+// Time-sliced like the cron (utils/fridayJob.js): a big school comes back
+// with paused: true and the page calls again until it's done, so no single
+// request runs long enough to be cut off by the proxy.
+const MANUAL_SLICE_MS = 20 * 1000;
 exports.manualRun = async (req, res) => {
     try {
-        const result = await fridayJob.runFridayJobForSchool(req.user.schoolId);
+        const result = await fridayJob.runFridayJobForSchool(req.user.schoolId, { deadline: Date.now() + MANUAL_SLICE_MS });
         if (!result) {
             return res.status(200).json({ status: 'success', message: 'This cycle was already run (or is currently running) — nothing more to do.', data: null });
         }
-        res.status(200).json({ status: 'success', message: 'Friday reminder cycle completed.', data: result });
+        res.status(200).json({ status: 'success', message: result.paused ? 'Sending... more to go.' : 'Friday reminder cycle completed.', data: result });
     } catch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while running the reminder cycle.' });
@@ -44,9 +48,12 @@ exports.manualRun = async (req, res) => {
 // SMS failed (provider down or out of credit), makes this return 502, so
 // the workflow fails and GitHub emails the owner. Partial failures (a few
 // bad phone numbers) don't fail the run but are emailed with the counts.
+// Each call is one time slice (FRIDAY_SLICE_SECONDS, default 45); the
+// response's more: true tells the workflow to call again.
 exports.runForAllSchools = async (req, res) => {
     try {
-        const results = await fridayJob.runFridayJobForAllSchools();
+        const sliceMs = (Number(process.env.FRIDAY_SLICE_SECONDS) || 45) * 1000;
+        const results = await fridayJob.runFridayJobForAllSchools({ deadline: Date.now() + sliceMs });
         const crashed = results.filter((r) => r.error);
         // A retry run that re-attempts only the few earlier failures isn't
         // "every SMS failed"; that alarm is for a school's first run.
@@ -63,7 +70,7 @@ exports.runForAllSchools = async (req, res) => {
             ]);
         }
         const loud = crashed.length > 0 || allFailed.length > 0;
-        res.status(loud ? 502 : 200).json({ status: loud ? 'error' : 'success', data: results });
+        res.status(loud ? 502 : 200).json({ status: loud ? 'error' : 'success', more: fridayJob.hasMoreWork(results), data: results });
     } catch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Server error while running the Friday job.' });

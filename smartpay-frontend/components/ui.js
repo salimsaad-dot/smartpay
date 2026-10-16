@@ -141,7 +141,7 @@ export function StatusBadge({ tone = "neutral", children }) {
 export function statusTone(status) {
   if (["paid", "success", "completed", "sent", "delivered", "active"].includes(status)) return "success";
   if (["unpaid", "failed"].includes(status)) return "danger";
-  if (["partially_paid", "running", "pending", "initiated"].includes(status)) return "warning";
+  if (["partially_paid", "running", "paused", "pending", "initiated"].includes(status)) return "warning";
   return "neutral";
 }
 

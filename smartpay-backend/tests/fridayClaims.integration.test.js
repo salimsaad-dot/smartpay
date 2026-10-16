@@ -3,7 +3,7 @@ const app = require('../server');
 const db = require('../db');
 const smsProvider = require('../utils/smsProvider');
 const opsAlert = require('../utils/opsAlert');
-const { runFridayJobForSchool, claimParent, fridayCycleKey, MAX_SEND_ATTEMPTS } = require('../utils/fridayJob');
+const { runFridayJobForSchool, runFridayJobForAllSchools, hasMoreWork, claimParent, fridayCycleKey, MAX_SEND_ATTEMPTS } = require('../utils/fridayJob');
 
 // Friday reminders never double-text and retry what can be retried
 // (2026-10-16, council fix list). Each test uses its own Friday (`now`), so
@@ -205,5 +205,41 @@ describe('Friday job: claim before send, same-day retries (real DB)', () => {
         expect(sendsTo(parents.steady.phone)).toBe(1);
         expect((await claimFor(parents.flaky.id, now)).status).toBe('unknown');
         expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('friday-unknown'), expect.any(String), expect.any(Array));
+    });
+
+    // Time-sliced runs (2026-10-16): a call stops at its deadline, the job
+    // is 'paused', and the next call carries on without re-texting anyone.
+    describe('time slices', () => {
+        const jobFor = async (now) => (await db.query(
+            "SELECT status, processed_count, success_count FROM scheduled_jobs WHERE school_id = ? AND job_type = 'friday_reminder' AND cycle_key = ?",
+            [schoolId, fridayCycleKey(now, 'Africa/Accra')]))[0][0];
+
+        test('a run that runs out of time pauses, and the next call finishes it without a duplicate', async () => {
+            const now = nextFriday();
+            scriptSends();
+            sendSpy.mockImplementation(async () => {
+                await new Promise((r) => setTimeout(r, 150));
+                return { success: true, providerMessageId: 'mock', error: null };
+            });
+            const first = await runFridayJobForSchool(schoolId, { now, deadline: Date.now() + 50, parentConcurrency: 1 });
+            expect(first).toMatchObject({ paused: true, left: 1, success: 1 });
+            expect(await jobFor(now)).toMatchObject({ status: 'paused', processed_count: 1, success_count: 1 });
+            const firstPhone = sendSpy.mock.calls[0][0];
+
+            const second = await runFridayJobForSchool(schoolId, { now, deadline: Date.now() + 10000 });
+            expect(second).toMatchObject({ paused: false, left: 0, success: 1 });
+            expect(sendSpy).toHaveBeenCalledTimes(2);
+            expect(sendsTo(firstPhone)).toBe(1);
+            expect(await jobFor(now)).toMatchObject({ status: 'completed', processed_count: 2, success_count: 2 });
+            expect(await runFridayJobForSchool(schoolId, { now })).toBeNull();
+        });
+
+        test('out of time before a school starts: it is reported as not started, so the caller comes back', async () => {
+            const results = await runFridayJobForAllSchools({ deadline: Date.now() - 1 });
+            expect(results.every((r) => r.notStarted)).toBe(true);
+            expect(hasMoreWork(results)).toBe(results.length > 0);
+            expect(hasMoreWork([{ schoolId: 1, result: { paused: true } }])).toBe(true);
+            expect(hasMoreWork([{ schoolId: 1, result: { paused: false } }, { schoolId: 2, result: null }])).toBe(false);
+        });
     });
 });

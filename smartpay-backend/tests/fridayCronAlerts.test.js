@@ -22,7 +22,20 @@ describe('Friday cron endpoint failure reporting', () => {
             { schoolId: 1, result: { processed: 5, success: 5, failure: 0 } },
             { schoolId: 2, result: null },
         ]);
-        expect((await call()).status).toBe(200);
+        const res = await call();
+        expect(res.status).toBe(200);
+        expect(res.body.more).toBe(false);
+        expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    test('a school paused or not reached: more is true, so the workflow calls again', async () => {
+        jest.spyOn(fridayJob, 'runFridayJobForAllSchools').mockResolvedValue([
+            { schoolId: 1, result: { processed: 40, success: 40, failure: 0, paused: true } },
+            { schoolId: 2, notStarted: true },
+        ]);
+        const res = await call();
+        expect(res.status).toBe(200);
+        expect(res.body.more).toBe(true);
         expect(alertSpy).not.toHaveBeenCalled();
     });
 

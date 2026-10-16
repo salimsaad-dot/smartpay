@@ -2864,6 +2864,48 @@ being considered done, not just locally.
     - The setup script was run against a test account with real codes.
     - The console login was tested in a browser at phone width.
     - Full suite 388 passing.
+- **Friday reminders: time-sliced, parallel runs, 2026-10-16.** The cron
+  call used to do every school and every parent, one SMS at a time, inside
+  one HTTP request. With more schools that request would outlast the
+  workflow's 60-second curl limit and the host's request timeout.
+  - **Slices:** each call works until a deadline, 45 seconds by default
+    (`FRIDAY_SLICE_SECONDS`).
+    - A school still in progress at the deadline is marked
+      `scheduled_jobs.status = 'paused'` (migration `migrate-friday-paused`).
+      Schools not reached yet come back as `notStarted`.
+    - The response's `more: true` tells the workflow to call again (up to
+      40 calls). Runs are serialized with a `concurrency` group, and the
+      next hourly run is the backstop.
+    - A resumed slice adds to the job's counts.
+  - **Skipping finished parents:** the parent list leaves out anyone
+    already settled this cycle (sent, unknown, a permanent failure, or out
+    of attempts), so a resumed slice doesn't re-walk them.
+  - **Parallelism:** 2 schools at a time, and 4 parents per school
+    (8 at most, under the DB pool's 10 connections). Claims already made
+    this safe.
+    - The SMS allowance is reserved before each send and given back if the
+      send doesn't succeed.
+  - **"Run Now":** it uses 20-second slices, and the page keeps calling
+    until the run is no longer paused.
+  - **Found along the way, a real deadlock:** `createPaymentLink` revoked
+    old links with an UPDATE through the parent_id index. That takes a gap
+    lock, so two parents' links created at once deadlocked on their
+    INSERTs.
+    - It now locks the parent row (`FOR UPDATE`), reads the active link
+      ids, and revokes them by primary key. Different parents no longer
+      block each other, and the same parent still ends with exactly one
+      active link.
+    - The Friday job also retries the link transaction on
+      `ER_LOCK_DEADLOCK`.
+  - **Verified:**
+    - A 30-parent test runs in 150 ms slices: every parent got exactly one
+      SMS, with no errors, one active link each, and a completed job with
+      the right totals.
+    - Other tests cover the pause and resume of one school without a
+      duplicate, `notStarted` / `hasMoreWork`, and `more` in the cron
+      response.
+    - The existing 10-concurrent same-parent link test still passes.
+    - Full suite 392 passing.
 
 ## Future Work
 

@@ -33,18 +33,28 @@ async function createPaymentLink(connection, { schoolId, parentId, createdBy }) 
     const tokenHash = hashToken(token);
     const expiresAt = defaultExpiry();
 
-    await connection.query(
-        `UPDATE payment_links SET status = 'revoked' WHERE parent_id = ? AND school_id = ? AND status = 'active'`,
+    // Revoke by primary key, not by parent_id: an UPDATE through the
+    // parent_id index also locks the gap after it, and two parents' links
+    // being created at once (Friday sends run in parallel) then deadlocked
+    // on their INSERTs (found 2026-10-16). Row locks on exact ids don't.
+    // Locking the parent's own row first queues up simultaneous requests
+    // for the SAME parent, so exactly one link stays active.
+    await connection.query('SELECT id FROM parents WHERE id = ? AND school_id = ? FOR UPDATE', [parentId, schoolId]);
+    const [active] = await connection.query(
+        `SELECT id FROM payment_links WHERE parent_id = ? AND school_id = ? AND status = 'active'`,
         [parentId, schoolId]
     );
-    await connection.query(
+    if (active.length) {
+        await connection.query(`UPDATE payment_links SET status = 'revoked' WHERE id IN (?) AND status = 'active'`, [active.map((r) => r.id)]);
+    }
+    const [inserted] = await connection.query(
         `INSERT INTO payment_links (school_id, parent_id, token_hash, scope, expires_at, created_by)
          VALUES (?, ?, ?, 'parent_all', ?, ?)`,
         [schoolId, parentId, tokenHash, expiresAt, createdBy]
     );
 
     const url = `${process.env.FRONTEND_URL || 'http://localhost:3100'}/pay/${token}`;
-    return { token, url, expiresAt };
+    return { id: inserted.insertId, token, url, expiresAt };
 }
 
 module.exports = { generateToken, hashToken, defaultExpiry, createPaymentLink };
