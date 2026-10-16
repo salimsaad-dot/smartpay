@@ -545,5 +545,71 @@ describe('online payments — secure payment links, public checkout, and Paystac
             expect(res.body.data.errors.map((e) => e.reference)).toContain(broken);
             expect(await statusOf(broken)).toBe('initiated');
         });
+
+        // Voids, refunds and overpayment (2026-10-16, council fix list item 3).
+        test('a confirmed online payment cannot be voided by the school', async () => {
+            const ref = await insertPayment(3, 'success');
+            const [[{ id }]] = await db.query('SELECT id FROM payments WHERE internal_reference = ?', [ref]);
+            const res = await request(app).post(`/api/payments/${id}/void`).set('Cookie', cookieA).send({ reason: 'trying' });
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/can't be voided/);
+            expect(await statusOf(ref)).toBe('success');
+        });
+
+        test('an unsettled online checkout is left out of the payments list unless asked for', async () => {
+            const ref = await insertPayment(2, 'initiated');
+            const all = await request(app).get('/api/payments').set('Cookie', cookieA);
+            expect(all.body.data.map((p) => p.internal_reference)).not.toContain(ref);
+            const asked = await request(app).get('/api/payments?status=initiated').set('Cookie', cookieA);
+            expect(asked.body.data.map((p) => p.internal_reference)).toContain(ref);
+        });
+
+        test('a Paystack refund (transaction reversed) stops the payment counting and the fee is owed again', async () => {
+            const ref = await insertPayment(14, 'initiated');
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 14 }));
+            const afterPay = await balance();
+            mockVerify({ [ref]: { status: 'refunded', amountGhs: 14, currency: 'GHS' } });
+            const res = await sendWebhook({ event: 'refund.processed', data: { transaction_reference: ref, amount: 1400, currency: 'GHS', status: 'processed' } });
+            expect(res.status).toBe(200);
+            expect(await statusOf(ref)).toBe('refunded');
+            expect(await balance()).toBe(afterPay + 14);
+
+            // Redelivered refund event: no further change.
+            await sendWebhook({ event: 'refund.processed', data: { transaction_reference: ref } });
+            expect(await balance()).toBe(afterPay + 14);
+        });
+
+        test('a refund event Paystack does not report as fully reversed (partial) leaves the payment counted', async () => {
+            const ref = await insertPayment(13, 'initiated');
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: 13 }));
+            const afterPay = await balance();
+            jest.spyOn(console, 'error').mockImplementation(() => {});
+            mockVerify({ [ref]: { status: 'success', amountGhs: 13, currency: 'GHS' } });
+            await sendWebhook({ event: 'refund.processed', data: { transaction_reference: ref, amount: 500 } });
+            expect(await statusOf(ref)).toBe('success');
+            expect(await balance()).toBe(afterPay);
+        });
+
+        test('money received beyond the invoice total shows as refund due instead of disappearing', async () => {
+            const owed = await balance();
+            const ref = await insertPayment(owed, 'initiated');
+            // The bursar records the full amount by hand while the parent's
+            // online payment for the same amount is still in flight.
+            const manual = await request(app).post('/api/payments').set('Cookie', cookieA).send({ invoiceId, amount: owed, method: 'mobile_money' });
+            expect(manual.status).toBe(201);
+            await sendWebhook(chargeSuccessPayload({ reference: ref, amountGhs: owed }));
+            expect(await statusOf(ref)).toBe('success');
+
+            const list = await request(app).get('/api/invoices?overpaid=1').set('Cookie', cookieA);
+            const row = list.body.data.find((i) => i.id === invoiceId);
+            expect(row).toBeDefined();
+            expect(Number(row.refund_due)).toBe(owed);
+            expect(Number(row.balance)).toBe(0);
+
+            // Voiding the duplicate manual entry clears it.
+            await request(app).post(`/api/payments/${manual.body.data.paymentId}/void`).set('Cookie', cookieA).send({ reason: 'parent also paid online' });
+            const after = await request(app).get('/api/invoices?overpaid=1').set('Cookie', cookieA);
+            expect(after.body.data.find((i) => i.id === invoiceId)).toBeUndefined();
+        });
     });
 });

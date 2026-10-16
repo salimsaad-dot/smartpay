@@ -102,6 +102,7 @@ export default function StudentAccountModal({ studentId, currency, onClose, onMa
   const billed = sum(active, "total");
   const paid = sum(active, "paid_amount");
   const owes = sum(active, "balance");
+  const refundDue = sum(active, "refund_due");
   const today = todayString();
   const outstanding = active
     .filter((i) => Number(i.balance) > 0)
@@ -131,6 +132,13 @@ export default function StudentAccountModal({ studentId, currency, onClose, onMa
             <Tile label={owes > 0 ? "Owes" : "Balance"} value={owes > 0 ? formatMoney(owes, currency) : "Fully paid"} tone={owes > 0 ? "danger" : "success"} />
             <Tile label="Overdue" value={formatMoney(overdue, currency)} tone={overdue > 0 ? "warning" : "default"} />
           </div>
+
+          {refundDue > 0 && (
+            <p className="rounded-lg bg-[var(--warning-wash)] p-3 text-sm text-[var(--warning)]" role="status">
+              <strong>Refund due {formatMoney(refundDue, currency)}.</strong> More was received than was owed, usually a
+              payment recorded twice. Void the duplicate hand-recorded payment, or refund the parent.
+            </p>
+          )}
 
           <section>
             <SectionTitle>Outstanding</SectionTitle>
@@ -168,7 +176,7 @@ export default function StudentAccountModal({ studentId, currency, onClose, onMa
               <>
                 <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
                   {shownPayments.map((p) => {
-                    const voided = p.status === "void";
+                    const voided = p.status === "void" || p.status === "refunded";
                     return (
                       <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm">
                         <div className="min-w-0">
@@ -178,7 +186,7 @@ export default function StudentAccountModal({ studentId, currency, onClose, onMa
                           <p className="text-xs text-[var(--slate-quiet)]">{p.invoice_no}{p.reference ? ` · Ref ${p.reference}` : ""}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {voided && <StatusBadge>Voided</StatusBadge>}
+                          {voided && <StatusBadge tone={p.status === "refunded" ? "warning" : "neutral"}>{p.status === "refunded" ? "Refunded" : "Voided"}</StatusBadge>}
                           <span className={`font-semibold ${voided ? "text-[var(--slate-quiet)] line-through" : "text-[var(--success)]"}`}>
                             {formatMoney(p.amount, currency)}
                           </span>

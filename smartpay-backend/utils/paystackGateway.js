@@ -76,6 +76,25 @@ function validateWebhookSignature(rawBody, signatureHeader) {
 // its reference value.
 const RECOGNIZED_CHARGE_EVENTS = new Set(['charge.success', 'charge.failed']);
 
+// Refunds and reversals (added 2026-10-16). Their payload shape differs
+// from charge events, so only the transaction reference is taken from it;
+// the caller then asks Paystack (verifyTransaction) whether the
+// transaction is now reversed, rather than trusting the event's fields.
+const REFUND_EVENTS = new Set(['refund.processed']);
+
+function parseRefundEvent(rawBody) {
+    let event;
+    try {
+        event = JSON.parse(rawBody);
+    } catch {
+        return null;
+    }
+    if (!REFUND_EVENTS.has(event?.event)) return null;
+    const data = event.data || {};
+    const reference = data.transaction_reference || data.transaction?.reference || data.reference;
+    return reference ? { eventType: event.event, reference: String(reference) } : null;
+}
+
 function parseWebhookEvent(rawBody) {
     let event;
     try {
@@ -117,7 +136,7 @@ async function verifyTransaction(reference) {
         throw { status: 502, message: 'Could not check payment status with Paystack.' };
     }
 
-    const statusMap = { success: 'success', failed: 'failed', abandoned: 'cancelled' };
+    const statusMap = { success: 'success', failed: 'failed', abandoned: 'cancelled', reversed: 'refunded' };
     const data = body.data;
     return {
         status: statusMap[data.status] || 'pending',
@@ -129,4 +148,4 @@ async function verifyTransaction(reference) {
     };
 }
 
-module.exports = { initializePayment, validateWebhookSignature, parseWebhookEvent, verifyTransaction };
+module.exports = { initializePayment, validateWebhookSignature, parseWebhookEvent, parseRefundEvent, verifyTransaction };

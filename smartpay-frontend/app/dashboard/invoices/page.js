@@ -203,6 +203,14 @@ function PaymentsPanel({ invoice, currency, onChanged, onToast }) {
   );
 }
 
+// Shown when more was received than the invoice total (refund_due comes
+// from the backend), e.g. a parent paid online while the bursar also
+// recorded their MoMo by hand. The balance alone would just read 0.
+function RefundDue({ invoice, currency }) {
+  if (!(Number(invoice.refund_due) > 0)) return null;
+  return <StatusBadge tone="warning">Refund due {formatMoney(invoice.refund_due, currency)}</StatusBadge>;
+}
+
 export default function InvoicesPage() {
   const { user } = useAuth();
   const [invoices, setInvoices] = useState(null);
@@ -255,6 +263,18 @@ export default function InvoicesPage() {
       {loadError && <div className="mt-4"><ErrorState message={loadError} /></div>}
       {!invoices && !loadError && <div className="mt-6"><LoadingSkeleton lines={3} /></div>}
 
+      {invoices && invoices.some((i) => Number(i.refund_due) > 0) && (
+        <div className="mt-4 rounded-[var(--radius-card)] border border-[var(--warning)]/30 bg-[var(--warning-wash)] p-4 text-sm text-[var(--warning)]" role="status">
+          <p className="font-semibold">
+            {invoices.filter((i) => Number(i.refund_due) > 0).length} fee(s) received more than was owed.
+          </p>
+          <p className="mt-1">
+            Usually a parent paid online while the same payment was also recorded by hand. Void the duplicate
+            hand-recorded payment, or refund the parent. A refund made through Paystack updates here automatically.
+          </p>
+        </div>
+      )}
+
       {invoices && (
         <>
           {/* Phones: one card per invoice, history opens inside the card. */}
@@ -268,7 +288,10 @@ export default function InvoicesPage() {
                     <p className="truncate font-medium text-[var(--ink)]">{inv.first_name} {inv.last_name}</p>
                     <p className="truncate text-xs text-[var(--slate-quiet)]">{inv.fee_type_name} · {inv.class_name} · Due {formatDate(inv.due_date)}</p>
                   </div>
-                  <StatusBadge tone={statusTone(inv.status)}>{STATUS_LABELS[inv.status]}</StatusBadge>
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusBadge tone={statusTone(inv.status)}>{STATUS_LABELS[inv.status]}</StatusBadge>
+                    <RefundDue invoice={inv} currency={currency} />
+                  </div>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div><dt className="text-[var(--slate-quiet)]">Total</dt><dd><AmountDisplay amount={inv.total} currency={currency} /></dd></div>
@@ -307,6 +330,7 @@ export default function InvoicesPage() {
                       <td className="p-3">
                         <div className="flex items-center gap-3">
                           <StatusBadge tone={statusTone(inv.status)}>{STATUS_LABELS[inv.status]}</StatusBadge>
+                          <RefundDue invoice={inv} currency={currency} />
                           {actions(inv)}
                         </div>
                       </td>

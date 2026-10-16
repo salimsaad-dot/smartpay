@@ -18,7 +18,15 @@ exports.list = async (req, res) => {
         if (invoiceId) { sql += ' AND p.invoice_id = ?'; params.push(invoiceId); }
         if (studentId) { sql += ' AND p.student_id = ?'; params.push(studentId); }
         if (method) { sql += ' AND p.method = ?'; params.push(method); }
-        if (status) { sql += ' AND p.status = ?'; params.push(status); }
+        if (status) {
+            sql += ' AND p.status = ?'; params.push(status);
+        } else {
+            // An online checkout that was only started, or that failed, is
+            // not a payment: no money moved. Leaving these out by default
+            // keeps them out of the Payments page totals and the student
+            // account history (pass ?status= to see them).
+            sql += " AND NOT (p.source = 'online' AND p.status IN ('initiated', 'pending', 'failed', 'cancelled'))";
+        }
         if (startDate) { sql += ' AND DATE(p.created_at) >= ?'; params.push(startDate); }
         if (endDate) { sql += ' AND DATE(p.created_at) <= ?'; params.push(endDate); }
         // Added for Reports > Collection Summary's payment-method
@@ -157,12 +165,19 @@ exports.voidPayment = async (req, res) => {
                 await connection.beginTransaction();
                 await lockInvoice(connection, found.invoice_id);
                 const [[payment]] = await connection.query(
-                    'SELECT id, invoice_id, status FROM payments WHERE id = ? AND school_id = ? FOR UPDATE',
+                    'SELECT id, invoice_id, status, source FROM payments WHERE id = ? AND school_id = ? FOR UPDATE',
                     [req.params.id, req.user.schoolId]
                 );
                 if (payment.status === 'void') {
                     await connection.rollback();
                     return { status: 400, body: { status: 'error', message: 'This payment has already been voided.' } };
+                }
+                // Online money really arrived at Paystack; voiding it would
+                // show the fee as unpaid while the money stays collected.
+                // A refund made through Paystack updates it automatically.
+                if (payment.source === 'online') {
+                    await connection.rollback();
+                    return { status: 400, body: { status: 'error', message: "Online payments can't be voided. If the parent was refunded through Paystack, SmartPay updates it automatically." } };
                 }
                 await connection.query(
                     'UPDATE payments SET status = ?, void_reason = ?, voided_at = NOW(), voided_by = ? WHERE id = ?',

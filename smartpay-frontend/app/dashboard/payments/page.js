@@ -119,7 +119,15 @@ function InvoicePicker({ onPick, onCancel }) {
 // Payment form, deliberately kept as its own copy rather than a shared
 // import — matches this codebase's existing convention of each page
 // owning its own form rather than cross-page component sharing.
+// One ID per opening of the form: a double-clicked or retried submission
+// reaches the backend with the same ID and is recorded once.
+function newSubmissionId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function RecordPaymentForm({ invoice, currency, onClose, onSaved }) {
+  const [submissionId] = useState(newSubmissionId);
   const [amount, setAmount] = useState(invoice.balance);
   const [method, setMethod] = useState("cash");
   const [reference, setReference] = useState("");
@@ -134,7 +142,7 @@ function RecordPaymentForm({ invoice, currency, onClose, onSaved }) {
     try {
       await apiRequest("/payments", {
         method: "POST",
-        body: { invoiceId: invoice.id, amount: Number(amount), method, reference: reference || undefined, note: note || undefined },
+        body: { invoiceId: invoice.id, amount: Number(amount), method, reference: reference || undefined, note: note || undefined, idempotencyKey: submissionId },
       });
       onSaved();
     } catch (err) {
@@ -187,6 +195,10 @@ function VoidAction({ payment, onVoided, onToast }) {
   const [error, setError] = useState("");
 
   if (payment.status === "void") return <StatusBadge tone="neutral">Voided</StatusBadge>;
+  if (payment.status === "refunded") return <StatusBadge tone="warning">Refunded</StatusBadge>;
+  // Online money arrived through Paystack, so it isn't voided here; a
+  // Paystack refund updates it automatically.
+  if (payment.source === "online") return <StatusBadge tone="success">Paid online</StatusBadge>;
 
   if (!voiding) {
     return <LinkButton className="text-[var(--danger)]" onClick={() => setVoiding(true)}>Void</LinkButton>;
@@ -264,7 +276,7 @@ export default function PaymentsPage() {
   // breakdown pattern reportsController.paymentHistory's own summary
   // uses, computed here instead so it respects this page's own filters.
   const breakdown = useMemo(() => {
-    const active = filtered.filter((p) => p.status !== "void");
+    const active = filtered.filter((p) => p.status === "success");
     return {
       total: active.reduce((sum, p) => sum + Number(p.amount), 0),
       online: active.filter((p) => p.source === "online").reduce((sum, p) => sum + Number(p.amount), 0),
@@ -339,7 +351,7 @@ export default function PaymentsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-medium text-[var(--ink)]">{p.first_name} {p.last_name}</p>
-                    <p className="truncate text-xs text-[var(--slate-quiet)]">{p.invoice_no} · {formatDate(p.paid_at)}</p>
+                    <p className="truncate text-xs text-[var(--slate-quiet)]">{p.invoice_no} · {formatDate(p.paid_at || p.created_at)}</p>
                   </div>
                   <AmountDisplay amount={p.amount} currency={currency} />
                 </div>
@@ -367,7 +379,7 @@ export default function PaymentsPage() {
               <tbody>
                 {filtered.map((p) => (
                   <tr key={p.id} className="border-b border-[var(--border)] last:border-b-0">
-                    <td className="p-3 whitespace-nowrap">{formatDate(p.paid_at)}</td>
+                    <td className="p-3 whitespace-nowrap">{formatDate(p.paid_at || p.created_at)}</td>
                     <td className="p-3 font-medium">{p.first_name} {p.last_name}</td>
                     <td className="p-3 font-mono text-xs">{p.invoice_no}</td>
                     <td className="p-3"><AmountDisplay amount={p.amount} currency={currency} /></td>

@@ -25,6 +25,8 @@ const { recalculateInvoiceBalance, lockInvoice } = require('./invoiceRules');
 //     meantime can never be processed twice or brought back to life.
 //   - Money is credited only when the amount and currency match what we
 //     asked Paystack to collect.
+//   - A reversal or refund Paystack confirms moves the payment to
+//     'refunded' (applyRefund), which stops it counting.
 //
 // Returns the payment's status afterwards.
 
@@ -43,7 +45,8 @@ async function finalizePaymentEvent(payment, result, source) {
             JSON.stringify({ source, channel: result.channel, amountGhs: result.amountGhs, currency: result.currency || null })]
     );
 
-    if (payment.status === 'success') return 'success';
+    if (result.status === 'refunded') return applyRefund(payment);
+    if (payment.status === 'success' || payment.status === 'refunded') return payment.status;
     if (payment.status === 'void') {
         if (result.status === 'success') {
             console.error('Payment finalize: Paystack confirmed a payment that was voided in SmartPay; needs manual review:', result.reference);
@@ -98,6 +101,35 @@ async function finalizePaymentEvent(payment, result, source) {
         connection.release();
     }
     return 'success';
+}
+
+// Paystack reports the transaction reversed (a refund the school made, or
+// a reversal). The payment stops counting toward the invoice, so the fee
+// shows as owed again. 'refunded' rather than 'void' keeps "the money went
+// back to the parent" apart from "a bursar cancelled a wrong entry".
+async function applyRefund(payment) {
+    if (payment.status === 'refunded' || payment.status === 'void') return payment.status;
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        await lockInvoice(connection, payment.invoice_id);
+        const [update] = await connection.query(
+            `UPDATE payments SET status = 'refunded' WHERE id = ? AND status IN ('success', 'initiated', 'pending', 'failed', 'cancelled')`,
+            [payment.id]
+        );
+        if (update.affectedRows === 0) {
+            await connection.rollback();
+            return currentStatus(payment.id);
+        }
+        await recalculateInvoiceBalance(connection, payment.invoice_id);
+        await connection.commit();
+        return 'refunded';
+    } catch (err) {
+        await connection.rollback();
+        throw err;
+    } finally {
+        connection.release();
+    }
 }
 
 module.exports = { finalizePaymentEvent, OPEN_STATUSES };

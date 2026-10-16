@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [payments, setPayments] = useState(null);
   const [smsReminders, setSmsReminders] = useState(null);
   const [intelligence, setIntelligence] = useState(null);
+  const [overpaidCount, setOverpaidCount] = useState(0);
   const [period, setPeriod] = useState(null); // { yearName, termName }
   const [error, setError] = useState("");
 
@@ -50,7 +51,7 @@ export default function DashboardPage() {
         // than take anyone's word for it. The full Reports > SMS
         // Activity page still covers any custom date range.
         const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
-        const [collectionRes, arrearsRes, paymentsRes, smsRes, yearsRes, termsRes, intelligenceRes] = await Promise.all([
+        const [collectionRes, arrearsRes, paymentsRes, smsRes, yearsRes, termsRes, intelligenceRes, overpaidRes] = await Promise.all([
           apiRequest("/reports/collection-summary"),
           apiRequest("/arrears"),
           apiRequest("/payments"),
@@ -60,6 +61,7 @@ export default function DashboardPage() {
           // Cached once per calendar day server-side — safe to fire on
           // every dashboard load without re-spending AI quota each time.
           apiRequest("/intelligence/financial-summary").catch(() => ({ data: { ok: false, message: "Couldn't load the AI summary." } })),
+          apiRequest("/invoices?overpaid=1").catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         setCollection(collectionRes.data);
@@ -67,6 +69,7 @@ export default function DashboardPage() {
         setPayments(paymentsRes.data);
         setSmsReminders(smsRes.data);
         setIntelligence(intelligenceRes.data);
+        setOverpaidCount(overpaidRes.data.length);
         const currentYear = yearsRes.data.find((y) => y.is_current);
         const currentTerm = termsRes.data.find((t) => t.is_current);
         setPeriod({ yearName: currentYear?.name, termName: currentTerm?.name });
@@ -107,6 +110,15 @@ export default function DashboardPage() {
       </div>
 
       {error && <div className="mt-6 rounded-lg bg-[var(--danger-wash)] p-4 text-sm text-[var(--danger)]" role="alert">{error}</div>}
+
+      {overpaidCount > 0 && (
+        <Link
+          href="/dashboard/invoices"
+          className="mt-6 block rounded-lg border border-[var(--warning)]/30 bg-[var(--warning-wash)] p-4 text-sm text-[var(--warning)] hover:underline"
+        >
+          <strong>Refund due on {overpaidCount} fee{overpaidCount === 1 ? "" : "s"}:</strong> more was received than was owed. Review on the Invoices page.
+        </Link>
+      )}
 
       {/* AI Financial Summary — regenerated once per calendar day
           server-side, so loading the dashboard again the same day is

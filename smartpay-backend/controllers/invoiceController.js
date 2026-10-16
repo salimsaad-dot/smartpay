@@ -172,10 +172,14 @@ exports.generate = async (req, res) => {
 
 exports.list = async (req, res) => {
     try {
-        const { studentId, termId, classId, status } = req.query;
+        const { studentId, termId, classId, status, overpaid } = req.query;
         const params = [req.user.schoolId];
+        // refund_due: money received beyond the invoice total. balance is
+        // floored at 0, so without this an overpayment (e.g. a parent paid
+        // online while the bursar also recorded their MoMo) was invisible.
         let sql = `
-            SELECT inv.*, s.admission_no, s.first_name, s.last_name, c.name AS class_name, ft.name AS fee_type_name
+            SELECT inv.*, GREATEST(inv.paid_amount - inv.total, 0) AS refund_due,
+                   s.admission_no, s.first_name, s.last_name, c.name AS class_name, ft.name AS fee_type_name
             FROM invoices inv
             JOIN students s ON s.id = inv.student_id
             JOIN classes c ON c.id = s.class_id
@@ -186,6 +190,7 @@ exports.list = async (req, res) => {
         if (termId) { sql += ' AND inv.term_id = ?'; params.push(termId); }
         if (classId) { sql += ' AND s.class_id = ?'; params.push(classId); }
         if (status) { sql += ' AND inv.status = ?'; params.push(status); }
+        if (overpaid === '1') sql += ' AND inv.paid_amount > inv.total';
         sql += ' ORDER BY inv.created_at DESC';
 
         const [invoices] = await pool.query(sql, params);

@@ -228,6 +228,28 @@ exports.webhook = async (req, res) => {
         return res.status(401).json({ status: 'error', message: 'Invalid signature.' });
     }
 
+    const refund = paystackGateway.parseRefundEvent(req.rawBody);
+    if (refund) {
+        try {
+            const [[payment]] = await pool.query('SELECT id, invoice_id, amount, status FROM payments WHERE internal_reference = ?', [refund.reference]);
+            if (payment) {
+                // Ask Paystack rather than trusting the event: only a
+                // transaction Paystack reports as reversed is undone. A
+                // partial refund leaves it 'success' and is logged for review.
+                const live = await paystackGateway.verifyTransaction(refund.reference);
+                if (live.status === 'refunded') {
+                    await finalizePaymentEvent(payment, { ...live, reference: refund.reference }, 'refund_webhook');
+                } else {
+                    console.error('Paystack refund event for a transaction not fully reversed (partial refund?); check by hand:', refund.reference);
+                }
+            }
+            return res.status(200).json({ status: 'success' });
+        } catch (error) {
+            console.error('Paystack refund webhook processing failed (Paystack will retry):', error);
+            return res.status(500).json({ status: 'error' });
+        }
+    }
+
     const event = paystackGateway.parseWebhookEvent(req.rawBody);
     if (!event) {
         return res.status(200).json({ status: 'success' });
