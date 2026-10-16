@@ -5,6 +5,7 @@ const { renderTemplate, redactPaymentLinks } = require('./smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('./reminderCore');
 const smsProvider = require('./smsProvider');
 const opsAlert = require('./opsAlert');
+const smsAllowance = require('./smsAllowance');
 
 // A job that's been 'running' longer than this is treated as abandoned
 // (server crashed mid-run) rather than genuinely in progress, and its
@@ -171,6 +172,8 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
         const [parentRows] = await pool.query(sql, params);
 
         const template = await getTemplate(schoolId, { templateId: school.friday_template_id, preferType: 'friday_reminder' });
+        // The school's monthly SMS allowance (utils/smsAllowance.js).
+        let { remaining: smsRemaining } = await smsAllowance.getAllowance(schoolId);
 
         for (const { parent_id: parentId } of parentRows) {
             processed += 1;
@@ -241,6 +244,18 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
 
                 const variables = await buildVariables(schoolId, scope, link.url, school, template.body);
                 const message = renderTemplate(template.body, variables);
+                if (smsRemaining <= 0) {
+                    await settleClaim(claim.claimId, 'failed', { error: 'Monthly SMS allowance reached.' });
+                    claim.settled = true;
+                    failure += 1;
+                    continue;
+                }
+                if (message.length > smsAllowance.MAX_RENDERED_LENGTH) {
+                    await settleClaim(claim.claimId, 'failed', { error: 'Message too long to send.' });
+                    claim.settled = true;
+                    failure += 1;
+                    continue;
+                }
 
                 const result = await smsProvider.sendSms(scope.parent.phone, message);
                 // Settle the claim first: once the provider has answered, that
@@ -262,7 +277,7 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                         result.success ? 'sent' : 'failed', result.providerMessageId, result.success ? new Date() : null, result.error,
                     ]
                 );
-                if (result.success) success += 1;
+                if (result.success) { success += 1; smsRemaining -= 1; }
                 else if (result.outcomeUnknown) { unknown += 1; failure += 1; }
                 else failure += 1;
             } catch (perParentError) {
@@ -276,6 +291,8 @@ async function runFridayJobForSchool(schoolId, { now = new Date(), respectSendTi
                 failure += 1;
             }
         }
+
+        if (success) await smsAllowance.noteUsage(schoolId);
 
         // Sends that can still be retried keep the job open: marked 'failed'
         // with a note, so the next hourly run reclaims it and retries just

@@ -36,6 +36,7 @@ const ACTION_LABELS = {
   "platform.school_reactivated": "School reactivated by SmartPay",
   "platform.subscription_updated": "Subscription date changed by SmartPay",
   "platform.admin_password_reset": "Admin password reset by SmartPay",
+  "platform.sms_allowance_updated": "SMS allowance changed by SmartPay",
 };
 
 // Entries with no school user are either SmartPay's own actions from the

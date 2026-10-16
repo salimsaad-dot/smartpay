@@ -1,4 +1,6 @@
 const pool = require('../db');
+// Long templates multiply the SMS cost per parent (2026-10-16).
+const { MAX_TEMPLATE_LENGTH } = require('../utils/smsAllowance');
 const { logAction } = require('../utils/auditLog');
 
 exports.list = async (req, res) => {
@@ -19,6 +21,9 @@ exports.create = async (req, res) => {
         const { name, body, type } = req.body;
         if (!name?.trim() || !body?.trim()) {
             return res.status(400).json({ status: 'error', message: 'Name and message body are required.' });
+        }
+        if (body.trim().length > MAX_TEMPLATE_LENGTH) {
+            return res.status(400).json({ status: 'error', message: `Keep the message under ${MAX_TEMPLATE_LENGTH} characters (about 3 SMS); longer messages cost more per parent.` });
         }
         const [result] = await pool.query(
             `INSERT INTO sms_templates (school_id, name, body, type) VALUES (?, ?, ?, ?)`,
@@ -45,6 +50,9 @@ exports.update = async (req, res) => {
         const { name, body, status } = req.body;
         if (!name?.trim() || !body?.trim()) {
             return res.status(400).json({ status: 'error', message: 'Name and message body are required.' });
+        }
+        if (body.trim().length > MAX_TEMPLATE_LENGTH) {
+            return res.status(400).json({ status: 'error', message: `Keep the message under ${MAX_TEMPLATE_LENGTH} characters (about 3 SMS); longer messages cost more per parent.` });
         }
 
         const [[before]] = await pool.query('SELECT name, body, status FROM sms_templates WHERE id = ? AND school_id = ?', [req.params.id, req.user.schoolId]);

@@ -107,7 +107,7 @@ exports.getMe = (req, res) => {
 exports.listSchools = async (req, res) => {
     try {
         const [rows] = await pool.query(
-            `SELECT s.id, s.name, s.code, s.created_at, ${ACCESS_COLUMNS_SQL},
+            `SELECT s.id, s.name, s.code, s.created_at, s.sms_monthly_limit, ${ACCESS_COLUMNS_SQL},
                     (SELECT u.name FROM users u WHERE u.school_id = s.id AND u.role = 'school_admin' ORDER BY u.id LIMIT 1) AS admin_name,
                     (SELECT u.email FROM users u WHERE u.school_id = s.id AND u.role = 'school_admin' ORDER BY u.id LIMIT 1) AS admin_email,
                     (SELECT MAX(u.last_login_at) FROM users u WHERE u.school_id = s.id) AS last_login_at,
@@ -129,6 +129,7 @@ exports.listSchools = async (req, res) => {
                 lastLoginAt: row.last_login_at,
                 studentCount: Number(row.student_count),
                 smsThisMonth: Number(row.sms_this_month),
+                smsMonthlyLimit: row.sms_monthly_limit === null ? null : Number(row.sms_monthly_limit),
                 status: row.school_status,
                 state: access.blocked ? access.reason : 'active',
                 ...billingSummary(row),
@@ -182,6 +183,13 @@ exports.updateSchool = async (req, res) => {
             }
             updates.paid_until = body.paidUntil;
         }
+        if (body.smsMonthlyLimit !== undefined) {
+            const limit = body.smsMonthlyLimit === null || body.smsMonthlyLimit === '' ? null : Number(body.smsMonthlyLimit);
+            if (limit !== null && (!Number.isInteger(limit) || limit < 0 || limit > 1000000)) {
+                return res.status(400).json({ status: 'error', message: 'SMS allowance must be a whole number, or empty for no limit.' });
+            }
+            updates.sms_monthly_limit = limit;
+        }
         if (Object.keys(updates).length === 0) {
             return res.status(400).json({ status: 'error', message: 'Nothing to update.' });
         }
@@ -194,10 +202,12 @@ exports.updateSchool = async (req, res) => {
 
         const action = updates.status === 'suspended' ? 'platform.school_suspended'
             : updates.status === 'active' ? 'platform.school_reactivated'
-                : 'platform.subscription_updated';
+                : 'sms_monthly_limit' in updates && !('paid_until' in updates) ? 'platform.sms_allowance_updated'
+                    : 'platform.subscription_updated';
         await logPlatformAction(req, schoolId, action,
             { status: before.school_status, paidUntil: before.paid_until },
-            { status: updates.status ?? before.school_status, paidUntil: 'paid_until' in updates ? updates.paid_until : before.paid_until });
+            { status: updates.status ?? before.school_status, paidUntil: 'paid_until' in updates ? updates.paid_until : before.paid_until,
+                ...('sms_monthly_limit' in updates ? { smsMonthlyLimit: updates.sms_monthly_limit } : {}) });
 
         res.status(200).json({ status: 'success', message: 'School updated.' });
     } catch (error) {

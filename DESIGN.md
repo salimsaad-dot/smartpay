@@ -2810,6 +2810,29 @@ being considered done, not just locally.
   - **Verified:** tests for dates, UTC and the AI cooldown. Real headers
     were checked on a running server, and Go Back was tested in a
     browser. Full suite 373 passing.
+- **Per-school SMS allowance and message length cap, 2026-10-16.** Every
+  school sends through the owner's one SMS account. Before this, a single
+  school (or a stolen admin login) could spend all of the owner's credit.
+  - **Allowance:** `schools.sms_monthly_limit` (migration
+    `migrate-sms-allowance`). NULL means no limit, and every existing
+    school starts at NULL. The owner sets it in the console's Manage dialog
+    (audit `platform.sms_allowance_updated`). The list shows "used /
+    limit".
+  - **What counts:** SMS sent or delivered since the 1st of the month
+    (`utils/smsAllowance.js`).
+  - **When the limit is reached:**
+    - A manual send gets a 403 `SMS_ALLOWANCE_REACHED`, before any payment
+      link is created.
+    - The Friday job settles the remaining claims as failed, so they are
+      not retried.
+  - **Owner alerts:** an email at 80% and another at 100%, once per school
+    per month.
+  - **Length:** templates over 480 characters are refused when saved. A
+    rendered message over 765 characters (about 5 SMS) is not sent, because
+    a long fee breakdown can grow it.
+  - **Verified:** tests cover the Friday stop, the manual 403, the
+    template cap and bad allowance values. The allowance was also set in
+    the console in a real browser. Full suite 377 passing.
 
 ## Future Work
 

@@ -134,6 +134,7 @@ function AddSchoolModal({ onClose, onCreated }) {
 
 function ManageSchoolModal({ school, onClose, onChanged, showToast }) {
   const [paidUntil, setPaidUntil] = useState(school.paidUntil || "");
+  const [smsLimit, setSmsLimit] = useState(school.smsMonthlyLimit ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -199,6 +200,24 @@ function ManageSchoolModal({ school, onClose, onChanged, showToast }) {
             {school.paidUntil && (
               <LinkButton disabled={busy} onClick={() => update({ paidUntil: null }, "Expiry removed.")}>Remove expiry</LinkButton>
             )}
+          </div>
+        </section>
+
+        <section className="border-t border-[var(--border)] pt-4">
+          <h3 className="text-sm font-semibold text-[var(--ink)]">SMS allowance</h3>
+          <p className="mt-0.5 text-xs text-[var(--slate-quiet)]">
+            SMS per month on your SMS account. {school.smsThisMonth} used this month. Empty means no limit. When it&apos;s reached, this school&apos;s reminders pause until next month.
+          </p>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <Field label="SMS per month" className="w-40">
+              <input type="number" min="0" step="1" value={smsLimit} onChange={(e) => setSmsLimit(e.target.value)} className={inputClass} placeholder="No limit" />
+            </Field>
+            <Button
+              disabled={busy || String(smsLimit) === String(school.smsMonthlyLimit ?? "")}
+              onClick={() => update({ smsMonthlyLimit: smsLimit === "" ? null : Number(smsLimit) }, "SMS allowance updated.")}
+            >
+              Save allowance
+            </Button>
           </div>
         </section>
 
@@ -338,7 +357,7 @@ export default function PlatformConsolePage() {
                           <p className="text-xs text-[var(--slate-quiet)]">{s.adminEmail}</p>
                         </td>
                         <td className="px-4 py-3 text-right text-[var(--ink)]">{s.studentCount}</td>
-                        <td className="px-4 py-3 text-right text-[var(--ink)]">{s.smsThisMonth}</td>
+                        <td className="px-4 py-3 text-right text-[var(--ink)]">{s.smsThisMonth}{s.smsMonthlyLimit !== null && <span className="text-[var(--slate-quiet)]"> / {s.smsMonthlyLimit}</span>}</td>
                         <td className="px-4 py-3 text-[var(--slate)]">{paidUntilText(s)}</td>
                         <td className="px-4 py-3"><StatusBadge tone={badge.tone}>{badge.label}</StatusBadge></td>
                         <td className="px-4 py-3 text-right"><LinkButton onClick={() => setManaging(s.id)}>Manage</LinkButton></td>
@@ -361,7 +380,7 @@ export default function PlatformConsolePage() {
                       </div>
                       <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
                     </div>
-                    <p className="mt-2 text-sm text-[var(--slate)]">{s.studentCount} students · {s.smsThisMonth} SMS this month</p>
+                    <p className="mt-2 text-sm text-[var(--slate)]">{s.studentCount} students · {s.smsThisMonth}{s.smsMonthlyLimit !== null ? ` / ${s.smsMonthlyLimit}` : ""} SMS this month</p>
                     <p className="text-sm text-[var(--slate)]">Paid until: {paidUntilText(s)}</p>
                     <Button variant="secondary" className="mt-3 w-full" onClick={() => setManaging(s.id)}>Manage</Button>
                   </MobileRecordCard>

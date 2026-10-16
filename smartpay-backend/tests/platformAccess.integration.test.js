@@ -191,9 +191,19 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
         ]));
     });
 
+    test("the owner sets a school's SMS allowance, and the list shows it", async () => {
+        expect((await setSchool({ smsMonthlyLimit: 500 })).status).toBe(200);
+        const list = await request(app).get('/api/platform/schools').set('Cookie', ownerCookie);
+        expect(list.body.data.find((s) => s.id === schoolId).smsMonthlyLimit).toBe(500);
+        expect((await setSchool({ smsMonthlyLimit: null })).status).toBe(200);
+    });
+
     test('bad updates are rejected', async () => {
         expect((await setSchool({ status: 'deleted' })).status).toBe(400);
         expect((await setSchool({ paidUntil: 'next month' })).status).toBe(400);
+        expect((await setSchool({ paidUntil: '2027-02-30' })).status).toBe(400);
+        expect((await setSchool({ smsMonthlyLimit: -5 })).status).toBe(400);
+        expect((await setSchool({ smsMonthlyLimit: 2.5 })).status).toBe(400);
         expect((await request(app).patch('/api/platform/schools/999999999').set('Cookie', ownerCookie).send({ status: 'active' })).status).toBe(404);
     });
 });

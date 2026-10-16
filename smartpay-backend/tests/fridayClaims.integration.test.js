@@ -11,6 +11,7 @@ const { runFridayJobForSchool, claimParent, fridayCycleKey, MAX_SEND_ATTEMPTS } 
 describe('Friday job: claim before send, same-day retries (real DB)', () => {
     const MARKER = `CI-CLAIMS-${Date.now()}`;
     let schoolId;
+    let cookie;
     const parents = {};
     let sendSpy;
     let fridayN = 0;
@@ -21,7 +22,7 @@ describe('Friday job: claim before send, same-day retries (real DB)', () => {
             schoolName: MARKER, code: MARKER.toLowerCase(), adminName: 'CI Admin',
             email: `${MARKER.toLowerCase()}@example.com`, password: 'TestPass123',
         });
-        const cookie = reg.headers['set-cookie'][0];
+        cookie = reg.headers['set-cookie'][0];
         schoolId = reg.body.data.schoolId;
         const year = await request(app).post('/api/academic-years').set('Cookie', cookie)
             .send({ name: '2026/2027', startDate: '2026-09-01', endDate: '2027-07-31' });
@@ -87,6 +88,44 @@ describe('Friday job: claim before send, same-day retries (real DB)', () => {
             expect(message).not.toMatch(/\/pay\/[A-Za-z0-9_-]{20,}/);
             expect(message).toContain('/pay/[link]');
         }
+    });
+
+    // Per-school SMS allowance (2026-10-16).
+    describe('SMS allowance', () => {
+        afterEach(async () => {
+            await db.query('UPDATE schools SET sms_monthly_limit = NULL WHERE id = ?', [schoolId]);
+        });
+        const usedThisMonth = async () => Number((await db.query(
+            "SELECT COUNT(*) AS n FROM sms_reminders WHERE school_id = ? AND status IN ('sent','delivered') AND created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+            [schoolId]))[0][0].n);
+
+        test('a Friday run stops sending when the school reaches its monthly allowance', async () => {
+            const now = nextFriday();
+            scriptSends();
+            await db.query('UPDATE schools SET sms_monthly_limit = ? WHERE id = ?', [(await usedThisMonth()) + 1, schoolId]);
+            const run = await runFridayJobForSchool(schoolId, { now });
+            expect(run.success).toBe(1);
+            expect(run.failure).toBe(1);
+            expect(sendSpy).toHaveBeenCalledTimes(1);
+            const [claims] = await db.query('SELECT last_error FROM reminder_send_claims WHERE school_id = ? AND cycle_key = ? AND status = ?',
+                [schoolId, fridayCycleKey(now, 'Africa/Accra'), 'failed']);
+            expect(claims[0].last_error).toMatch(/allowance/);
+        });
+
+        test('a manual reminder is refused once the allowance is used up', async () => {
+            scriptSends();
+            await db.query('UPDATE schools SET sms_monthly_limit = ? WHERE id = ?', [await usedThisMonth(), schoolId]);
+            const res = await request(app).post('/api/reminders/send').set('Cookie', cookie).send({ parentId: parents.steady.id });
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('SMS_ALLOWANCE_REACHED');
+            expect(sendSpy).not.toHaveBeenCalled();
+        });
+
+        test('templates longer than about 3 SMS are refused', async () => {
+            const res = await request(app).post('/api/sms-templates').set('Cookie', cookie).send({ name: 'Too long', body: 'x'.repeat(481) });
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/480 characters/);
+        });
     });
 
     test('five simultaneous claims for one parent: exactly one run gets to send', async () => {

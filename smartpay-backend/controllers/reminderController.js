@@ -3,6 +3,7 @@ const { createPaymentLink } = require('../utils/paymentLink');
 const { renderTemplate, redactPaymentLinks } = require('../utils/smsTemplate');
 const { resolveReminderScope, buildVariables, getTemplate } = require('../utils/reminderCore');
 const smsProvider = require('../utils/smsProvider');
+const smsAllowance = require('../utils/smsAllowance');
 const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
 
 // Preview never generates a real payment link — doing that on every
@@ -63,6 +64,10 @@ exports.send = async (req, res) => {
         if (!smsProvider.validateConfiguration()) {
             return res.status(400).json({ status: 'error', message: 'SMS provider is not configured.' });
         }
+        const allowance = await smsAllowance.getAllowance(req.user.schoolId);
+        if (allowance.remaining <= 0) {
+            return res.status(403).json({ status: 'error', code: 'SMS_ALLOWANCE_REACHED', message: `Your school has used its ${allowance.limit} SMS for this month. Contact SmartPay to raise the allowance.` });
+        }
 
         // Retried whole — a deadlock means MySQL already rolled the entire
         // attempt back, so getting a fresh connection and starting over is
@@ -89,7 +94,11 @@ exports.send = async (req, res) => {
         const message = renderTemplate(template.body, variables);
 
         const cycleKey = `manual-${Date.now()}`;
+        if (message.length > smsAllowance.MAX_RENDERED_LENGTH) {
+            return res.status(400).json({ status: 'error', message: 'This reminder would be too long to send (too many fees listed). Shorten the template or send per child.' });
+        }
         const result = await smsProvider.sendSms(scope.parent.phone, message);
+        if (result.success) await smsAllowance.noteUsage(req.user.schoolId);
 
         const [insertResult] = await pool.query(
             `INSERT INTO sms_reminders
