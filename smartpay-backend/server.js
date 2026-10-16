@@ -29,6 +29,8 @@ const demoRequestRoutes = require('./routes/demoRequestRoutes');
 const platformRoutes = require('./routes/platformRoutes');
 const { connectionRateLimit } = require('./middleware/authRateLimit');
 const { runPendingMigrations } = require('./utils/migrations');
+const { checkConfig } = require('./utils/config');
+const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
@@ -153,10 +155,7 @@ app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found.' });
 });
 
-app.use((err, req, res, next) => {
-    console.error(err);
-    res.status(400).json({ status: 'error', message: err.message || 'Something went wrong.' });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5100;
 // Pending database migrations run before the server accepts any request
@@ -164,6 +163,15 @@ const PORT = process.env.PORT || 5100;
 // deploy failed and keeps the previous version running. SKIP_MIGRATIONS=true
 // is an emergency escape hatch only.
 if (require.main === module) {
+    // Refuse to start half-configured (utils/config.js).
+    const { errors, warnings } = checkConfig();
+    for (const w of warnings) console.warn(`Config warning: ${w}`);
+    if (errors.length) {
+        for (const e of errors) console.error(`Config error: ${e}`);
+        console.error('Refusing to start until these settings are fixed; the previous version keeps serving.');
+        process.exit(1);
+    }
+
     const start = () => app.listen(PORT, '0.0.0.0', () => {
         console.log(`SmartPay server is running on port ${PORT}`);
     });

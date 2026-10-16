@@ -2751,6 +2751,31 @@ being considered done, not just locally.
     - Real browser: a new admin's one-time login lands on Account, can't
       reach other pages, sets a password, reaches the Dashboard, and the
       flags are cleared. 0 page errors.
+- **Startup settings check and a safe error handler, 2026-10-16.** These
+  are two more medium items from the council list.
+  - **Settings check:** new `utils/config.js` `checkConfig()` runs before
+    migrations.
+    - **Errors (refuse to start, so Render keeps the previous version
+      serving):** missing JWT_SECRET or DB_HOST/USER/NAME; an
+      unrecognised SMS_PROVIDER, which used to fall back silently to
+      mNotify; and, when deployed (RENDER=true or
+      NODE_ENV=production), missing FRONTEND_URL or CRON_SECRET.
+    - **Warnings (start anyway):** missing Paystack, SMS, Resend or
+      Gemini keys, or alert email; JWT_SECRET under 32 characters.
+    - The runtime SMS fallback is kept on purpose (an existing test
+      requires sends never to throw). The typo is caught at deploy
+      instead.
+  - **Error handler:** moved to `middleware/errorHandler.js`. It used to
+    send `err.message` back with 400 for every error, leaking internals
+    and blaming the caller for server faults.
+    - Now CORS errors stay 400, malformed JSON is a plain 400, an
+      oversized body is 413, and anything else is a generic 500. The
+      full error is logged server-side only.
+  - **Verified:**
+    - 8 new tests.
+    - A real boot with `SMS_PROVIDER=mnotfy` refused to start with a
+      clear message; a normal boot started.
+    - Full suite 370 passing.
 
 ## Future Work
 
