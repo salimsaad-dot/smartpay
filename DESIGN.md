@@ -2501,6 +2501,52 @@ being considered done, not just locally.
     - Real browser: dashboard alert, invoices banner and badge, "Paid
       online", no 1970 dates, abandoned checkout not listed, online void
       refused. 0 page errors; test data cleaned up.
+- **Nightly encrypted database backups, 2026-10-16.** This is item 4 and
+  the last critical item on the council fix list: SmartPay's ledger
+  existed only on Aiven's free tier, with no copy anywhere. It's adapted
+  from Academia Hub's restore-proven backup.
+  - **How it works:**
+    - `utils/backupSql.js` builds a full SQL backup in memory: every
+      `CREATE TABLE`, then the data, with FK checks off and GENERATED
+      columns skipped. It ends with a per-table row-count manifest and an
+      `END OF SMARTPAY BACKUP` marker.
+    - It's served at `GET /api/cron/backup`, protected by the cron secret.
+    - `.github/workflows/database-backup.yml` runs daily at 03:00. It
+      downloads the backup, **refuses to store it if the end marker is
+      missing** (a cut-off download), encrypts it with
+      `openssl enc -aes-256-cbc -salt -pbkdf2` using the
+      `BACKUP_ENCRYPTION_KEY` repo secret (the repo is public, so the raw
+      SQL never leaves the runner), and stores it as an artifact for 30
+      days.
+  - **Restore proof:**
+    - `utils/backupRestore.js` decrypts openssl's format in Node (PBKDF2
+      SHA-256, 10k iterations). It restores one statement at a time, so
+      XAMPP's 1MB max_allowed_packet is fine, into a scratch database
+      whose name must contain restore/test (it refuses the live one). It
+      maps MySQL 8's utf8mb4_0900_ai_ci collation for MariaDB, then
+      compares every table's row count with the manifest.
+    - `tests/backup.integration.test.js` does a full backup, encrypt,
+      decrypt, restore and verify on every test run, plus wrong-key,
+      truncated-backup, live-database-refused and endpoint-auth tests.
+    - A drill with a backup encrypted by the real openssl CLI and
+      restored by `scripts/verify-backup.js` passed: 26 tables, 949 rows,
+      every count matching.
+  - **Setup:** add a `BACKUP_ENCRYPTION_KEY` repo secret, and keep a copy
+    somewhere safe outside GitHub. Without it the backups can't be
+    opened.
+  - **Restore drill on a real backup:**
+    1. Download it: GitHub, Actions, Database Backup, open a run,
+       Artifacts. Unzip it.
+    2. From smartpay-backend, run
+       `BACKUP_ENCRYPTION_KEY=... node scripts/verify-backup.js FILE.sql.enc`.
+       It restores into a local scratch database, checks it, and drops it.
+  - **Real disaster:**
+    1. Decrypt with
+       `openssl enc -d -aes-256-cbc -pbkdf2 -in FILE.sql.enc -out FILE.sql -pass pass:KEY`.
+    2. Load FILE.sql into the new database
+       (`mysql -h HOST -u USER -p DBNAME < FILE.sql`).
+    3. Point Render's DB_* variables at it.
+  - Full suite 326 passing.
 
 ## Future Work
 

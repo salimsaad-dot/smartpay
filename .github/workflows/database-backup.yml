@@ -1,0 +1,51 @@
+name: Database Backup
+
+on:
+  schedule:
+    # 03:00 Accra time (Ghana is UTC+0, no DST): quiet hours, clear of the
+    # Friday reminder runs (06:00-20:00).
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download, check and encrypt the backup
+        env:
+          BACKUP_URL: ${{ secrets.SMARTPAY_BACKEND_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          url="$(printf '%s' "$BACKUP_URL" | tr -d '[:space:]')"; url="${url%/}"
+          secret="$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')"
+          key="$(printf '%s' "$BACKUP_ENCRYPTION_KEY" | tr -d '[:space:]')"
+          if [ -z "$url" ] || [ -z "$secret" ] || [ -z "$key" ]; then
+            echo "::error::SMARTPAY_BACKEND_URL, CRON_SECRET or BACKUP_ENCRYPTION_KEY is missing in repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          file="smartpay-backup-$(date -u +%F).sql"
+          curl -sSf --max-time 300 --retry 3 --retry-delay 30 \
+            -H "x-cron-secret: $secret" \
+            -o "$file" "$url/api/cron/backup"
+
+          # A download cut off halfway must fail, not be stored as a backup.
+          if ! tail -c 300 "$file" | grep -q "END OF SMARTPAY BACKUP"; then
+            echo "::error::Backup is incomplete (end marker missing); not storing it."
+            exit 1
+          fi
+          echo "Backup OK: $(grep -c '^-- ROWS ' "$file") tables, $(wc -c < "$file") bytes."
+
+          # This repo is public: the raw SQL (parents' phone numbers, password
+          # hashes) never leaves this machine unencrypted. Restore/verify with
+          # smartpay-backend/scripts/verify-backup.js and the same key.
+          openssl enc -aes-256-cbc -salt -pbkdf2 -in "$file" -out "$file.enc" -pass pass:"$key"
+          rm "$file"
+
+      - name: Store the encrypted backup (kept 30 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartpay-backup-${{ github.run_id }}
+          path: smartpay-backup-*.sql.enc
+          retention-days: 30
+          if-no-files-found: error
