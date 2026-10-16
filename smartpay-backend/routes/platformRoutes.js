@@ -10,6 +10,7 @@ router.post('/auth/login', loginRateLimit, controller.login);
 router.post('/auth/verify-code', loginRateLimit, controller.verifyCode);
 router.post('/auth/logout', controller.logout);
 router.get('/auth/me', verifyPlatformAdmin, controller.getMe);
+router.post('/auth/change-password', loginRateLimit, verifyPlatformAdmin, controller.changePassword);
 
 router.get('/schools', verifyPlatformAdmin, controller.listSchools);
 router.post('/schools', verifyPlatformAdmin, controller.createSchool);

@@ -131,6 +131,37 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
             expect((await sendCode(cookie, right)).status).toBe(423);
         });
 
+        test('changing the password needs the current password and a fresh code, and signs out other sessions', async () => {
+            const change = (body, cookie = ownerCookie) => request(app).post('/api/platform/auth/change-password').set('Cookie', cookie).send(body);
+            const lastStep = async () => Number((await db.query('SELECT totp_last_step FROM platform_admins WHERE id = ?', [ownerId]))[0][0].totp_last_step);
+            const freshCode = async () => totp.codeForStep(ownerSecret, Math.max(await lastStep() + 1, totp.currentStep() - 1));
+            const newPassword = 'BrandNewOwnerPass99';
+            // Earlier tests may have used the code one step ahead of the clock.
+            await db.query('UPDATE platform_admins SET totp_last_step = ? WHERE id = ?', [totp.currentStep() - 2, ownerId]);
+
+            expect((await change({ currentPassword: ownerPassword, newPassword }, '')).status).toBe(401);
+            expect((await change({ currentPassword: ownerPassword, newPassword: 'short', code: await freshCode() })).status).toBe(400);
+            expect((await change({ currentPassword: 'wrong-password', newPassword, code: await freshCode() })).status).toBe(401);
+            const usedCode = totp.codeForStep(ownerSecret, await lastStep());
+            expect((await change({ currentPassword: ownerPassword, newPassword, code: usedCode })).status).toBe(401);
+            const [[before]] = await db.query('SELECT password_hash FROM platform_admins WHERE id = ?', [ownerId]);
+            expect(await bcrypt.compare(ownerPassword, before.password_hash)).toBe(true); // nothing changed yet
+
+            const oldCookie = ownerCookie;
+            const ok = await change({ currentPassword: ownerPassword, newPassword, code: await freshCode() });
+            expect(ok.status).toBe(200);
+            const newCookie = cookieFrom(ok);
+            expect((await request(app).get('/api/platform/schools').set('Cookie', newCookie)).status).toBe(200);
+            expect((await request(app).get('/api/platform/schools').set('Cookie', oldCookie)).status).toBe(401);
+            expect((await request(app).post('/api/platform/auth/login').send({ email: ownerEmail, password: ownerPassword })).status).toBe(401);
+            expect((await request(app).post('/api/platform/auth/login').send({ email: ownerEmail, password: newPassword })).status).toBe(200);
+
+            // Put things back for the tests after this one.
+            await db.query('UPDATE platform_admins SET password_hash = ? WHERE id = ?', [await bcrypt.hash(ownerPassword, 10), ownerId]);
+            await db.query("DELETE FROM login_attempts WHERE scope = 'platform' AND account_id = ?", [ownerId]);
+            ownerCookie = newCookie;
+        });
+
         test('an owner without the authenticator set up cannot log in', async () => {
             await db.query('UPDATE platform_admins SET totp_secret = NULL WHERE id = ?', [ownerId]);
             try {

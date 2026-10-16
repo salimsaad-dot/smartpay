@@ -158,6 +158,56 @@ exports.logout = (req, res) => {
     res.status(200).json({ status: 'success', message: 'Logged out.' });
 };
 
+// The owner changes their own console password (2026-10-16; before, only
+// create-platform-admin.js could). Needs the current password AND a fresh
+// authenticator code, so a session left open on someone else's computer
+// isn't enough to take the account over. Every other console session is
+// signed out; this one gets a new cookie and stays in.
+const MIN_OWNER_PASSWORD = 10;
+exports.changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword, code } = req.body || {};
+        if (!currentPassword || !newPassword || !code) {
+            return res.status(400).json({ status: 'error', message: 'Enter your current password, a new password and the code from your app.' });
+        }
+        if (String(newPassword).length < MIN_OWNER_PASSWORD) {
+            return res.status(400).json({ status: 'error', message: `The new password must be at least ${MIN_OWNER_PASSWORD} characters.` });
+        }
+        if (newPassword === currentPassword) {
+            return res.status(400).json({ status: 'error', message: 'Choose a password different from your current one.' });
+        }
+        const [[admin]] = await pool.query('SELECT * FROM platform_admins WHERE id = ?', [req.platformAdmin.id]);
+        const ip = clientIp(req);
+        if (await loginThrottle.isLocked('platform', admin.id, ip) || await loginThrottle.isLocked('platform_mfa', admin.id, ip)) {
+            return res.status(423).json({ status: 'error', message: 'Too many failed attempts from this device. Try again in a few minutes.' });
+        }
+        if (!(await bcrypt.compare(currentPassword, admin.password_hash))) {
+            await loginThrottle.recordFailure('platform', admin.id, ip, { label: `SmartPay console (${admin.email})` });
+            return res.status(401).json({ status: 'error', message: 'Your current password is not right.' });
+        }
+        const lastStep = admin.totp_last_step === null ? null : Number(admin.totp_last_step);
+        const step = totp.verify(admin.totp_secret, code, { afterStep: lastStep });
+        const hash = await bcrypt.hash(String(newPassword), 10);
+        // One guarded UPDATE: uses up the code (it can't be replayed) and
+        // swaps the password together.
+        const [changed] = step === null ? [{ affectedRows: 0 }] : await pool.query(
+            `UPDATE platform_admins SET password_hash = ?, totp_last_step = ?, token_version = token_version + 1
+             WHERE id = ? AND (totp_last_step IS NULL OR totp_last_step < ?)`,
+            [hash, step, admin.id, step]
+        );
+        if (changed.affectedRows !== 1) {
+            await loginThrottle.recordFailure('platform_mfa', admin.id, ip, { label: `SmartPay console code (${admin.email})` });
+            return res.status(401).json({ status: 'error', message: "That code isn't right. Use the newest code in your authenticator app." });
+        }
+        const token = jwt.sign({ kind: 'platform', mfa: true, platformAdminId: admin.id, tokenVersion: admin.token_version + 1 }, process.env.JWT_SECRET, { expiresIn: '12h' });
+        res.cookie(PLATFORM_COOKIE, token, { ...cookieOptions(), maxAge: 12 * 60 * 60 * 1000 });
+        res.status(200).json({ status: 'success', message: 'Password changed. Other console sessions were signed out.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error while changing the password.' });
+    }
+};
+
 exports.getMe = (req, res) => {
     res.status(200).json({ status: 'success', data: req.platformAdmin });
 };

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Plus, Copy, Check } from "lucide-react";
+import { LogOut, Plus, Copy, Check, KeyRound } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { Logo } from "@/components/Logo";
@@ -127,6 +127,58 @@ function AddSchoolModal({ onClose, onCreated }) {
           <input type="date" min={todayIso()} value={form.paidUntil} onChange={set("paidUntil")} className={inputClass} />
         </Field>
         <Button type="submit" disabled={saving} className="w-full">{saving ? "Creating..." : "Create school"}</Button>
+      </form>
+    </Modal>
+  );
+}
+
+// The owner's own password. Needs the current one and an authenticator
+// code; other console sessions are signed out, this one stays.
+function ChangePasswordModal({ onClose, showToast }) {
+  const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirm: "", code: "" });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: key === "code" ? e.target.value.replace(/\D/g, "") : e.target.value }));
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (form.newPassword !== form.confirm) {
+      setError("The two new passwords don't match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiRequest("/platform/auth/change-password", {
+        method: "POST",
+        body: { currentPassword: form.currentPassword, newPassword: form.newPassword, code: form.code },
+      });
+      showToast(res.message);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setForm((f) => ({ ...f, code: "" }));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Change password" description="Use one you don't use anywhere else. Other console sessions will be signed out." onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {error && <ErrorState message={error} />}
+        <Field label="Current password">
+          <input required type="password" autoComplete="current-password" value={form.currentPassword} onChange={set("currentPassword")} className={inputClass} />
+        </Field>
+        <Field label="New password" hint="At least 10 characters.">
+          <input required type="password" minLength={10} autoComplete="new-password" value={form.newPassword} onChange={set("newPassword")} className={inputClass} />
+        </Field>
+        <Field label="New password again">
+          <input required type="password" minLength={10} autoComplete="new-password" value={form.confirm} onChange={set("confirm")} className={inputClass} />
+        </Field>
+        <Field label="Code from your authenticator app">
+          <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={form.code} onChange={set("code")} className={`${inputClass} tracking-[0.3em]`} />
+        </Field>
+        <Button type="submit" disabled={saving || form.code.length !== 6} className="w-full">{saving ? "Changing..." : "Change password"}</Button>
       </form>
     </Modal>
   );
@@ -262,6 +314,7 @@ export default function PlatformConsolePage() {
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [managing, setManaging] = useState(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   const { toast, showToast, dismissToast } = useToast();
 
   const loadSchools = useCallback(() => {
@@ -304,6 +357,7 @@ export default function PlatformConsolePage() {
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-sm text-[var(--slate-quiet)] sm:inline">{owner.name}</span>
           <ThemeToggle />
+          <Button variant="secondary" className="gap-2" onClick={() => setChangingPassword(true)} aria-label="Change password"><KeyRound size={16} /> <span className="hidden sm:inline">Password</span></Button>
           <Button variant="secondary" className="gap-2" onClick={logout}><LogOut size={16} /> <span className="hidden sm:inline">Log out</span></Button>
         </div>
       </header>
@@ -391,6 +445,7 @@ export default function PlatformConsolePage() {
         )}
       </main>
 
+      {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} showToast={showToast} />}
       {adding && <AddSchoolModal onClose={() => setAdding(false)} onCreated={loadSchools} />}
       {current && <ManageSchoolModal school={current} onClose={() => setManaging(null)} onChanged={loadSchools} showToast={showToast} />}
       <Toast {...toast} onDismiss={dismissToast} />

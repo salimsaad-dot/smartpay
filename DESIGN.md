@@ -2906,6 +2906,27 @@ being considered done, not just locally.
       response.
     - The existing 10-concurrent same-parent link test still passes.
     - Full suite 392 passing.
+- **Owner console: change your own password, 2026-10-16.** Before this,
+  only `create-platform-admin.js` could change it. The owner found this
+  while their console password was one they also used elsewhere.
+  - **Where:** a Password button in the console header opens a dialog
+    (`POST /api/platform/auth/change-password`).
+  - **What it needs:** the current password, a new one (10+ characters,
+    different from the current one) and a fresh authenticator code. An
+    open session alone isn't enough.
+  - **What happens:**
+    - One guarded UPDATE uses up the code and swaps the password.
+    - `token_version` goes up, so every other console session ends. This
+      device gets a new cookie and stays in.
+    - Wrong passwords and wrong codes count toward the same lockouts as
+      login.
+  - **Verified:**
+    - A test covers no session, a short password, a wrong current
+      password and a reused code (each leaves the password unchanged).
+      After a success, the old session is out, the old password is
+      refused and the new one works.
+    - The dialog was tested in a browser at phone width.
+    - Full suite 393 passing.
 
 ## Future Work
 
