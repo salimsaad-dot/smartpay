@@ -15,7 +15,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Friday reminder job
+        env:
+          # Secrets pasted into GitHub often carry a stray space or line
+          # break, which made curl fail with "URL malformed" (exit 3) on
+          # every run until 2026-10-16. Strip whitespace and fail clearly.
+          BACKEND_URL: ${{ secrets.SMARTPAY_BACKEND_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -sf --max-time 60 --retry 3 --retry-delay 10 \
-            -X POST "${{ secrets.SMARTPAY_BACKEND_URL }}/api/cron/friday-reminders" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
+          url="$(printf '%s' "$BACKEND_URL" | tr -d '[:space:]')"
+          url="${url%/}"
+          secret="$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')"
+          if [ -z "$url" ] || [ -z "$secret" ]; then
+            echo "::error::SMARTPAY_BACKEND_URL or CRON_SECRET is missing in repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          curl -sSf --max-time 60 --retry 3 --retry-delay 10 \
+            -X POST "$url/api/cron/friday-reminders" \
+            -H "x-cron-secret: $secret"
