@@ -7,6 +7,7 @@ const router = express.Router();
 
 // The SmartPay owner console. Only platform_admins can use these.
 router.post('/auth/login', loginRateLimit, controller.login);
+router.post('/auth/verify-code', loginRateLimit, controller.verifyCode);
 router.post('/auth/logout', controller.logout);
 router.get('/auth/me', verifyPlatformAdmin, controller.getMe);
 

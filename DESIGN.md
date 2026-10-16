@@ -2833,6 +2833,37 @@ being considered done, not just locally.
   - **Verified:** tests cover the Friday stop, the manual 403, the
     template cap and bad allowance values. The allowance was also set in
     the console in a real browser. Full suite 377 passing.
+- **Second login step for the owner console, 2026-10-16.** The console can
+  suspend any school and reset any school admin's password. Before this,
+  the owner's password alone was enough to get in.
+  - **How it works:** a 6-digit code from an authenticator app (RFC 6238,
+    `utils/totp.js`, Node crypto only).
+    - The password step sets a 5-minute `platform_mfa` cookie that opens
+      nothing on its own.
+    - `POST /api/platform/auth/verify-code` checks the code and issues the
+      real session.
+    - `verifyPlatformAdmin` now requires `mfa: true`, so tokens from
+      before this change stop working.
+  - **Setup needs database access:** run `node
+    scripts/setup-console-2fa.js you@example.com`. It shows a QR code and
+    the key as text, and saves only after a correct code. Running it again
+    replaces the phone and signs out every session. There is no setup
+    screen, so a stolen password can't enrol the thief's phone. Until it's
+    set up, the console login answers 403 `MFA_SETUP_REQUIRED`.
+  - **Safeguards:**
+    - Each code works once: `totp_last_step` moves forward with a guarded
+      UPDATE.
+    - 5 wrong codes lock that address for 15 minutes (`login_attempts`
+      scope `platform_mfa`, migration `migrate-console-2fa`). Many failures
+      from several addresses email the owner.
+  - **Verified:**
+    - Tests use the RFC test vectors and cover these cases: a reused code,
+      a wrong code, no password step, a forged or pending token, an old
+      token without the second step, lockout, and an owner who hasn't set
+      it up.
+    - The setup script was run against a test account with real codes.
+    - The console login was tested in a browser at phone width.
+    - Full suite 388 passing.
 
 ## Future Work
 

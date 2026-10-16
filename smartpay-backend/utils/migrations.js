@@ -33,6 +33,7 @@ const MIGRATIONS = [
     'migrate-login-hardening',
     'migrate-sms-reminder-index',
     'migrate-sms-allowance',
+    'migrate-console-2fa',
 ];
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');

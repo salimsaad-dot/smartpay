@@ -1,5 +1,7 @@
 const request = require('supertest');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const totp = require('../utils/totp');
 const app = require('../server');
 const db = require('../db');
 const { SCHOOL_IS_OPEN_SQL } = require('../utils/schoolAccess');
@@ -12,6 +14,8 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
     const MARKER = `ci-plat-${Date.now()}`;
     const ownerEmail = `${MARKER}-owner@example.com`;
     const ownerPassword = 'OwnerPass12345';
+    const ownerSecret = totp.generateSecret();
+    let ownerId;
     const adminEmail = `${MARKER}-admin@example.com`;
     let ownerCookie;
     let schoolId;
@@ -29,7 +33,8 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
 
     beforeAll(async () => {
         const hash = await bcrypt.hash(ownerPassword, 10);
-        await db.query('INSERT INTO platform_admins (name, email, password_hash) VALUES (?, ?, ?)', ['CI Owner', ownerEmail, hash]);
+        const [inserted] = await db.query('INSERT INTO platform_admins (name, email, password_hash, totp_secret) VALUES (?, ?, ?, ?)', ['CI Owner', ownerEmail, hash, ownerSecret]);
+        ownerId = inserted.insertId;
     });
 
     afterAll(async () => {
@@ -41,6 +46,7 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
         await db.query(`DELETE FROM sms_templates WHERE school_id IN (${schoolIds})`);
         await db.query(`DELETE FROM users WHERE school_id IN (${schoolIds})`);
         await db.query(`DELETE FROM schools WHERE code LIKE '${MARKER}%'`);
+        await db.query("DELETE FROM login_attempts WHERE scope IN ('platform', 'platform_mfa') AND account_id = ?", [ownerId]);
         await db.query('DELETE FROM platform_admins WHERE email = ?', [ownerEmail]);
         await db.end();
     });
@@ -66,8 +72,76 @@ describe('platform owner console and school access (real DB, real HTTP)', () => 
         expect(bad.status).toBe(401);
         const res = await request(app).post('/api/platform/auth/login').send({ email: ownerEmail, password: ownerPassword });
         expect(res.status).toBe(200);
-        ownerCookie = cookieFrom(res);
+        expect(res.body.data).toEqual({ mfaRequired: true });
+        // The right password alone opens nothing.
+        const pendingCookie = cookieFrom(res);
+        expect(pendingCookie).not.toContain('platform_token=');
+        expect((await request(app).get('/api/platform/schools').set('Cookie', pendingCookie)).status).toBe(401);
+
+        const step = totp.currentStep();
+        const verified = await request(app).post('/api/platform/auth/verify-code').set('Cookie', pendingCookie)
+            .send({ code: totp.codeForStep(ownerSecret, step) });
+        expect(verified.status).toBe(200);
+        ownerCookie = cookieFrom(verified);
         expect(ownerCookie).toContain('platform_token=');
+        expect((await request(app).get('/api/platform/schools').set('Cookie', ownerCookie)).status).toBe(200);
+    });
+
+    describe('second login step', () => {
+        const passwordStep = async () => cookieFrom(await request(app).post('/api/platform/auth/login').send({ email: ownerEmail, password: ownerPassword }));
+        const sendCode = (cookie, code) => request(app).post('/api/platform/auth/verify-code').set('Cookie', cookie).send({ code });
+
+        afterEach(async () => {
+            await db.query("DELETE FROM login_attempts WHERE scope = 'platform_mfa' AND account_id = ?", [ownerId]);
+        });
+
+        test('a code can only be used once, and a wrong code is refused', async () => {
+            const [[{ totp_last_step: last }]] = await db.query('SELECT totp_last_step FROM platform_admins WHERE id = ?', [ownerId]);
+            const usedCode = totp.codeForStep(ownerSecret, Number(last));
+            const cookie = await passwordStep();
+            expect((await sendCode(cookie, usedCode)).status).toBe(401);
+            const wrong = usedCode === '000000' ? '111111' : '000000';
+            expect((await sendCode(cookie, wrong)).status).toBe(401);
+            // The next code still works on the same pending step.
+            const next = await sendCode(cookie, totp.codeForStep(ownerSecret, Number(last) + 1));
+            expect(next.status).toBe(200);
+        });
+
+        test('no password step, no code check', async () => {
+            const res = await request(app).post('/api/platform/auth/verify-code').send({ code: totp.codeForStep(ownerSecret, totp.currentStep()) });
+            expect(res.status).toBe(401);
+            expect(res.body.code).toBe('MFA_STEP_EXPIRED');
+            // A forged pending token without the secret is refused too.
+            const forged = `platform_mfa=${jwt.sign({ kind: 'platform_mfa', platformAdminId: ownerId, tokenVersion: 0 }, 'wrong-secret')}`;
+            expect((await sendCode(forged, '123456')).status).toBe(401);
+        });
+
+        test('a pending token cannot be used as a console session, nor an old token without the second step', async () => {
+            const [[{ token_version: tokenVersion }]] = await db.query('SELECT token_version FROM platform_admins WHERE id = ?', [ownerId]);
+            const pending = jwt.sign({ kind: 'platform_mfa', platformAdminId: ownerId, tokenVersion }, process.env.JWT_SECRET);
+            expect((await request(app).get('/api/platform/schools').set('Cookie', `platform_token=${pending}`)).status).toBe(401);
+            const old = jwt.sign({ kind: 'platform', platformAdminId: ownerId, tokenVersion }, process.env.JWT_SECRET);
+            expect((await request(app).get('/api/platform/schools').set('Cookie', `platform_token=${old}`)).status).toBe(401);
+        });
+
+        test('five wrong codes lock this device out of the code step', async () => {
+            const cookie = await passwordStep();
+            for (let i = 0; i < 5; i += 1) expect((await sendCode(cookie, '000000')).status).toBe(401);
+            const right = totp.codeForStep(ownerSecret, totp.currentStep() + 1);
+            expect((await sendCode(cookie, right)).status).toBe(423);
+        });
+
+        test('an owner without the authenticator set up cannot log in', async () => {
+            await db.query('UPDATE platform_admins SET totp_secret = NULL WHERE id = ?', [ownerId]);
+            try {
+                const res = await request(app).post('/api/platform/auth/login').send({ email: ownerEmail, password: ownerPassword });
+                expect(res.status).toBe(403);
+                expect(res.body.code).toBe('MFA_SETUP_REQUIRED');
+                expect(res.headers['set-cookie'] || []).toHaveLength(0);
+            } finally {
+                await db.query('UPDATE platform_admins SET totp_secret = ? WHERE id = ?', [ownerSecret, ownerId]);
+            }
+        });
     });
 
     test('the owner creates a school, and its admin can log in with the one-time password', async () => {

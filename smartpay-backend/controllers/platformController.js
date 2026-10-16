@@ -4,9 +4,10 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { clientIp } = require('../utils/clientIp');
 const loginThrottle = require('../utils/loginThrottle');
+const totp = require('../utils/totp');
 
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('not-a-real-password-placeholder', 10);
-const { PLATFORM_COOKIE } = require('../middleware/platformAuth');
+const { PLATFORM_COOKIE, PLATFORM_MFA_COOKIE } = require('../middleware/platformAuth');
 const { createSchoolWithAdmin } = require('../utils/schoolProvisioning');
 const { ACCESS_COLUMNS_SQL, describeAccess, billingSummary } = require('../utils/schoolAccess');
 
@@ -55,6 +56,8 @@ async function logPlatformAction(req, schoolId, action, oldValues, newValues) {
 // WhatsApp or phone, so they work for 72 hours and must be replaced at
 // first login (verifyToken allows nothing else until then).
 const ONE_TIME_PASSWORD_HOURS = 72;
+const MFA_STEP_MINUTES = 5;
+
 async function markOneTimePassword(userId) {
     await pool.query(
         'UPDATE users SET must_change_password = 1, temp_password_expires_at = NOW() + INTERVAL ? HOUR WHERE id = ?',
@@ -84,9 +87,64 @@ exports.login = async (req, res) => {
             return res.status(401).json({ status: 'error', message: 'Invalid email or password.' });
         }
         await loginThrottle.clearFailures('platform', admin.id, ip);
-        await pool.query('UPDATE platform_admins SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = ?', [admin.id]);
 
-        const token = jwt.sign({ kind: 'platform', platformAdminId: admin.id, tokenVersion: admin.token_version }, process.env.JWT_SECRET, { expiresIn: '12h' });
+        // The console can change every school's access, so a password alone
+        // is never enough (2026-10-16). Setting up the authenticator needs
+        // database access (scripts/setup-console-2fa.js), so a stolen
+        // password can't enrol the thief's phone.
+        if (!admin.totp_secret) {
+            return res.status(403).json({
+                status: 'error', code: 'MFA_SETUP_REQUIRED',
+                message: 'Two-step login is not set up for this account yet. Run scripts/setup-console-2fa.js with your email, then log in again.',
+            });
+        }
+        const pending = jwt.sign({ kind: 'platform_mfa', platformAdminId: admin.id, tokenVersion: admin.token_version }, process.env.JWT_SECRET, { expiresIn: MFA_STEP_MINUTES * 60 });
+        res.cookie(PLATFORM_MFA_COOKIE, pending, { ...cookieOptions(), maxAge: MFA_STEP_MINUTES * 60 * 1000 });
+        res.status(200).json({ status: 'success', data: { mfaRequired: true } });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Server error during login.' });
+    }
+};
+
+// Step two: the 6-digit code from the owner's authenticator app.
+exports.verifyCode = async (req, res) => {
+    try {
+        let decoded;
+        try {
+            decoded = jwt.verify(req.cookies?.[PLATFORM_MFA_COOKIE] || '', process.env.JWT_SECRET, { algorithms: ['HS256'] });
+        } catch {
+            decoded = null;
+        }
+        if (decoded?.kind !== 'platform_mfa') {
+            return res.status(401).json({ status: 'error', code: 'MFA_STEP_EXPIRED', message: 'Please enter your email and password again.' });
+        }
+        const [[admin]] = await pool.query('SELECT * FROM platform_admins WHERE id = ?', [decoded.platformAdminId]);
+        if (!admin || admin.token_version !== decoded.tokenVersion || !admin.totp_secret) {
+            return res.status(401).json({ status: 'error', code: 'MFA_STEP_EXPIRED', message: 'Please enter your email and password again.' });
+        }
+
+        const ip = clientIp(req);
+        if (await loginThrottle.isLocked('platform_mfa', admin.id, ip)) {
+            return res.status(423).json({ status: 'error', message: 'Too many wrong codes from this device. Try again in a few minutes.' });
+        }
+        // A code is only good once: totp_last_step moves forward with a
+        // guarded UPDATE, so even two requests at the same moment can't
+        // both use it.
+        const lastStep = admin.totp_last_step === null ? null : Number(admin.totp_last_step);
+        const step = totp.verify(admin.totp_secret, req.body?.code, { afterStep: lastStep });
+        const [claimed] = step === null ? [{ affectedRows: 0 }] : await pool.query(
+            'UPDATE platform_admins SET totp_last_step = ?, last_login_at = NOW() WHERE id = ? AND (totp_last_step IS NULL OR totp_last_step < ?)',
+            [step, admin.id, step]
+        );
+        if (claimed.affectedRows !== 1) {
+            await loginThrottle.recordFailure('platform_mfa', admin.id, ip, { label: `SmartPay console code (${admin.email})` });
+            return res.status(401).json({ status: 'error', message: "That code isn't right. Use the newest code in your authenticator app." });
+        }
+        await loginThrottle.clearFailures('platform_mfa', admin.id, ip);
+
+        const token = jwt.sign({ kind: 'platform', mfa: true, platformAdminId: admin.id, tokenVersion: admin.token_version }, process.env.JWT_SECRET, { expiresIn: '12h' });
+        res.clearCookie(PLATFORM_MFA_COOKIE, cookieOptions());
         res.cookie(PLATFORM_COOKIE, token, { ...cookieOptions(), maxAge: 12 * 60 * 60 * 1000 });
         res.status(200).json({ status: 'success', data: { name: admin.name, email: admin.email } });
     } catch (error) {
