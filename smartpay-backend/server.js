@@ -80,6 +80,28 @@ app.use(cors({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
+// TEMPORARY (2026-10-16): diagnoses which client address the rate limiter
+// sees behind Vercel's rewrite + Render's proxy. Echoes only the caller's
+// own forwarding headers. Remove once trust proxy is fixed.
+const os = require('os');
+const DIAG_INSTANCE = `${os.hostname()}:${process.pid}`;
+app.get('/api/public/whoami', (req, res) => {
+    const pick = (h) => req.headers[h] || null;
+    res.status(200).json({
+        ip: req.ip,
+        ips: req.ips,
+        remoteAddress: req.socket.remoteAddress,
+        xForwardedFor: pick('x-forwarded-for'),
+        xRealIp: pick('x-real-ip'),
+        cfConnectingIp: pick('cf-connecting-ip'),
+        trueClientIp: pick('true-client-ip'),
+        xVercelForwardedFor: pick('x-vercel-forwarded-for'),
+        xVercelProxiedFor: pick('x-vercel-proxied-for'),
+        forwarded: pick('forwarded'),
+        instance: DIAG_INSTANCE,
+    });
+});
+
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'success', message: 'SmartPay API is running.' });
 });
