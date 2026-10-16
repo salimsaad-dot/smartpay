@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
+const { clientIp } = require('../utils/clientIp');
 const { PLATFORM_COOKIE } = require('../middleware/platformAuth');
 const { createSchoolWithAdmin } = require('../utils/schoolProvisioning');
 const { ACCESS_COLUMNS_SQL, describeAccess, billingSummary } = require('../utils/schoolAccess');
@@ -36,7 +37,7 @@ async function logPlatformAction(req, schoolId, action, oldValues, newValues) {
             `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_values_json, new_values_json, ip_address, user_agent)
              VALUES (?, NULL, ?, 'school', ?, ?, ?, ?, ?)`,
             [schoolId, action, schoolId, oldValues ? JSON.stringify(oldValues) : null,
-                JSON.stringify({ ...newValues, by: req.platformAdmin.email }), req.ip, (req.headers['user-agent'] || '').slice(0, 255)]
+                JSON.stringify({ ...newValues, by: req.platformAdmin.email }), clientIp(req), (req.headers['user-agent'] || '').slice(0, 255)]
         );
     } catch (error) {
         console.error('Audit log write failed (action proceeded anyway):', action, error);

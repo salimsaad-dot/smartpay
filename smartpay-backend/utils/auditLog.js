@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { clientIp } = require('./clientIp');
 
 // Scoped to financial and administrative actions, per the spec's own
 // phrasing ("Audit logging for financial and administrative actions"),
@@ -16,7 +17,7 @@ async function logAction(req, { action, entityType, entityId, oldValues, newValu
             [
                 req.user.schoolId, req.user.userId, action, entityType, entityId || null,
                 oldValues ? JSON.stringify(oldValues) : null, newValues ? JSON.stringify(newValues) : null,
-                req.ip, (req.headers['user-agent'] || '').slice(0, 255),
+                clientIp(req), (req.headers['user-agent'] || '').slice(0, 255),
             ]
         );
     } catch (error) {
@@ -46,7 +47,7 @@ async function logAuthEvent(req, { schoolId, userId, action }) {
         await pool.query(
             `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, ip_address, user_agent)
              VALUES (?, ?, ?, 'user', ?, ?, ?)`,
-            [schoolId, userId, action, userId || null, req.ip, (req.headers['user-agent'] || '').slice(0, 255)]
+            [schoolId, userId, action, userId || null, clientIp(req), (req.headers['user-agent'] || '').slice(0, 255)]
         );
     } catch (error) {
         console.error('Audit log write failed (action proceeded anyway):', action, error);

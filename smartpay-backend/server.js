@@ -27,14 +27,14 @@ const auditLogRoutes = require('./routes/auditLogRoutes');
 const intelligenceRoutes = require('./routes/intelligenceRoutes');
 const demoRequestRoutes = require('./routes/demoRequestRoutes');
 const platformRoutes = require('./routes/platformRoutes');
+const { connectionRateLimit } = require('./middleware/authRateLimit');
 
 const app = express();
 
-// Required for req.ip (used by audit logging and rate limiting) to
-// reflect the real client IP once deployed behind a reverse proxy
-// (Render/Railway), rather than the proxy's own address — and for
-// express-rate-limit to correctly key its per-IP buckets in that same
-// environment.
+// Render sits behind Cloudflare and its own load balancer, so req.ip is
+// Render's internal address, not the visitor. Rate limits and the audit log
+// use utils/clientIp.js instead (measured on the live stack 2026-10-16);
+// this setting only keeps Express's own proxy handling sane.
 app.set('trust proxy', 1);
 
 // Same overrides as Academia Hub, same reasoning: this is a pure JSON API
@@ -80,28 +80,6 @@ app.use(cors({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
-// TEMPORARY (2026-10-16): diagnoses which client address the rate limiter
-// sees behind Vercel's rewrite + Render's proxy. Echoes only the caller's
-// own forwarding headers. Remove once trust proxy is fixed.
-const os = require('os');
-const DIAG_INSTANCE = `${os.hostname()}:${process.pid}`;
-app.get('/api/public/whoami', (req, res) => {
-    const pick = (h) => req.headers[h] || null;
-    res.status(200).json({
-        ip: req.ip,
-        ips: req.ips,
-        remoteAddress: req.socket.remoteAddress,
-        xForwardedFor: pick('x-forwarded-for'),
-        xRealIp: pick('x-real-ip'),
-        cfConnectingIp: pick('cf-connecting-ip'),
-        trueClientIp: pick('true-client-ip'),
-        xVercelForwardedFor: pick('x-vercel-forwarded-for'),
-        xVercelProxiedFor: pick('x-vercel-proxied-for'),
-        forwarded: pick('forwarded'),
-        instance: DIAG_INSTANCE,
-    });
-});
-
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'success', message: 'SmartPay API is running.' });
 });
@@ -143,6 +121,9 @@ app.get('/api/keepalive', async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Database connection failed' });
     }
 });
+
+// Cap per real connection on every API route (see middleware/authRateLimit.js).
+app.use('/api', connectionRateLimit);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/academic-years', academicYearRoutes);

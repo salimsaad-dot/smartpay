@@ -1,4 +1,11 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { clientIp, connectionIp } = require('../utils/clientIp');
+
+// Every limiter below keys on the real visitor (utils/clientIp.js), not
+// req.ip, which behind Render is its internal load balancer for everyone.
+// ipKeyGenerator groups an IPv6 visitor's /56 so they can't dodge a limit by
+// rotating addresses within their own block.
+const byVisitor = (req) => ipKeyGenerator(clientIp(req));
 
 // Generous per-IP budget, same reasoning as Academia Hub's: protects
 // /login against credential-stuffing/brute-force without locking out a
@@ -8,6 +15,7 @@ exports.loginRateLimit = rateLimit({
     limit: 60,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: byVisitor,
 });
 
 // Deliberately NOT the same budget as login — that generosity exists
@@ -21,6 +29,7 @@ exports.registerRateLimit = rateLimit({
     limit: 5,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: byVisitor,
 });
 
 // Covers the public, unauthenticated checkout surface (token lookup +
@@ -35,6 +44,7 @@ exports.publicPaymentRateLimit = rateLimit({
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: byVisitor,
 });
 
 // The webhook is also named explicitly in the spec's security
@@ -49,6 +59,7 @@ exports.webhookRateLimit = rateLimit({
     limit: 120,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: byVisitor,
 });
 
 // Not named explicitly in the spec's rate-limiting list (which only
@@ -67,6 +78,7 @@ exports.demoRequestRateLimit = rateLimit({
     limit: 5,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: byVisitor,
 });
 
 exports.reminderRateLimit = rateLimit({
@@ -74,4 +86,19 @@ exports.reminderRateLimit = rateLimit({
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: byVisitor,
+});
+
+// Per-connection cap, applied to all of /api in server.js. Keyed by the one
+// address nobody can fake (Cloudflare's), so a caller who goes straight to
+// Render and invents visitor headers to dodge the limits above still hits
+// this. Generous, because legitimate traffic through Vercel arrives from a
+// handful of Vercel servers shared by many parents.
+exports.connectionRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 1500,
+    standardHeaders: false,
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(connectionIp(req)),
+    message: { status: 'error', message: 'Too many requests from this connection. Please wait a few minutes.' },
 });

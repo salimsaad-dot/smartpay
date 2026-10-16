@@ -2571,6 +2571,42 @@ being considered done, not just locally.
   - **Verified:** 11 new tests (alert helper incl. cooldown, fallback,
     escaping, test guard; Friday endpoint 200/502 cases; mismatch alert).
     Full suite 337 passing.
+- **Rate limits keyed on the real visitor, 2026-10-16.** This is item 6
+  on the council fix list. The council suspected rate limits keyed on
+  Vercel's address. A temporary `/api/public/whoami` on the live stack
+  showed it was worse: `req.ip` was **Render's internal load-balancer
+  address (10.x) for every request**, direct or through Vercel. So every
+  parent, every school's staff and every bot shared a few buckets (30
+  junk requests could block all checkouts), and the audit log recorded
+  10.x for everyone.
+  - **The chain:** visitor, then the Vercel rewrite, then Cloudflare,
+    then Render's load balancer, then the app.
+  - **Measured header behaviour:**
+    - `cf-connecting-ip` is whoever connected to Cloudflare. Faking it
+      gets a 403 from Cloudflare.
+    - `x-vercel-proxied-for` is the real visitor through Vercel, which
+      overwrites a forged one. A direct caller can fake it.
+    - `x-vercel-forwarded-for` is forgeable even through Vercel.
+    - `x-forwarded-for` has visitor-supplied entries first, so it's
+      forgeable.
+  - **The fix:**
+    - New `utils/clientIp.js`. `clientIp()` takes
+      `x-vercel-proxied-for`, then the first `x-forwarded-for`, then
+      `cf-connecting-ip`. Every limiter keys on it (via
+      `ipKeyGenerator`), and so do the audit log and the console's audit
+      entries.
+    - A new per-connection cap, `connectionRateLimit` on all of `/api`
+      (1,500 per 15 min), is keyed by `connectionIp()`, i.e.
+      `cf-connecting-ip`, which can't be faked. A direct caller inventing
+      visitor headers still hits it. It's generous because Vercel traffic
+      arrives from a few shared Vercel servers.
+    - The diagnostic endpoint is removed.
+  - **Future hardening at scale:** a shared-secret header added by a
+    Vercel proxy file, so the backend can trust the visitor header
+    outright. Not needed at pilot size.
+  - **Verified:** 6 new tests (header cases from the live measurements,
+    separate buckets per parent, one parent's 429 not blocking another).
+    Full suite 343 passing.
 
 ## Future Work
 
