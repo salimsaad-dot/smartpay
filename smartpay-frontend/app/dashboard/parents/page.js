@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatMoney } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
+import { PaymentLinkModal } from "@/components/financeModals";
 import {
   EmptyState,
   ErrorState,
@@ -127,38 +128,6 @@ function ChildrenModal({ parent, onClose }) {
           </ul>
         )
       )}
-    </Modal>
-  );
-}
-
-function PaymentLinkModal({ parent, onClose }) {
-  const [state, setState] = useState({ loading: true });
-
-  useEffect(() => {
-    apiRequest(`/parents/${parent.id}/payment-link`, { method: "POST" })
-      .then((res) => setState({ url: res.data.url }))
-      .catch((err) => setState({ error: err.message }));
-  }, [parent.id]);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(state.url);
-    } catch {
-      // Clipboard API can fail/be blocked — the link is still visible and selectable.
-    }
-  }
-
-  return (
-    <Modal title="Payment Link" description={`For ${parent.full_name}'s outstanding balance — valid 30 days`} onClose={onClose}>
-      {state.loading && <p className="text-sm text-[var(--slate-quiet)]">Generating...</p>}
-      {state.error && <p className="text-sm text-[var(--danger)]">{state.error}</p>}
-      {state.url && (
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-lg bg-[var(--hover)] px-3 py-2 text-xs text-[var(--ink)]">{state.url}</code>
-          <Button2 variant="secondary" onClick={copy}>Copy</Button2>
-        </div>
-      )}
-      <div className="mt-4 flex justify-end"><Button2 variant="secondary" onClick={onClose}>Close</Button2></div>
     </Modal>
   );
 }
@@ -379,7 +348,15 @@ export default function ParentsPage() {
           onSaved={() => { load(); showToast("Parent details updated."); }}
         />
       )}
-      {linkingParent && <PaymentLinkModal parent={linkingParent} onClose={() => setLinkingParent(null)} />}
+      {linkingParent && (
+        <PaymentLinkModal
+          parentId={linkingParent.id}
+          parentName={linkingParent.full_name}
+          parentPhone={linkingParent.phone}
+          schoolName={user?.school?.name}
+          onClose={() => setLinkingParent(null)}
+        />
+      )}
       <Toast {...toast} onDismiss={dismissToast} />
     </DashboardShell>
   );

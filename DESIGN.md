@@ -2927,6 +2927,26 @@ being considered done, not just locally.
       refused and the new one works.
     - The dialog was tested in a browser at phone width.
     - Full suite 393 passing.
+- **"Get payment link" explained, with WhatsApp sharing, 2026-10-18.** The
+  owner asked what the Arrears page's Payment Link button did. It made a
+  link straight away and showed a cut-off URL, with no explanation. It also
+  silently cancelled the link in the parent's last SMS reminder (a parent
+  has one active link at a time). The Parents page did the same, and said
+  "valid 30 days" (links have lasted 10 days since 2026-10-16).
+  - **One shared dialog:** `PaymentLinkModal` in
+    `components/financeModals.js`, used on both pages.
+    - **Before anything happens:** what the link is for (a private page to
+      pay online, sent by the school however it likes, no SMS used) and a
+      warning that it replaces the link in their last reminder. Nothing is
+      created until "Create link".
+    - **After creating:** the full link, its real expiry date, Copy, and
+      **Share on WhatsApp**. That opens wa.me with the parent's number
+      (Ghana 0XXXXXXXXX converted to 233XXXXXXXXX) and a ready message
+      naming the parent, the child and the school. With no usable number,
+      WhatsApp asks for the contact.
+  - **Verified in a browser at phone width:** opening the dialog creates
+    no link, the warning shows, Create shows the full link, and the
+    WhatsApp link carries the number and the payment URL.
 
 ## Future Work
 

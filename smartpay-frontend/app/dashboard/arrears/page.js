@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatDate } from "@/lib/format";
 import DashboardShell from "@/components/DashboardShell";
-import { SendReminderModal } from "@/components/financeModals";
+import { PaymentLinkModal, SendReminderModal } from "@/components/financeModals";
 import {
   AmountDisplay,
   Button,
@@ -21,46 +21,6 @@ import {
   inputClass,
 } from "@/components/ui";
 
-function PaymentLinkCell({ parentId }) {
-  const [state, setState] = useState(null);
-
-  async function generate() {
-    setState({ loading: true });
-    try {
-      const res = await apiRequest(`/parents/${parentId}/payment-link`, { method: "POST" });
-      setState({ url: res.data.url });
-    } catch (err) {
-      setState({ error: err.message });
-    }
-  }
-
-  async function copy(url) {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // Clipboard API can fail/be blocked — link stays visible on screen either way.
-    }
-  }
-
-  if (!parentId) return <span className="text-xs text-[var(--slate-quiet)]">No parent linked</span>;
-
-  if (state?.url) {
-    return (
-      <div className="flex min-w-0 items-center gap-1">
-        <code className="max-w-[140px] truncate rounded bg-[var(--hover)] px-1.5 py-0.5 text-xs">{state.url}</code>
-        <LinkButton onClick={() => copy(state.url)}>Copy</LinkButton>
-      </div>
-    );
-  }
-
-  return (
-    <LinkButton onClick={generate} disabled={state?.loading}>
-      {state?.loading ? "Generating..." : "Payment Link"}
-    </LinkButton>
-  );
-}
-
-
 export default function ArrearsPage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -70,6 +30,7 @@ export default function ArrearsPage() {
   const [filters, setFilters] = useState({ classId: "", termId: "", minBalance: "", maxBalance: "" });
   const [groupByParent, setGroupByParent] = useState(false);
   const [reminderTarget, setReminderTarget] = useState(null);
+  const [linkTarget, setLinkTarget] = useState(null);
 
   function load() {
     const params = new URLSearchParams();
@@ -109,7 +70,9 @@ export default function ArrearsPage() {
   function invoiceActions(inv) {
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <PaymentLinkCell parentId={inv.parent_id} />
+        {inv.parent_id
+          ? <LinkButton onClick={() => setLinkTarget({ parentId: inv.parent_id, parentName: inv.parent_name, parentPhone: inv.parent_phone, childNames: [inv.first_name] })}>Get payment link</LinkButton>
+          : <span className="text-xs text-[var(--slate-quiet)]">No parent linked</span>}
         {inv.parent_id && (
           <LinkButton
             onClick={() => setReminderTarget({ parentId: inv.parent_id, studentId: inv.student_id, label: `${inv.first_name} ${inv.last_name} — all outstanding fees` })}
@@ -124,7 +87,9 @@ export default function ArrearsPage() {
   function groupActions(g) {
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <PaymentLinkCell parentId={g.parentId} />
+        {g.parentId
+          ? <LinkButton onClick={() => setLinkTarget({ parentId: g.parentId, parentName: g.parentName, parentPhone: g.parentPhone, childNames: Array.from(g.children).map((n) => n.split(" ")[0]) })}>Get payment link</LinkButton>
+          : <span className="text-xs text-[var(--slate-quiet)]">No parent linked</span>}
         {g.parentId && (
           <LinkButton
             onClick={() => setReminderTarget({ parentId: g.parentId, studentId: null, label: `${g.parentName} · ${Array.from(g.children).join(", ")}` })}
@@ -311,6 +276,7 @@ export default function ArrearsPage() {
           onClose={() => setReminderTarget(null)}
         />
       )}
+      {linkTarget && <PaymentLinkModal {...linkTarget} schoolName={user?.school?.name} onClose={() => setLinkTarget(null)} />}
     </DashboardShell>
   );
 }

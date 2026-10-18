@@ -5,8 +5,9 @@
 // wherever it's started from (moved here 2026-10-14 when the Students page
 // gained a per-student account view).
 import { useEffect, useState } from "react";
+import { Check, Copy, MessageCircle, TriangleAlert } from "lucide-react";
 import { apiRequest } from "@/lib/api";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { Button, Field, Modal, inputClass } from "@/components/ui";
 
 export const METHOD_LABELS = { cash: "Cash", mobile_money: "Mobile Money", bank_transfer: "Bank Transfer", other: "Other" };
@@ -74,6 +75,104 @@ export function RecordPaymentModal({ invoice, currency, onClose, onSaved }) {
           <Button type="submit" disabled={saving}>{saving ? "Recording..." : "Record Payment"}</Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+// wa.me wants the number in international form with digits only. Ghana
+// numbers are stored as typed (0241234567, +233 24..., 233...); anything
+// that doesn't look like one opens WhatsApp's contact picker instead.
+function whatsappNumber(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (/^0\d{9}$/.test(digits)) return `233${digits.slice(1)}`;
+  if (/^233\d{9}$/.test(digits)) return digits;
+  return "";
+}
+
+// "Get payment link" (Arrears and Parents pages). A link lets a parent pay
+// online without an SMS: the school sends it on WhatsApp, by email, or reads
+// it out. A parent has one working link at a time, so making a new one
+// cancels the link in their last reminder; the dialog says so BEFORE making
+// it (2026-10-18; it used to make the link on click with no explanation).
+export function PaymentLinkModal({ parentId, parentName, parentPhone, childNames, schoolName, onClose }) {
+  const [link, setLink] = useState(null);
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function create() {
+    setCreating(true);
+    setError("");
+    try {
+      const res = await apiRequest(`/parents/${parentId}/payment-link`, { method: "POST" });
+      setLink(res.data);
+    } catch (err) {
+      setError(err.message);
+    }
+    setCreating(false);
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopied(true);
+    } catch {
+      // Clipboard blocked: the full link is on screen to select by hand.
+    }
+  }
+
+  const children = childNames?.length ? childNames.join(" and ") : "your child";
+  const message = link && [
+    `Hello${parentName ? ` ${parentName}` : ""}, here is your secure link to pay ${children}'s fees${schoolName ? ` at ${schoolName}` : ""}:`,
+    link.url,
+    `You can pay with Mobile Money or card. The link works until ${formatDate(link.expiresAt)}.`,
+  ].join("\n\n");
+  const whatsappHref = link && `https://wa.me/${whatsappNumber(parentPhone)}?text=${encodeURIComponent(message)}`;
+
+  return (
+    <Modal
+      title="Payment link"
+      description={parentName ? `For ${parentName}` : undefined}
+      onClose={onClose}
+    >
+      {error && <p role="alert" className="mb-3 text-sm text-[var(--danger)]">{error}</p>}
+      {!link ? (
+        <div className="space-y-3 text-sm text-[var(--slate)]">
+          <p>
+            A private page where this parent sees what they owe and pays online by Mobile Money or card. Send it yourself, on
+            WhatsApp or any other way. It uses no SMS.
+          </p>
+          <p className="flex gap-2 rounded-lg bg-[var(--warning-wash)] p-3 text-[var(--ink)]">
+            <TriangleAlert size={16} className="mt-0.5 shrink-0 text-[var(--warning)]" />
+            <span>A parent has one working link at a time. Making a new one stops the link in their last SMS reminder from working.</span>
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button onClick={create} disabled={creating}>{creating ? "Creating..." : "Create link"}</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="break-all rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3 font-mono text-xs text-[var(--ink)]">{link.url}</p>
+          <p className="text-xs text-[var(--slate-quiet)]">Works until {formatDate(link.expiresAt)}, or until a newer link or reminder replaces it.</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button variant="secondary" className="gap-2" onClick={copy}>
+              {copied ? <><Check size={16} /> Copied</> : <><Copy size={16} /> Copy link</>}
+            </Button>
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-semibold text-white hover:opacity-90 sm:min-h-[40px]"
+            >
+              <MessageCircle size={16} /> Share on WhatsApp
+            </a>
+          </div>
+          {!whatsappNumber(parentPhone) && (
+            <p className="text-xs text-[var(--slate-quiet)]">No usable phone number on file, so WhatsApp will ask you to pick the contact.</p>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
