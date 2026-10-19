@@ -95,7 +95,7 @@ function AddStudentModal({ classes, years, presetClassId, onClose, onCreated }) 
           </p>
           <div className="mt-3 space-y-3">
             <Field label="Parent/Guardian Name"><input value={form.parentFullName} onChange={(e) => setForm((f) => ({ ...f, parentFullName: e.target.value }))} className={inputClass} /></Field>
-            <Field label="Parent/Guardian Phone"><input value={form.parentPhone} onChange={(e) => setForm((f) => ({ ...f, parentPhone: e.target.value }))} className={inputClass} /></Field>
+            <Field label="Parent/Guardian Phone"><input type="tel" inputMode="tel" autoComplete="tel" placeholder="e.g. 024 123 4567" value={form.parentPhone} onChange={(e) => setForm((f) => ({ ...f, parentPhone: e.target.value }))} className={inputClass} /></Field>
             <Field label="Relationship (optional)"><input placeholder="e.g. Mother, Father, Guardian" value={form.relationship} onChange={(e) => setForm((f) => ({ ...f, relationship: e.target.value }))} className={inputClass} /></Field>
           </div>
         </div>

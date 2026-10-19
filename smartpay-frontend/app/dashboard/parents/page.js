@@ -47,7 +47,7 @@ function AddParentModal({ onClose, onCreated }) {
     <Modal title="Add Parent" description="Register a new parent/guardian." onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Full Name"><input required value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} className={inputClass} /></Field>
-        <Field label="Phone"><input required value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Phone"><input required type="tel" inputMode="tel" autoComplete="tel" placeholder="e.g. 024 123 4567" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} /></Field>
         <Field label="Email (optional)"><input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputClass} /></Field>
         <Field label="Address (optional)"><input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} className={inputClass} /></Field>
         {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
@@ -86,7 +86,7 @@ function EditParentModal({ parent, onClose, onSaved }) {
     <Modal title="Edit Parent" description="Update this parent/guardian's contact details." onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Full Name"><input required value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} className={inputClass} /></Field>
-        <Field label="Phone"><input required value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} /></Field>
+        <Field label="Phone"><input required type="tel" inputMode="tel" autoComplete="tel" placeholder="e.g. 024 123 4567" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} /></Field>
         <Field label="Email (optional)"><input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputClass} /></Field>
         <Field label="Address (optional)"><input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} className={inputClass} /></Field>
         {error && <p className="text-sm text-[var(--danger)]">{error}</p>}

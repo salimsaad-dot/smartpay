@@ -236,9 +236,13 @@ export function Modal({ title, description, onClose, children, size = "sm" }) {
   );
 }
 
+// Success is an inverted surface (ink background, page-colour text), so it
+// reads in both themes. It used to be ink with white text: invisible in
+// dark mode, where ink turns near-white (2026-10-19). Danger uses a fixed
+// deep red: the dark theme's lighter --danger was too pale under white text.
 const TOAST_TONES = {
-  success: "bg-[var(--ink)]",
-  danger: "bg-[var(--danger)]",
+  success: "bg-[var(--ink)] text-[var(--bg)]",
+  danger: "bg-[#B91C1C] text-white",
 };
 
 // A page-local toast, not a global provider — this app has one toast
@@ -268,9 +272,9 @@ export function Toast({ message, tone = "success", onDismiss }) {
       aria-live="polite"
       className="fixed inset-x-4 bottom-4 z-50 flex justify-center sm:inset-x-auto sm:right-6"
     >
-      <div className={`flex max-w-sm items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-xl ${TOAST_TONES[tone]}`}>
+      <div className={`flex max-w-sm items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium shadow-xl ${TOAST_TONES[tone]}`}>
         <span>{message}</span>
-        <button onClick={onDismiss} aria-label="Dismiss notification" className="text-white/70 hover:text-white">✕</button>
+        <button onClick={onDismiss} aria-label="Dismiss notification" className="opacity-70 hover:opacity-100">✕</button>
       </div>
     </div>
   );

@@ -141,4 +141,20 @@ describe('classes/parents — redesign aggregates and status endpoints (real DB,
         // Restore for idempotency.
         await request(app).patch(`/api/parents/${mensahParentId}/status`).set('Cookie', cookieA).send({ status: 'active' });
     });
+
+    // Phone numbers are checked on save (2026-10-19): a surname typed into
+    // the phone box used to save, and only failed weeks later at send time.
+    test('a parent phone that is not a Ghana number is refused on add and on edit', async () => {
+        for (const phone of ['Mensah', '024123456', '0241234567a']) {
+            const res = await request(app).post('/api/parents').set('Cookie', cookieA).send({ fullName: 'Ama Test', phone });
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/valid Ghana phone number/);
+        }
+        const ok = await request(app).post('/api/parents').set('Cookie', cookieA).send({ fullName: 'Ama Test', phone: '+233 24 555 0101' });
+        expect(ok.status).toBe(201);
+        const edit = await request(app).patch(`/api/parents/${ok.body.data.id}`).set('Cookie', cookieA).send({ fullName: 'Ama Test', phone: 'Test' });
+        expect(edit.status).toBe(400);
+        const [[row]] = await db.query('SELECT phone FROM parents WHERE id = ?', [ok.body.data.id]);
+        expect(row.phone).toBe('+233 24 555 0101');
+    });
 });

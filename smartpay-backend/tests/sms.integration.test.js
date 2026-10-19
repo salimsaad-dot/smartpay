@@ -59,8 +59,11 @@ describe('SMS templates and manual reminders (real DB, real HTTP)', () => {
             .send({ fullName: 'Mrs Mensah', phone: '0241234567' });
         mensahParentId = mensah.body.data.id;
         const badPhoneParent = await request(app).post('/api/parents').set('Cookie', cookieA)
-            .send({ fullName: 'Mr Badphone', phone: '123' });
+            .send({ fullName: 'Mr Badphone', phone: '0241000998' });
         badPhoneParentId = badPhoneParent.body.data.id;
+        // Bad numbers can't be saved any more (utils/phone.js), but records
+        // from before that check can still hold one: set it directly.
+        await db.query('UPDATE parents SET phone = ? WHERE id = ?', ['123', badPhoneParentId]);
 
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [mensahParentId, kofiStudentId]);
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [mensahParentId, yawStudentId]);

@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { isValidPhone, PHONE_MESSAGE } = require('../utils/phone');
 
 // Redesign addition (2026-10): the primary parent's name/phone, via the
 // same is_primary flag the Arrears/Outstanding-Fees queries already rely
@@ -60,6 +61,9 @@ async function enrollOneStudent(connection, schoolId, data) {
     // given or neither is.
     if ((parentFullName?.trim() || parentPhone?.trim()) && !(parentFullName?.trim() && parentPhone?.trim())) {
         throw { status: 400, message: 'Parent name and phone must be provided together, or both left blank.' };
+    }
+    if (parentPhone?.trim() && !isValidPhone(parentPhone)) {
+        throw { status: 400, message: `Parent phone: ${PHONE_MESSAGE}` };
     }
 
     const [studentResult] = await connection.query(

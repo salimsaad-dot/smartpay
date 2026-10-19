@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { isValidPhone, PHONE_MESSAGE } = require('../utils/phone');
 const { createPaymentLink } = require('../utils/paymentLink');
 const { logAction } = require('../utils/auditLog');
 const { withDeadlockRetry } = require('../utils/retryOnDeadlock');
@@ -49,6 +50,9 @@ exports.create = async (req, res) => {
         if (!fullName?.trim() || !phone?.trim()) {
             return res.status(400).json({ status: 'error', message: 'Full name and phone number are required.' });
         }
+        if (!isValidPhone(phone)) {
+            return res.status(400).json({ status: 'error', message: PHONE_MESSAGE });
+        }
 
         const [result] = await pool.query(
             'INSERT INTO parents (school_id, full_name, phone, email, address) VALUES (?, ?, ?, ?, ?)',
@@ -66,6 +70,9 @@ exports.update = async (req, res) => {
         const { fullName, phone, email, address } = req.body;
         if (!fullName?.trim() || !phone?.trim()) {
             return res.status(400).json({ status: 'error', message: 'Full name and phone number are required.' });
+        }
+        if (!isValidPhone(phone)) {
+            return res.status(400).json({ status: 'error', message: PHONE_MESSAGE });
         }
 
         const [result] = await pool.query(

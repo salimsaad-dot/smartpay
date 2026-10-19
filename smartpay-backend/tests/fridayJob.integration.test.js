@@ -60,8 +60,11 @@ describe('Friday automation job — cycle locks, filtering, and cron trigger (re
         parentIdA = mensah.body.data.id;
         const owusu = await request(app).post('/api/parents').set('Cookie', cookieA).send({ fullName: 'Mr Owusu', phone: '0241111111' });
         lowBalanceParentId = owusu.body.data.id;
-        const boateng = await request(app).post('/api/parents').set('Cookie', cookieA).send({ fullName: 'Mrs Boateng', phone: 'not-a-number' });
+        // Bad numbers can't be saved any more (utils/phone.js), but records
+        // from before that check can still hold one: set it directly.
+        const boateng = await request(app).post('/api/parents').set('Cookie', cookieA).send({ fullName: 'Mrs Boateng', phone: '0241000999' });
         badPhoneParentId = boateng.body.data.id;
+        await db.query('UPDATE parents SET phone = ? WHERE id = ?', ['not-a-number', badPhoneParentId]);
 
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [parentIdA, kofiStudentId]);
         await db.query('INSERT INTO parent_student (parent_id, student_id, is_primary) VALUES (?, ?, 1)', [lowBalanceParentId, lowBalStudent.body.data.id]);

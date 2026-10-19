@@ -71,6 +71,17 @@ describe('POST /students — optional inline parent collection (real DB, real HT
         expect(res.status).toBe(400);
     });
 
+    test('a parent phone that is not a phone number is rejected, and no student is created', async () => {
+        const res = await request(app).post('/api/students').set('Cookie', cookieA).send({
+            admissionNo: `${MARKER}-BADPHONE`, firstName: 'Ama', lastName: 'Badphone',
+            classId: classIdA, academicYearId: yearIdA, parentFullName: 'Mrs Mensah', parentPhone: 'Mensah',
+        });
+        expect(res.status).toBe(400);
+        expect(res.body.message).toMatch(/valid Ghana phone number/);
+        const [[{ n }]] = await db.query('SELECT COUNT(*) AS n FROM students WHERE admission_no = ?', [`${MARKER}-BADPHONE`]);
+        expect(n).toBe(0);
+    });
+
     test('creating a student with parent info creates and links a new parent, marked primary', async () => {
         const res = await request(app).post('/api/students').set('Cookie', cookieA).send({
             admissionNo: `${MARKER}-S1`, firstName: 'Kofi', lastName: 'Mensah',

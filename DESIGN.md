@@ -2963,6 +2963,40 @@ being considered done, not just locally.
     mid-sentence built the expected text with correct spacing, the box kept
     focus, and an insert at the start after moving the cursor landed
     there.
+- **Parent phone numbers checked on save, and dark-mode notifications fixed,
+  2026-10-19.** Both were found by the owner while testing.
+  - **Phone numbers:**
+    - **What went wrong:** a surname typed into a parent's phone box saved
+      without complaint. It only surfaced weeks later as "invalid number"
+      when a reminder was sent.
+    - **The check:** `utils/phone.js` `isValidPhone` accepts the usual
+      Ghana forms (0241234567, 024 123 4567, 024-123-4567,
+      +233 24 123 4567, 233241234567) and refuses letters or a wrong digit
+      count, with "Enter a valid Ghana phone number, e.g. 024 123 4567.".
+    - **Where it applies:** parent add and edit, and a parent added with a
+      student. Bulk enrolment shares that code, so a bad row fails on its
+      own.
+    - Numbers are stored as typed. The send-time "invalid phone" handling
+      stays for records saved before this.
+    - Phone inputs are `type="tel"` (number keypad on phones) with an
+      example placeholder.
+  - **Notifications:** the success toast was `bg-[var(--ink)]` with white
+    text. In dark mode ink turns near-white, so the text was invisible (the
+    same bug class Academia Hub had with ink-coloured buttons).
+    - Success is now an inverted surface (ink background, page-colour
+      text), readable in both themes.
+    - Danger is a fixed deep red under white text; the dark theme's paler
+      `--danger` was too faint.
+    - The toast was the only `bg-[var(--ink)]` use in the frontend.
+  - **Verified:**
+    - Tests: refused on add and edit, with the value unchanged; refused when
+      enrolling a student, with no student created.
+    - The two older tests that need a bad number now set it directly in the
+      database, like a pre-check record.
+    - In a dark-mode browser at phone width, "Mensah" was refused with the
+      message and nothing saved, then a real number saved and the toast read
+      dark-on-light.
+    - Full suite 395 passing.
 
 ## Future Work
 
