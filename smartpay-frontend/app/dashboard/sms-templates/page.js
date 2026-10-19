@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Bell, XCircle, Search } from "lucide-react";
 import { apiRequest } from "@/lib/api";
@@ -22,7 +22,23 @@ import {
   useToast,
 } from "@/components/ui";
 
-const VARIABLES = ["school_name", "parent_name", "student_name", "student_count", "term_name", "total_balance", "outstanding_breakdown", "payment_link", "due_date", "school_momo_number", "school_momo_name"];
+// Tappable placeholders for the message box, in the order a reminder is
+// usually written. Plain labels; the {{token}} is what gets inserted.
+const VARIABLES = [
+  { key: "school_name", label: "School name" },
+  { key: "parent_name", label: "Parent's name" },
+  { key: "student_name", label: "Student's name" },
+  { key: "student_count", label: "Number of children" },
+  { key: "term_name", label: "Term" },
+  { key: "outstanding_breakdown", label: "Fees owed (list)" },
+  { key: "total_balance", label: "Total owed" },
+  { key: "due_date", label: "Due date" },
+  { key: "payment_link", label: "Payment link" },
+  { key: "school_momo_number", label: "MoMo number" },
+  { key: "school_momo_name", label: "MoMo name" },
+];
+// Same cap the backend enforces (utils/smsAllowance.js MAX_TEMPLATE_LENGTH).
+const MAX_TEMPLATE_LENGTH = 480;
 
 // Same "this school's own number, this calendar month" view already on
 // the Dashboard — added here too since a user naturally checks the page
@@ -157,6 +173,38 @@ function TemplateForm({ initial, onSave, onCancel }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const messageId = useId();
+  const bodyRef = useRef(null);
+  // Where the cursor was last, so a tap on a placeholder still lands there
+  // if the box lost focus; null until the box is first used (then: append).
+  const caret = useRef(null);
+
+  function rememberCaret(e) {
+    caret.current = { start: e.target.selectionStart, end: e.target.selectionEnd };
+  }
+
+  // Inserts {{key}} at the cursor (replacing any selected text), adds a
+  // space before it when it would touch the previous word, then puts the
+  // cursor just after it so typing carries on (2026-10-19; the tokens used
+  // to be plain text to copy and paste, which is painful on a phone).
+  function insertVariable(key) {
+    const el = bodyRef.current;
+    const focused = el && document.activeElement === el;
+    const { start, end } = focused
+      ? { start: el.selectionStart, end: el.selectionEnd }
+      : caret.current || { start: body.length, end: body.length };
+    const before = body.slice(0, start);
+    const after = body.slice(end);
+    const token = `${before && !/\s$/.test(before) ? " " : ""}{{${key}}}`;
+    const next = before + token + after;
+    setBody(next);
+    const pos = start + token.length;
+    caret.current = { start: pos, end: pos };
+    requestAnimationFrame(() => {
+      if (!bodyRef.current) return;
+      bodyRef.current.focus();
+      bodyRef.current.setSelectionRange(pos, pos);
+    });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -183,10 +231,33 @@ function TemplateForm({ initial, onSave, onCancel }) {
       </Field>
       <div>
         <label htmlFor={messageId} className={labelClass}>Message</label>
-        <textarea id={messageId} required rows={4} value={body} onChange={(e) => setBody(e.target.value)} className={inputClass} />
+        <textarea
+          id={messageId}
+          ref={bodyRef}
+          required
+          rows={5}
+          value={body}
+          onChange={(e) => { setBody(e.target.value); rememberCaret(e); }}
+          onSelect={rememberCaret}
+          className={inputClass}
+        />
+        <p className={`mt-1 text-right text-xs ${body.length > MAX_TEMPLATE_LENGTH ? "text-[var(--danger)]" : "text-[var(--slate-quiet)]"}`}>
+          {body.length} / {MAX_TEMPLATE_LENGTH}
+        </p>
+        <p className="mt-1 text-xs text-[var(--slate-quiet)]">Tap to add to your message where the cursor is. SmartPay fills in the real details for each parent.</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {VARIABLES.map((v) => (
-            <code key={v} className="rounded bg-[var(--hover)] px-1.5 py-0.5 text-xs text-[var(--slate)]">{`{{${v}}}`}</code>
+            <button
+              key={v.key}
+              type="button"
+              title={`Adds {{${v.key}}}`}
+              // Keeps the cursor (and the phone keyboard) in the message box.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => insertVariable(v.key)}
+              className="min-h-[36px] rounded-full border border-[var(--border)] bg-[var(--hover)] px-3 text-xs font-medium text-[var(--ink)] hover:border-[var(--primary)] hover:text-[var(--primary)] active:scale-[0.97]"
+            >
+              + {v.label}
+            </button>
           ))}
         </div>
       </div>

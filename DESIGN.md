@@ -2947,6 +2947,22 @@ being considered done, not just locally.
   - **Verified in a browser at phone width:** opening the dialog creates
     no link, the warning shows, Create shows the full link, and the
     WhatsApp link carries the number and the payment URL.
+- **Tap-to-insert placeholders in the SMS template editor, 2026-10-19.**
+  The `{{tokens}}` under the message box were plain text to copy and paste,
+  which the owner found painful on a phone.
+  - **Chips:** they are now buttons with plain labels ("+ Payment link",
+    "+ Parent's name"...).
+  - **Insertion:** a tap puts the token at the cursor, replacing any
+    selected text. It adds a space first if the token would touch the
+    previous word, and leaves the cursor right after it.
+  - **Focus:** `onMouseDown` preventDefault keeps the cursor, and the phone
+    keyboard, in the box. If the box lost focus, the last remembered cursor
+    position is used; if it was never used, the token is appended.
+  - **Counter:** a character counter against the backend's 480 cap.
+  - **Verified in a browser at phone width with taps:** typing and tapping
+    mid-sentence built the expected text with correct spacing, the box kept
+    focus, and an insert at the start after moving the cursor landed
+    there.
 
 ## Future Work
 
