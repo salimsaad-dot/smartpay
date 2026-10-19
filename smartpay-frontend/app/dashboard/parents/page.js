@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Users, UserCheck, UserX, Baby, Search, MoreHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Users, UserCheck, UserX, Baby, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatMoney } from "@/lib/format";
@@ -18,6 +18,7 @@ import {
   Toast,
   inputClass,
   useToast,
+  RowMenu,
 } from "@/components/ui";
 import { Avatar, Badge2, Button2, Card2, StatCard } from "@/components/ui2";
 
@@ -133,25 +134,17 @@ function ChildrenModal({ parent, onClose }) {
 }
 
 function RowActions({ parent, onView, onEdit, onPaymentLink, onToggleStatus }) {
-  const [open, setOpen] = useState(false);
   const inactive = parent.status === "inactive";
   return (
-    <div className="relative inline-block text-left">
-      <button onClick={() => setOpen((o) => !o)} aria-label="Row actions" className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--slate-quiet)] hover:bg-[var(--hover)]">
-        <MoreHorizontal size={16} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]">
-            <button onClick={() => { setOpen(false); onView(parent); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">View children</button>
-            <button onClick={() => { setOpen(false); onEdit(parent); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">Edit details</button>
-            <button onClick={() => { setOpen(false); onPaymentLink(parent); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">Payment link</button>
-            <button onClick={() => { setOpen(false); onToggleStatus(parent, inactive ? "active" : "inactive"); }} className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]">{inactive ? "Reactivate" : "Mark inactive"}</button>
-          </div>
-        </>
-      )}
-    </div>
+    <RowMenu
+      label={`Actions for ${parent.full_name}`}
+      items={[
+        { label: "View children", onClick: () => onView(parent) },
+        { label: "Edit details", onClick: () => onEdit(parent) },
+        { label: "Payment link", onClick: () => onPaymentLink(parent) },
+        { label: inactive ? "Reactivate" : "Mark inactive", onClick: () => onToggleStatus(parent, inactive ? "active" : "inactive") },
+      ]}
+    />
   );
 }
 

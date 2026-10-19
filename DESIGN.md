@@ -2997,6 +2997,22 @@ being considered done, not just locally.
       message and nothing saved, then a real number saved and the toast read
       dark-on-light.
     - Full suite 395 passing.
+- **Row "..." menus no longer get cut off, 2026-10-19.** On the Parents
+  page, the menu for the last rows opened below the table's visible area,
+  inside its scroll box, and had to be scrolled to. Classes and Fee Types
+  had the same menu.
+  - **One shared component:** `RowMenu` in `components/ui.js`.
+    - It renders into `document.body` with fixed positioning, so no scroll
+      box can clip it.
+    - It opens upward when there isn't room below (its height comes from
+      the item count), and is kept 8px inside the screen edges.
+    - It closes on an outside tap, Escape, scroll or resize, and has menu
+      ARIA roles.
+  - **Verified in a short browser window:**
+    - The Parents last row opens upward and fully visible, and its "Edit
+      details" still opens the dialog.
+    - The first row still opens downward, and Escape closes the menu.
+    - The Fee Types last row opens upward and fully visible.
 
 ## Future Work
 

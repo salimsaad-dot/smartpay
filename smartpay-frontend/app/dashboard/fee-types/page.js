@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import DashboardShell from "@/components/DashboardShell";
 import {
@@ -17,6 +16,7 @@ import {
   Toast,
   inputClass,
   useToast,
+  RowMenu,
 } from "@/components/ui";
 
 const APPLICABILITY_LABELS = { class_wide: "All students in class", selected_students: "Selected students only" };
@@ -220,48 +220,20 @@ function DeleteModal({ feeType, onClose, onDeleted }) {
 }
 
 function RowActions({ feeType, onRename, onDelete, onToggleStatus, onToggleApplicability, onManageStudents }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    function onClickOutside(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
-
-  function item(label, onClick, danger = false) {
-    return (
-      <button
-        onClick={() => { setOpen(false); onClick(); }}
-        className={`flex min-h-[40px] w-full items-center px-3 text-left text-sm hover:bg-[var(--hover)] ${danger ? "text-[var(--danger)]" : "text-[var(--slate)]"}`}
-      >
-        {label}
-      </button>
-    );
-  }
-
   return (
-    <div className="relative inline-block text-left" ref={ref}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-label={`Actions for ${feeType.name}`}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--slate-quiet)] hover:bg-[var(--hover)]"
-      >
-        <MoreHorizontal size={18} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]">
-          {item("Rename", onRename)}
-          {item(`Switch to ${feeType.applicability === "class_wide" ? "selected students" : "all students"}`, onToggleApplicability)}
-          {feeType.applicability === "selected_students" && item("Manage Students", onManageStudents)}
-          {item(feeType.status === "active" ? "Deactivate" : "Reactivate", onToggleStatus)}
-          <div className="my-1 border-t border-[var(--border)]" />
-          {item("Delete", onDelete, true)}
-        </div>
-      )}
-    </div>
+    <RowMenu
+      label={`Actions for ${feeType.name}`}
+      iconSize={18}
+      buttonClassName="h-9 w-9"
+      width={208}
+      items={[
+        { label: "Rename", onClick: onRename },
+        { label: `Switch to ${feeType.applicability === "class_wide" ? "selected students" : "all students"}`, onClick: onToggleApplicability },
+        feeType.applicability === "selected_students" && { label: "Manage Students", onClick: onManageStudents },
+        { label: feeType.status === "active" ? "Deactivate" : "Reactivate", onClick: onToggleStatus },
+        { label: "Delete", onClick: onDelete, danger: true, divider: true },
+      ]}
+    />
   );
 }
 

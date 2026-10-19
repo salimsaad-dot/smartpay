@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, School, Search, MoreHorizontal } from "lucide-react";
+import { Plus, School, Search } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import DashboardShell from "@/components/DashboardShell";
 import {
@@ -14,6 +14,7 @@ import {
   Toast,
   inputClass,
   useToast,
+  RowMenu,
 } from "@/components/ui";
 import { Badge2, Button2, Card2 } from "@/components/ui2";
 
@@ -64,27 +65,13 @@ function AddClassModal({ onClose, onCreated }) {
 }
 
 function RowActions({ cls, onToggleStatus }) {
-  const [open, setOpen] = useState(false);
   const archived = cls.status === "archived";
   return (
-    <div className="relative inline-block text-left">
-      <button onClick={() => setOpen((o) => !o)} aria-label="Row actions" className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--slate-quiet)] hover:bg-[var(--hover)]">
-        <MoreHorizontal size={16} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]">
-            <button
-              onClick={() => { setOpen(false); onToggleStatus(cls, archived ? "active" : "archived"); }}
-              className="flex min-h-[40px] w-full items-center px-3 text-left text-sm text-[var(--slate)] hover:bg-[var(--hover)]"
-            >
-              {archived ? "Reactivate" : "Archive"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+    <RowMenu
+      label={`Actions for ${cls.name}`}
+      width={160}
+      items={[{ label: archived ? "Reactivate" : "Archive", onClick: () => onToggleStatus(cls, archived ? "active" : "archived") }]}
+    />
   );
 }
 

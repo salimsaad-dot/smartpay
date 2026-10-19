@@ -2,7 +2,8 @@
 
 import { cloneElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { MoreHorizontal, X } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 
 // Shared form styling, so every input on every page looks and focuses the
@@ -277,5 +278,91 @@ export function Toast({ message, tone = "success", onDismiss }) {
         <button onClick={onDismiss} aria-label="Dismiss notification" className="opacity-70 hover:opacity-100">✕</button>
       </div>
     </div>
+  );
+}
+
+// The "..." menu on table rows (Parents, Classes, Fee Types). Rendered into
+// document.body with fixed positioning, so the table's scroll box can't cut
+// it off; opens upward when there's no room below and stays inside the
+// screen edges (2026-10-19: on the last rows the menu opened below the
+// table's visible area and had to be scrolled to). Closes on an outside
+// tap, Escape, scroll or resize.
+// items: [{ label, onClick, danger?, divider? }] (divider draws a line before it).
+const ROW_MENU_ITEM_HEIGHT = 40;
+export function RowMenu({ label = "Row actions", items, iconSize = 16, buttonClassName = "h-8 w-8", width = 176 }) {
+  const [pos, setPos] = useState(null);
+  const buttonRef = useRef(null);
+  const visible = items.filter(Boolean);
+
+  function toggle() {
+    if (pos) {
+      setPos(null);
+      return;
+    }
+    const b = buttonRef.current.getBoundingClientRect();
+    const height = visible.length * ROW_MENU_ITEM_HEIGHT + visible.filter((i) => i.divider).length * 9 + 8;
+    const gap = 4;
+    const edge = 8;
+    const roomBelow = window.innerHeight - b.bottom;
+    const openUp = roomBelow < height + gap + edge && b.top > roomBelow;
+    setPos({
+      top: Math.max(edge, openUp ? b.top - height - gap : b.bottom + gap),
+      left: Math.max(edge, Math.min(b.right - width, window.innerWidth - width - edge)),
+    });
+  }
+
+  useEffect(() => {
+    if (!pos) return undefined;
+    const close = () => setPos(null);
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pos]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggle}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(pos)}
+        className={`flex items-center justify-center rounded-lg text-[var(--slate-quiet)] hover:bg-[var(--hover)] ${buttonClassName}`}
+      >
+        <MoreHorizontal size={iconSize} />
+      </button>
+      {pos && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPos(null)} />
+          <div
+            role="menu"
+            style={{ top: pos.top, left: pos.left, width }}
+            className="fixed z-50 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] py-1 shadow-[var(--shadow-soft)]"
+          >
+            {visible.map((item) => (
+              <div key={item.label}>
+                {item.divider && <div className="my-1 border-t border-[var(--border)]" />}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setPos(null); item.onClick(); }}
+                  className={`flex min-h-[40px] w-full items-center px-3 text-left text-sm hover:bg-[var(--hover)] ${item.danger ? "text-[var(--danger)]" : "text-[var(--slate)]"}`}
+                >
+                  {item.label}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </>
   );
 }
