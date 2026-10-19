@@ -4,13 +4,17 @@
 // shows, for one phone number, the last few reminders as SmartPay recorded
 // them, how long each was (and whether special characters such as curly
 // quotes or the cedi sign forced the costlier Unicode format), and what
-// Arkesel itself reports about delivery, plus the account's SMS balance.
+// the SMS provider itself reports about delivery, plus the account's SMS
+// balance. Production sends through mNotify (Arkesel is the fallback), so
+// mNotify is asked unless you pass --arkesel.
 //
-// Usage:  node scripts/check-sms-delivery.js 0241234567
-// Run with the live DB_ settings (and ARKESEL_API_KEY) to check production.
+// Usage:  node scripts/check-sms-delivery.js 0241234567 [--arkesel]
+// Run with the live DB_ settings to check production. The provider API key
+// comes from .env (MNOTIFY_API_KEY / ARKESEL_API_KEY).
 const pool = require('../db');
 
-const [phoneArg] = process.argv.slice(2);
+const phoneArg = process.argv.slice(2).find((a) => !a.startsWith('--'));
+const useArkesel = process.argv.includes('--arkesel');
 
 // GSM 03.38 basic characters plus the extension table (which cost 2 each).
 const GSM_BASIC = '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
@@ -24,6 +28,17 @@ function smsParts(text) {
     }
     const n = [...text].reduce((sum, ch) => sum + (GSM_EXT.includes(ch) ? 2 : 1), 0);
     return { encoding: 'GSM (normal)', parts: n <= 160 ? 1 : Math.ceil(n / 153), odd };
+}
+
+async function mnotify(path) {
+    if (!process.env.MNOTIFY_API_KEY) return 'MNOTIFY_API_KEY not set here';
+    try {
+        const res = await fetch(`https://api.mnotify.com/api${path}?key=${process.env.MNOTIFY_API_KEY}`, { signal: AbortSignal.timeout(15000) });
+        const text = await res.text();
+        return `HTTP ${res.status} ${text.slice(0, 600)}`;
+    } catch (error) {
+        return `request failed: ${error.message}`;
+    }
 }
 
 async function arkesel(path) {
@@ -44,7 +59,7 @@ async function arkesel(path) {
         process.exit(1);
     }
     const tail = digits.slice(-9); // matches 024..., 23324..., +233 24...
-    console.log(`Database: ${process.env.DB_NAME} on ${process.env.DB_HOST} | SMS_PROVIDER here: ${process.env.SMS_PROVIDER || 'mnotify (default)'}\n`);
+    console.log(`Database: ${process.env.DB_NAME} on ${process.env.DB_HOST} | asking: ${useArkesel ? 'Arkesel' : 'mNotify'}\n`);
 
     const [parents] = await pool.query(
         "SELECT p.id, p.full_name, p.phone, s.name AS school FROM parents p JOIN schools s ON s.id = p.school_id WHERE REPLACE(REPLACE(REPLACE(p.phone, ' ', ''), '-', ''), '+', '') LIKE ?",
@@ -72,9 +87,16 @@ async function arkesel(path) {
         console.log(`Length ~${[...realish].length} characters, ${info.encoding}, ~${info.parts} SMS part(s)`);
         if (info.odd.length) console.log(`Special characters forcing Unicode: ${info.odd.map((c) => JSON.stringify(c)).join(' ')}`);
         console.log(`Message: ${r.message.slice(0, 400)}${r.message.length > 400 ? '...' : ''}`);
-        if (r.provider_message_id) console.log(`Arkesel delivery report: ${await arkesel(`/api/v2/sms/${encodeURIComponent(r.provider_message_id)}`)}`);
+        if (r.provider_message_id) {
+            const id = encodeURIComponent(r.provider_message_id);
+            console.log(useArkesel
+                ? `Arkesel delivery report: ${await arkesel(`/api/v2/sms/${id}`)}`
+                : `mNotify delivery report: ${await mnotify(`/status/${id}`)}`);
+        }
     }
-    console.log(`\nArkesel balance: ${await arkesel('/api/v2/clients/balance-details')}`);
+    console.log(useArkesel
+        ? `\nArkesel balance: ${await arkesel('/api/v2/clients/balance-details')}`
+        : `\nmNotify balance: ${await mnotify('/balance/sms')}`);
     process.exit(0);
 })().catch((error) => {
     console.error('Failed:', error.message);
